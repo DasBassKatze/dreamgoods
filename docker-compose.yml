@@ -1,0 +1,22 @@
+# База данных DreamGoods (PostgreSQL 16). Файлы хранятся в папке data/files (или в облачном S3 — см. .env).
+# Запуск:  docker compose up -d      Остановка:  docker compose down      (данные сохраняются в томе pgdata)
+name: dreamgoods
+services:
+  postgres:
+    # Если Docker Hub недоступен, замените строку на:  image: mirror.gcr.io/library/postgres:16
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: studio
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-studio}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
+      interval: 5s
+      retries: 20
+
+volumes:
+  pgdata:
+    name: studio_pgdata   # том с данными с первой версии — имя закреплено, чтобы база не потерялась

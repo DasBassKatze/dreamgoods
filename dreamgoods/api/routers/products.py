@@ -1,0 +1,34 @@
+"""Товар: референсы и профиль."""
+from fastapi import APIRouter, Depends
+
+from ...core.events import say
+from ...services import products
+from ..deps import need_key, project_id
+from ..schemas import ProfileGenerate, ProfileUpdate, RefsUpdate
+
+router = APIRouter(prefix="/api/projects/{project_id}", tags=["товары"])
+
+
+@router.put("/products/{product_id}/refs")
+def set_refs(product_id: int, body: RefsUpdate, pid: int = Depends(project_id)):
+    return {"selected": products.set_refs(pid, product_id, body.selected)}
+
+
+@router.get("/products/{product_id}/profile")
+def get_profile(product_id: int, pid: int = Depends(project_id)):
+    return products.get_profile(pid, product_id)
+
+
+@router.put("/products/{product_id}/profile")
+def save_profile(product_id: int, body: ProfileUpdate, pid: int = Depends(project_id)):
+    return {"ok": True, "prompts": products.save_profile(pid, product_id, body.profile, body.build)}
+
+
+@router.post("/profiles/generate")
+def generate_profiles(body: ProfileGenerate, pid: int = Depends(project_id)):
+    """ИИ составит профиль товара по фото; build — сразу собрать промпты кадров. product_ids=None — все без промптов."""
+    need_key(pid)
+    added = products.profile_jobs(pid, body.product_ids, body.build)
+    if added:
+        say("info", f"🧠 Составляю профили товара по фото: {added}", pid)
+    return {"added": added}

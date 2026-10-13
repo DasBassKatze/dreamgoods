@@ -1,0 +1,23 @@
+# секреты и данные — никогда не в репозиторий
+.env
+data/
+logs/
+exports/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# интерфейс: зависимости ставятся заново; собранный dreamgoods/web храним, чтобы запуск работал без Node.js
+frontend/node_modules/
+frontend/dist/
+
+# системное
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

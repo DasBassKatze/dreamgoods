@@ -1,0 +1,8 @@
+# Переносы строк: bat-файлы Windows — только CRLF (иначе ломается кириллица и команды), остальное — LF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
