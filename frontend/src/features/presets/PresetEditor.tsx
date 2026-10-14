@@ -91,14 +91,22 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
             <input type="text" value={String(d.custom.model ?? "")} placeholder={`пусто — как в настройках (${state.settings.model})`}
               onChange={(e) => setCustom("model", e.target.value)} />
             <label className="form-label">Разрешение · перегенераций</label>
-            <div className="row nowrap">
-              <select value={String(d.custom.resolution ?? "")} onChange={(e) => setCustom("resolution", e.target.value)}>
-                <option value="">как в настройках</option>{["1K", "2K", "4K"].map((r) => <option key={r}>{r}</option>)}
-              </select>
-              <select value={String(d.custom.qc_retries ?? "")} onChange={(e) => setCustom("qc_retries", e.target.value === "" ? "" : +e.target.value)}>
-                <option value="">перегенераций — как в настройках</option>{[0, 1, 2, 3].map((n) => <option key={n} value={n}>до {n} перегенераций</option>)}
-              </select>
-              <label className="check"><input type="checkbox" checked={!!d.custom.qc_count} onChange={(e) => setCustom("qc_count", e.target.checked)} /> подсчёт</label>
+            <div>
+              <div className="row nowrap">
+                <select value={String(d.custom.resolution ?? "")} onChange={(e) => setCustom("resolution", e.target.value)}>
+                  <option value="">как в настройках</option>
+                  {[["1K", 900], ["2K", 1800], ["4K", 3600]].map(([r, px]) => <option key={r} value={r}>{r} · {px} px</option>)}
+                </select>
+                <input type="number" min={0} max={6000} step={100} value={Number(d.custom.out_side || 0) || ""} style={{ width: 110 }}
+                  placeholder="своё, px" title="Своё разрешение: короткая сторона готового кадра, px. Пусто — по уровню 1K/2K/4K"
+                  onChange={(e) => setCustom("out_side", +e.target.value || 0)} />
+                <select value={String(d.custom.qc_retries ?? "")} onChange={(e) => setCustom("qc_retries", e.target.value === "" ? "" : +e.target.value)}>
+                  <option value="">перегенераций — как в настройках</option>{[0, 1, 2, 3].map((n) => <option key={n} value={n}>до {n} перегенераций</option>)}
+                </select>
+                <label className="check"><input type="checkbox" checked={!!d.custom.qc_count} onChange={(e) => setCustom("qc_count", e.target.checked)} /> подсчёт</label>
+              </div>
+              <div className="hint mt6">разрешение — короткая сторона готового кадра. Если модель вернёт меньше (например, Nano Banana
+                умеет только 1K), кадр увеличивается до него без перегенерации. Своё значение в px главнее уровня.</div>
             </div>
             <label className="form-label">Модель проверки</label>
             <input type="text" value={String(d.custom.qc_model ?? "")} placeholder={`пусто — ${state.settings.qc_model}`}

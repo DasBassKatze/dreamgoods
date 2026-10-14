@@ -17,17 +17,24 @@ BLOCK_ORDER = tuple(BLOCKS)
 # Уровни качества. Пока это набор настроек генерации и проверки; дальше — автоподбор модели по метрикам
 # (первая попытка, доля брака, цена принятого кадра) под нужный порог качества.
 QUALITY = {
-    "draft": {"name": "Черновик", "hint": "быстро и дёшево: 1K, без перегенераций — прикинуть идеи и позы",
+    "draft": {"name": "Черновик", "hint": "быстро и дёшево: 1K (900 px по короткой стороне), без перегенераций — прикинуть идеи и позы",
               "settings": {"resolution": "1K", "qc_enabled": True, "qc_autoregen": False, "qc_retries": 0, "qc_count": False}},
-    "standard": {"name": "Стандарт", "hint": "для карточек: 2K, проверка ИИ и до 2 перегенераций брака",
+    "standard": {"name": "Стандарт", "hint": "для карточек: 2K (1800 px по короткой стороне), проверка ИИ и до 2 перегенераций брака",
                  "settings": {"resolution": "2K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 2, "qc_count": False}},
-    "premium": {"name": "Премиум", "hint": "максимум качества: 4K, до 3 перегенераций, отдельный подсчёт ног/рук и товара",
+    "premium": {"name": "Премиум", "hint": "максимум качества: 4K (3600 px по короткой стороне), до 3 перегенераций, отдельный подсчёт ног/рук и товара",
                 "settings": {"resolution": "4K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 3, "qc_count": True}},
-    "custom": {"name": "Свой", "hint": "свои значения: модель, разрешение, число перегенераций", "settings": {}},
+    "custom": {"name": "Свой", "hint": "свои значения: модель, разрешение (в том числе своё в px), число перегенераций",
+               "settings": {}},
 }
+
+# Разрешение пресета → короткая сторона готового кадра, px (при 3:4: 900×1200, 1800×2400, 3600×4800).
+# Модель получает уровень 1K/2K/4K; если она вернула меньше (например, Nano Banana умеет только 1K — 896×1200),
+# кадр увеличивается до этого размера у нас, бесплатно и без перегенерации: перегенерация разрешение не исправит.
+RESOLUTION_SIDE = {"1K": 900, "2K": 1800, "4K": 3600}
+OUT_SIDE_MAX = 6000
 # что можно переопределить в «Своём» уровне
 CUSTOM_KEYS = {"model": str, "providers": str, "resolution": str, "qc_retries": int, "qc_count": bool, "qc_model": str,
-               "qc_autoregen": bool}
+               "qc_autoregen": bool, "out_side": int}
 
 # Профили площадок: формат кадра, минимальная сторона (для техпроверки) и правила главного фото (обложки).
 # Источник: требования площадок по состоянию на сентябрь 2026 (selsup.ru). Площадки их меняют — значения
@@ -152,10 +159,23 @@ def clean_custom(values):
         v = (values or {}).get(k)
         if v in (None, ""):
             continue
+        if k == "out_side":
+            out[k] = max(0, min(OUT_SIDE_MAX, int(float(v))))
+            continue
         out[k] = max(0, min(3, int(v))) if t is int else bool(v) if t is bool else str(v).strip()
     if out.get("resolution") not in (None, "1K", "2K", "4K"):
         out.pop("resolution")
+    if not out.get("out_side"):
+        out.pop("out_side", None)
+    elif not out.get("resolution"):     # своё разрешение в px — модели заказываем ближайший уровень не меньше него
+        out["resolution"] = next((r for r, side in RESOLUTION_SIDE.items() if side >= out["out_side"]), "4K")
     return out
+
+
+def out_side(st):
+    """Короткая сторона готового кадра, px: своё значение пресета → уровень разрешения; не меньше минимума площадки."""
+    side = int(st.get("out_side") or 0) or RESOLUTION_SIDE.get(str(st.get("resolution") or ""), 0)
+    return max(side, int(st.get("qc_min_side") or 0))
 
 
 def plan_from_settings(st):
@@ -175,6 +195,7 @@ def apply(st, preset):
     q = QUALITY.get(preset.quality) or QUALITY["standard"]
     out = dict(st)
     out.update(q["settings"])
+    out.pop("out_side", None)           # своё разрешение из настроек проекта не переносим в уровень пресета
     if preset.quality == "custom":
         out.update(clean_custom(preset.custom))
     out["plan_mode"] = "manual" if preset.plan_mode == "manual" else "auto"

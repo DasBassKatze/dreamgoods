@@ -12,7 +12,9 @@ from sqlalchemy import select
 
 from .. import db
 from ..ai import polza
+from ..ai.images import fit_side
 from ..core import keys, storage
+from ..core import presets as presets_core
 from ..core.events import say, utcnow
 from ..core.logs import Trace, log
 from ..db.models import Frame, Generation, Job, Product
@@ -90,6 +92,8 @@ def _resume(gid, created):
     img = polza.extract_image(data)
     if img and aspect:      # модель могла генерировать в другом формате — приводим к формату кадра
         img = polza.crop_to_aspect(img, aspect)
+    if img:                 # и к разрешению пресета, если модель вернула меньше
+        img = fit_side(img, presets_core.out_side(st), tag, int(st.get("qc_min_side") or 0))
     if not img:
         _mark(gid, "error", "в ответе Polza нет картинки")
         return 0

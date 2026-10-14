@@ -7,7 +7,7 @@ from ..ai import persona as personas
 from ..ai import prompts as P
 from ..ai import styleref
 from ..ai import polza, qc
-from ..ai.images import ref_payload
+from ..ai.images import fit_side, ref_payload
 from ..core import presets as presets_core
 from ..core import storage
 from ..core.events import say
@@ -113,6 +113,7 @@ def handle(job_id):
                 raise polza.Pending(str(e), pend[-1] if pend else "") from e
             if not img:
                 raise RuntimeError("в ответе Polza нет картинки")
+            img = fit_side(img, presets_core.out_side(st), str(trace), int(st.get("qc_min_side") or 0))
         except polza.Pending as e:
             error = e
             log.warning("%s %s", trace, e)
