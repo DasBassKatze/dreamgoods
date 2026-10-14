@@ -16,6 +16,7 @@ from ..core import keys, storage
 from ..core.events import say, utcnow
 from ..core.logs import Trace, log
 from ..db.models import Frame, Generation, Job, Product
+from ..services import billing
 from ..services.common import context, write_usage
 from .queue import ACTIVE, enqueue
 
@@ -61,6 +62,8 @@ def _resume(gid, created):
         others = [k for k in keys.all_secrets(s, org.id) if k != key]
         ids = dict(org=org.id, project=project.id, product=product.id, frame=frame.id)
         sku, pos, model, edit = product.sku, frame.position, g.model, g.instruction
+        job = s.get(Job, g.job_id) if g.job_id else None
+        billing.by_master.set(bool(job and (job.payload or {}).get("by_master")))
     tag = f"[{sku} #{pos:02d}]"
     if not task_id or (created and utcnow() - created > timedelta(seconds=polza.POLL_GIVE_UP)):
         _mark(gid, "error", "результат Polza не получен за сутки")

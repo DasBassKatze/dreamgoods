@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import __version__
 from ..core import auth, storage
+from ..services.billing import by_master
 from ..core.logs import log
 from .routers import account, admin, auth as auth_routes, frames, generation, imports, media, personas, presets, products, projects, settings, styles
 
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
             token = auth.token_of(request)
             u = await run_in_threadpool(auth.user_by_token, token) if token else None
             request.state.user = u
+            by_master.set(bool(u and u.master))
             if u is None and not path.startswith(auth.PUBLIC) and not path.startswith(("/api/docs", "/api/openapi")):
                 return JSONResponse({"error": "войдите на сайт", "auth": False}, 401)
         return await call_next(request)

@@ -37,7 +37,11 @@ def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, p
         dup = s.scalar(select(Job.id).where(Job.product_id == product_id, Job.kind == "profile", Job.status.in_(ACTIVE)))
         if dup:
             return None
-    j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload or {},
+    from ..services.billing import by_master
+    payload = dict(payload or {})
+    if by_master.get():
+        payload["by_master"] = True          # запустил мастер — оплата напрямую с Polza
+    j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload,
             priority=priority)
     s.add(j)
     s.flush()
@@ -175,10 +179,12 @@ def set_parallel(n):
 
 
 def _funds_ok(job_id):
-    """Задание из очереди не запускается, если у клиента закончились деньги (поставлено, пока они были)."""
+    """Задание из очереди не запускается, если у клиента закончились деньги (поставлено, пока они были).
+    Заодно выставляет «запустил мастер» для обработчика задания."""
     from ..services import billing
     with db.session() as s:
-        pid = s.scalar(select(Job.project_id).where(Job.id == job_id))
+        pid, payload = s.execute(select(Job.project_id, Job.payload).where(Job.id == job_id)).one()
+    billing.by_master.set(bool((payload or {}).get("by_master")))
     return not pid or billing.has_funds(pid)
 
 
