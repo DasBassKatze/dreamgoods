@@ -53,7 +53,9 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
   }, [api]);
   const manual = d.plan_mode === "manual";
   const total = manual ? d.manual.reduce((a, b) => a + (b.count || 0), 0) : Object.values(d.plan).reduce((a, b) => a + (b || 0), 0);
-  const baseModel = String(d.quality === "custom" && d.custom.model ? d.custom.model : state.settings.model);
+  const baseModel = String(d.custom.model || state.settings.model);
+  const resolution = String(d.quality === "custom" ? d.custom.resolution || state.settings.resolution
+    : listing.quality.find((x) => x.key === d.quality)?.settings.resolution || state.settings.resolution);
   const stats = (b: BlockKey) => listing.model_stats.filter((x) => x.block === b);
   const q = listing.quality.find((x) => x.key === d.quality);
   const retries = d.quality === "custom" ? Number(d.custom.qc_retries ?? state.settings.qc_retries) : Number(q?.settings.qc_retries ?? 0);
@@ -87,9 +89,6 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         </div>
         {d.quality === "custom" && (
           <>
-            <label className="form-label">Модель генерации</label>
-            <input type="text" value={String(d.custom.model ?? "")} placeholder={`пусто — как в настройках (${state.settings.model})`}
-              onChange={(e) => setCustom("model", e.target.value)} />
             <label className="form-label">Разрешение · перегенераций</label>
             <div>
               <div className="row nowrap">
@@ -113,6 +112,21 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
               onChange={(e) => setCustom("qc_model", e.target.value)} />
           </>
         )}
+
+        <h4>Нейросеть генерации</h4>
+        <label className="form-label">Основная модель</label>
+        <div>
+          <ModelSelect value={String(d.custom.model ?? "")} onChange={(m) => setCustom("model", m)} models={models}
+            emptyLabel="по умолчанию" fallback={state.settings.model} baseModel={baseModel} resolution={resolution} />
+          <div className="hint mt4">Делает все кадры, если ниже для блока не выбрана своя модель.</div>
+        </div>
+        <label className="form-label">По блокам</label>
+        <div className="hint pt6">Простые кадры (белый фон, детали) можно делать дешёвой быстрой моделью, а сильную оставить для
+          кадров с человеком. Пусто — основная модель. {manual ? "У ручного метода можно выбрать свою модель — она главнее." : ""}</div>
+        {listing.blocks.map((b) => (
+          <BlockModel key={b.key} label={b.name} tip={MODEL_TIP[b.key]} value={d.block_models[b.key] || ""} models={models} baseModel={baseModel}
+            resolution={resolution} stats={stats(b.key)} onChange={(m) => setD({ ...d, block_models: { ...d.block_models, [b.key]: m } })} />
+        ))}
 
         <h4>Площадка</h4>
         <label className="form-label">Для какой площадки</label>
@@ -182,20 +196,13 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         {manual ? (
           <>
             <label className="form-label">Методы съёмки</label>
-            <ManualPlan listing={listing} items={d.manual} onChange={(m) => setD({ ...d, manual: m })} models={models} baseModel={baseModel} />
+            <ManualPlan listing={listing} items={d.manual} onChange={(m) => setD({ ...d, manual: m })} models={models} baseModel={baseModel}
+              blockModels={d.block_models} resolution={resolution} />
           </>
         ) : listing.blocks.map((b) => (
           <PlanRow key={b.key} label={b.name} hint={BLOCK_HINT[b.key]} max={b.max} value={d.plan[b.key] || 0} onChange={(v) => setPlan(b.key, v)} />
         ))}
 
-        <h4>Модель генерации по блокам</h4>
-        <label className="form-label">Зачем</label>
-        <div className="hint pt6">Простые кадры (белый фон, детали) можно делать дешёвой быстрой моделью, а сильную оставить для
-          кадров с человеком. Пусто — модель пресета ({baseModel}). {manual ? "У ручного метода можно выбрать свою модель — она главнее." : ""}</div>
-        {listing.blocks.map((b) => (
-          <BlockModel key={b.key} label={b.name} tip={MODEL_TIP[b.key]} value={d.block_models[b.key] || ""} models={models} baseModel={baseModel}
-            stats={stats(b.key)} onChange={(m) => setD({ ...d, block_models: { ...d.block_models, [b.key]: m } })} />
-        ))}
         <label className="form-label">Итого</label>
         <div>
           <b>{total} кадр(ов) на товар</b>
@@ -216,15 +223,16 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
   );
 }
 
-function BlockModel({ label, tip, value, models, baseModel, stats, onChange }: {
-  label: string; tip: string; value: string; models: CatalogModel[] | null; baseModel: string;
+function BlockModel({ label, tip, value, models, baseModel, resolution, stats, onChange }: {
+  label: string; tip: string; value: string; models: CatalogModel[] | null; baseModel: string; resolution: string;
   stats: PresetListing["model_stats"]; onChange: (v: string) => void;
 }) {
   return (
     <>
       <label className="form-label">{label}</label>
       <div>
-        <ModelSelect value={value} onChange={onChange} models={models} emptyLabel="как в пресете" baseModel={baseModel} />
+        <ModelSelect value={value} onChange={onChange} models={models} emptyLabel="основная" fallback={baseModel} baseModel={baseModel}
+          resolution={resolution} />
         <div className="hint mt4">{tip}
           {stats.length > 0 && <> · по вашим кадрам: {stats.map((x) => `${x.model.split("/").pop()} — ${x.n} кадр., `
             + `${x.first_pass == null ? "без проверки" : x.first_pass + "% с 1-й попытки"}, ${x.avg_cost} ₽`).join("; ")}</>}

@@ -152,6 +152,8 @@ export interface CatalogModel {
   name: string;
   price: string;
   refs?: boolean;
+  note?: string;                 // чем хороша модель и где слабее
+  max_res?: string | null;       // наибольшее разрешение, которое модель реально отдаёт (1K/2K/4K)
   providers: { name: string; price?: string }[];
 }
 

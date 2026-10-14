@@ -240,6 +240,10 @@ textarea.short { min-height: 70px; }
 .manual-item .mi-title { width: 220px; font-weight: 600; }
 .manual-item textarea.short { min-height: 56px; }
 .model-select { max-width: 520px; }
+.model-pick { flex: 1; min-width: 0; max-width: 520px; }
+.model-pick .model-select { width: 100%; max-width: none; }
+.model-note { font-size: 12px; line-height: 1.4; color: var(--muted); margin-top: 4px; }
+.model-note b { font-weight: 600; color: var(--text, inherit); }
 .manual-item .row.nowrap .mi-title { flex: 0 0 240px; }
 .persona-groups { border-top: 1px solid var(--line); padding-top: 10px; }
 

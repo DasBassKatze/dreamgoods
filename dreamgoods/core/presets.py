@@ -172,6 +172,12 @@ def clean_custom(values):
     return out
 
 
+def clean_main_model(values):
+    """Основная модель генерации пресета (для уровней «Черновик», «Стандарт», «Премиум»)."""
+    m = str((values or {}).get("model") or "").strip()[:120]
+    return {"model": m} if m else {}
+
+
 def out_side(st):
     """Короткая сторона готового кадра, px: своё значение пресета → уровень разрешения; не меньше минимума площадки."""
     side = int(st.get("out_side") or 0) or RESOLUTION_SIDE.get(str(st.get("resolution") or ""), 0)
@@ -196,8 +202,10 @@ def apply(st, preset):
     out = dict(st)
     out.update(q["settings"])
     out.pop("out_side", None)           # своё разрешение из настроек проекта не переносим в уровень пресета
-    if preset.quality == "custom":
-        out.update(clean_custom(preset.custom))
+    custom = clean_custom(preset.custom) if preset.quality == "custom" else clean_main_model(preset.custom)
+    if custom.get("model") and custom["model"] != st.get("model") and not custom.get("providers"):
+        out["providers"] = ""           # провайдер из настроек может не поддерживать модель пресета — выберет Polza
+    out.update(custom)
     out["plan_mode"] = "manual" if preset.plan_mode == "manual" else "auto"
     out["manual"] = clean_manual(preset.manual) if out["plan_mode"] == "manual" else []
     out["plan"] = manual_plan(out["manual"]) if out["plan_mode"] == "manual" else clean_plan(preset.plan)

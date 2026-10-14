@@ -122,7 +122,8 @@ def save(project_id, preset_id, data, master=False):
         p.name = (str(data.get("name") or "").strip() or "Новый пресет")[:120]
         p.description = str(data.get("description") or "").strip()
         p.quality = quality
-        p.custom = P.clean_custom(data.get("custom")) if quality == "custom" else {}
+        # основная модель пресета задаётся на любом уровне качества; остальные свои значения — только у «Своего»
+        p.custom = P.clean_custom(data.get("custom")) if quality == "custom" else P.clean_main_model(data.get("custom"))
         p.plan = P.clean_plan(data.get("plan"))
         p.plan_mode = "manual" if data.get("plan_mode") == "manual" else "auto"
         p.manual = P.clean_manual(data.get("manual"))

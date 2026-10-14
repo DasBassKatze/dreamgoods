@@ -64,13 +64,14 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
           <input type="password" value={apiKey} placeholder="оставьте пустым, чтобы не менять" onChange={(e) => setApiKey(e.target.value)} />
           <div className="hint">{v.has_key ? "Ключ сохранён (общий для всех проектов организации)" : "Ключ не найден — вставьте его сюда"}</div>
         </Row>
-        <Row label="Модель (ID)">
+        <Row label="Модель по умолчанию">
           <div className="row nowrap">
             <input type="text" list="known-models" value={v.model} onChange={(e) => set("model", e.target.value)} />
             <button type="button" onClick={() => onPickModel("image")}>Каталог Polza…</button>
           </div>
           <datalist id="known-models">{KNOWN_MODELS.map((m) => <option key={m} value={m} />)}</datalist>
-          <div className="hint">ID копируется со страницы модели на polza.ai</div>
+          <div className="hint">модель по умолчанию — работает, если в пресете не выбрана своя. Основную модель и модели по блокам
+            выбирают в пресете. ID копируется со страницы модели на polza.ai</div>
         </Row>
         <Row label="Провайдеры">
           {text("providers")}

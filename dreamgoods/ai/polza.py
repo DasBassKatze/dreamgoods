@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ..core.logs import log, mb
+from .model_notes import note_for
 
 API = "https://polza.ai/api/v1"
 # Баланс по документации Polza: GET /api/v1/balance → {"amount": "9.28"} — то же число, что в личном кабинете.
@@ -622,7 +623,8 @@ def image_models(force=False, kind="image", key=""):
             provs = [{"name": p.get("name") or "", "price": price_summary(p.get("pricing")),
                       "moderated": bool(p.get("is_moderated"))}
                      for p in (m.get("providers") or []) if isinstance(p, dict) and p.get("name")]
-            out.append({"id": m["id"], "name": m.get("name") or m["id"],
+            note, max_res = note_for(m["id"], m.get("name") or "", m.get("description") or "") if kind == "image" else ("", None)
+            out.append({"id": m["id"], "name": m.get("name") or m["id"], "note": note, "max_res": max_res,
                         "refs": "image" in (arch.get("input_modalities") or []),
                         "price": price_summary((m.get("top_provider") or {}).get("pricing")),
                         "providers": provs, "created": m.get("created") or 0})
