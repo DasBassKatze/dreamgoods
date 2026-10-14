@@ -504,3 +504,8 @@ button.link.danger { color: var(--err); }
   .page { padding: 16px 14px 30px; }
   .search { width: 100%; }
 }
+
+/* подпись сайта */
+.site-footer { display: flex; flex-direction: column; gap: 2px; font-size: 11px; line-height: 1.5; color: #7d8199; padding: 2px 6px 0; }
+.site-footer .ft-ver { font-variant-numeric: tabular-nums; }
+.site-footer.on-light { color: var(--muted); padding: 24px 0 0; }

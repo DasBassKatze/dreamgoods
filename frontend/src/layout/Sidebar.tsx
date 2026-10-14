@@ -2,6 +2,7 @@ import type { Me, ProjectRef } from "../api/types";
 import type { Route } from "../hooks/useRoute";
 import { rub } from "../lib/format";
 import { Icon } from "./Icon";
+import { SiteFooter } from "./SiteFooter";
 
 interface Props {
   me: Me;
@@ -104,6 +105,7 @@ export function Sidebar(p: Props) {
           </button>
           <button className="icon" title="Выйти" aria-label="Выйти" onClick={p.onLogout}><Icon name="logout" size={16} /></button>
         </div>
+        <SiteFooter />
       </nav>
     </>
   );
