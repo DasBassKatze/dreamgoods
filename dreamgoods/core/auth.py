@@ -190,6 +190,30 @@ def master(request: Request) -> CurrentUser:
 
 # ───────── первый запуск ─────────
 
+def ensure_master_cabinets(org_id):
+    """У каждого мастера — свой кабинет без внутреннего баланса: его проекты оплачиваются напрямую с баланса Polza.
+    Отдаём мастеру кабинет, который ещё никому не принадлежит (обычно «Мой магазин» с первыми проектами),
+    иначе создаём «Кабинет мастера»."""
+    from ..db.models import Client, Project
+    with db.session() as s:
+        for u in s.scalars(select(User).where(User.org_id == org_id, User.role == "master", User.client_id.is_(None))).all():
+            taken = set(s.scalars(select(User.client_id).where(User.client_id.is_not(None))).all())
+            c = next((c for c in s.scalars(select(Client).where(Client.org_id == org_id).order_by(Client.id)).all()
+                      if c.id not in taken), None)
+            if c is None:
+                name, n = "Кабинет мастера", 1
+                while s.scalar(select(Client.id).where(Client.org_id == org_id, Client.name == name)):
+                    n += 1
+                    name = f"Кабинет мастера {n}"
+                c = Client(org_id=org_id, name=name)
+                s.add(c)
+                s.flush()
+                s.add(Project(client_id=c.id, name="Основной проект", settings={}))
+            c.billing = False
+            u.client_id = c.id
+            log.info("Мастер %s: свой кабинет «%s» — генерации напрямую с баланса Polza", u.email, c.name)
+
+
 def bootstrap_master(org_id):
     """Мастер-аккаунт из .env (DREAMGOODS_ADMIN_EMAIL / DREAMGOODS_ADMIN_PASSWORD), если в базе ещё нет мастера с паролем."""
     email = config.app_env("ADMIN_EMAIL", "admin").strip().lower()

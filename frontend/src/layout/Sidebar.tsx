@@ -12,7 +12,9 @@ interface Props {
   projectId: number | null;
   onProject: (id: number) => void;
   onNewProject: () => void;
-  balance: { balance: number; billing: boolean } | null;
+  balance: { balance: number; billing: boolean; client?: string } | null;
+  /** мастеру: баланс Polza (по ключу текущего проекта) */
+  polza?: { value: number | null; error: string } | null;
   reviewCount: number;
   busy: boolean;
   onLogout: () => void;
@@ -89,9 +91,19 @@ export function Sidebar(p: Props) {
 
         <span className="spacer-v" />
 
-        {p.balance?.billing && (
+        {master && p.polza && (
+          <button className={`wallet polza ${p.route === "m-keys" ? "on" : ""} ${p.polza.error ? "low" : ""}`}
+            onClick={() => p.go("m-keys")} title="Баланс ключа Polza, на котором работает текущий проект. Все ключи — в «Ключи Polza»">
+            <span>Баланс Polza</span>
+            <b>{p.polza.value == null ? (p.polza.error ? "ошибка ключа" : "…") : rub(p.polza.value)}</b>
+            {p.balance?.billing
+              ? <small className="sub">кабинет «{p.balance.client}»: {rub(p.balance.balance)}</small>
+              : <small className="sub">ваши проекты — напрямую с этого баланса</small>}
+          </button>
+        )}
+        {!master && p.balance?.billing && (
           <button className={`wallet ${low ? "low" : ""} ${p.route === "balance" ? "on" : ""}`} onClick={() => p.go("balance")}>
-            <span>{master ? "Баланс кабинета" : "Баланс"}</span>
+            <span>Баланс</span>
             <b>{rub(p.balance.balance)}</b>
             {low && <small>пополните, чтобы запускать генерацию</small>}
           </button>

@@ -91,6 +91,8 @@ def create_project(client_name, name, user=None):
             c = s.get(Client, user.client_id or 0)
             if not c:
                 raise ValueError("у вашей учётной записи нет кабинета — обратитесь к администратору")
+        elif not (client_name or "").strip() and user is not None and user.client_id:
+            c = s.get(Client, user.client_id)        # мастер без указания кабинета — в свой
         else:
             c = s.scalar(select(Client).where(Client.org_id == org.id, Client.name == client_name.strip()))
         if not c:

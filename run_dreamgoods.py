@@ -65,6 +65,7 @@ def main():
     presets.seed(org_id)
     from dreamgoods.core import auth
     auth.bootstrap_master(org_id)
+    auth.ensure_master_cabinets(org_id)
     src = None
     if "--import-legacy" in sys.argv:
         src = sys.argv[sys.argv.index("--import-legacy") + 1]

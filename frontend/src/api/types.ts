@@ -121,7 +121,7 @@ export interface Metrics {
 export interface ProjectState {
   /** true — мастер-аккаунт (видны себестоимость, баланс Polza, метрики) */
   admin: boolean;
-  account: { balance: number; billing: boolean };
+  account: { balance: number; billing: boolean; client?: string };
   project: ProjectRef;
   persona: { id: number; name: string; asset: string | null } | null;
   style_ref: { id: number; name: string; asset: string | null } | null;

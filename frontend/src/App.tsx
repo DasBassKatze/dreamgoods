@@ -137,7 +137,8 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   const createProject = async () => {
     const fields = master
-      ? [{ key: "client", label: "Кабинет (клиент)", value: state?.project.client || "" }, { key: "name", label: "Название проекта", value: "" }]
+      ? [{ key: "name", label: "Название проекта", value: "" },
+         { key: "client", label: "Кабинет пользователя (пусто — ваш собственный)", value: "" }]
       : [{ key: "name", label: "Название проекта", value: "" }];
     const v = await ui.ask({ title: "Новый проект", ok: "Создать", fields });
     if (!v) return;
@@ -196,7 +197,8 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const body = (
     <div className="shell">
       <Sidebar me={me} route={route} go={go} projects={projects} projectId={projectId} onProject={setProjectId}
-        onNewProject={createProject} balance={account} reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy}
+        onNewProject={createProject} balance={account}
+        polza={master && state ? { value: state.balance, error: state.balance_error } : null} reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy}
         onLogout={onLogout} open={menuOpen} onToggle={() => setMenuOpen((x) => !x)} />
       <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
         {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
