@@ -54,11 +54,22 @@ def preset_of(s, product, project=None):
     return p if p and not p.archived else None
 
 
+USER_SWITCHES = ("qc_enabled", "qc_autoregen")
+
+
 def context(s, product):
     """(проект, организация, действующие настройки товара: проект + пресет)."""
     project = s.get(Project, product.project_id)
     org = s.get(Organization, project.client.org_id)
-    return project, org, presets.apply(effective(org, project), preset_of(s, product, project))
+    st = presets.apply(effective(org, project), preset_of(s, product, project))
+    # переключатели «ИИ-проверка» и «переделка брака» над списком товаров — явный выбор пользователя:
+    # они главнее уровня качества пресета (иначе «Стандарт» включал бы перегенерацию брака вопреки выключателю)
+    for k in USER_SWITCHES:
+        if k in (project.settings or {}):
+            st[k] = project.settings[k]
+    if not st.get("qc_enabled") or not st.get("qc_autoregen"):
+        st["qc_autoregen"] = bool(st.get("qc_enabled") and st.get("qc_autoregen"))
+    return project, org, st
 
 
 def org_of_project(s, project_id):
