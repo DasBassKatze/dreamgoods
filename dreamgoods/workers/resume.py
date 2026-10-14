@@ -58,7 +58,7 @@ def _resume(gid, created):
         frame = s.get(Frame, g.frame_id)
         product = s.get(Product, frame.product_id)
         project, org, st = context(s, product)
-        key, task_id = st.get("api_key"), g.external_id
+        key, task_id, aspect = st.get("api_key"), g.external_id, st.get("aspect")
         others = [k for k in keys.all_secrets(s, org.id) if k != key]
         ids = dict(org=org.id, project=project.id, product=product.id, frame=frame.id)
         sku, pos, model, edit = product.sku, frame.position, g.model, g.instruction
@@ -88,6 +88,8 @@ def _resume(gid, created):
         say("err", f"❌ {sku} · кадр {pos:02d}: задача Polza завершилась с ошибкой — перегенерируйте кадр", ids["project"])
         return 0
     img = polza.extract_image(data)
+    if img and aspect:      # модель могла генерировать в другом формате — приводим к формату кадра
+        img = polza.crop_to_aspect(img, aspect)
     if not img:
         _mark(gid, "error", "в ответе Polza нет картинки")
         return 0

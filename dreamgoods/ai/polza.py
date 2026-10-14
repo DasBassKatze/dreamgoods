@@ -56,6 +56,59 @@ def _not_sent(e):
         and "Connection aborted" not in txt and "reset by peer" not in txt
 
 
+class AspectUnsupported(RuntimeError):
+    """Модель не умеет нужный формат кадра (например, 3:4) — Polza вернула список допустимых."""
+    def __init__(self, msg, allowed):
+        super().__init__(msg)
+        self.allowed = allowed
+
+
+_aspects = {}          # модель → форматы, которые она умеет (узнаём из ответа Polza)
+
+
+def _ratio(a):
+    w, h = (int(x) for x in a.split(":"))
+    return w / h
+
+
+def nearest_aspect(target, allowed):
+    """Ближайший допустимый формат; при равенстве — тот, что выше (обрезать по высоте безопаснее для товара)."""
+    t = _ratio(target)
+    return min(allowed, key=lambda a: (abs(_ratio(a) - t), _ratio(a)))
+
+
+def crop_to_aspect(img_bytes, target):
+    """Обрезка по центру до нужного формата (после генерации в ближайшем допустимом)."""
+    from io import BytesIO
+    from PIL import Image
+    im = Image.open(BytesIO(img_bytes))
+    w, h = im.size
+    t = _ratio(target)
+    if abs(w / h - t) < 0.01:
+        return img_bytes
+    if w / h > t:                       # шире нужного — режем бока
+        nw = round(h * t)
+        box = ((w - nw) // 2, 0, (w - nw) // 2 + nw, h)
+    else:                               # выше нужного — режем верх и низ
+        nh = round(w / t)
+        box = (0, (h - nh) // 2, w, (h - nh) // 2 + nh)
+    out = BytesIO()
+    im.crop(box).save(out, "PNG")
+    return out.getvalue()
+
+
+def _with_aspect(st, prompt, target, tag):
+    """Если модель не умеет формат кадра — генерируем в ближайшем и потом обрезаем до нужного."""
+    allowed = _aspects.get(st["model"])
+    if not allowed or target in allowed:
+        return st, prompt, None
+    use = nearest_aspect(target, allowed)
+    log.info("%s модель %s не умеет формат %s — генерирую %s и обрежу до %s", tag, st["model"], target, use, target)
+    note = (f"\n\nFRAMING: this image will be center-cropped from {use} to {target}. Keep the product and every important "
+            "detail well inside the central area with generous empty margins on the edges that will be cut.")
+    return dict(st, aspect=use), prompt + note, target
+
+
 class Pending(RuntimeError):
     """Задача Polza принята (и, возможно, оплачена), но результат пока не получен: связь оборвалась, вышло время
     ожидания или не скачалась картинка. Результат дозагружается в фоне (workers/resume.py) — без повторной оплаты."""
@@ -138,8 +191,18 @@ def generate(st, key, prompt, refs, tag="", on_task=None):
     из-за внутренней ошибки (например, провайдер не скачал фото) и не была оплачена — один повтор через 15 с."""
     use_storage = st.get("upload_refs", True)
     payload = upload_refs(key, refs, tag) if use_storage else refs
+    target = st["aspect"]
+    st, prompt, crop = _with_aspect(st, prompt, target, tag)
     try:
-        return _generate_once(st, key, prompt, payload, tag, on_task)
+        try:
+            data = _generate_once(st, key, prompt, payload, tag, on_task)
+        except AspectUnsupported as e:
+            _aspects[st["model"]] = e.allowed
+            st, prompt, crop = _with_aspect(dict(st, aspect=target), prompt, target, tag)
+            data = _generate_once(st, key, prompt, payload, tag, on_task)
+        if crop:
+            data["_crop_to"] = crop
+        return data
     except TaskFailed as e:
         er = e.data.get("error") if isinstance(e.data.get("error"), dict) else {}
         code = str(er.get("code") or "").upper()
@@ -152,7 +215,10 @@ def generate(st, key, prompt, refs, tag="", on_task=None):
                     tag, raw_err[:160] or code)
         time.sleep(15)
         payload = upload_refs(key, refs, tag, force=True)
-        return _generate_once(st, key, prompt, payload, tag, on_task)
+        data = _generate_once(st, key, prompt, payload, tag, on_task)
+        if crop:
+            data["_crop_to"] = crop
+        return data
 
 
 def _generate_once(st, key, prompt, refs, tag="", on_task=None):
@@ -217,6 +283,11 @@ def _submit(headers, body, tag):
                 msg = r.json().get("error", {}).get("message") or r.text
             except Exception:
                 msg = r.text
+            if r.status_code == 400 and "aspect_ratio" in msg:
+                allowed = re.findall(r"\b\d{1,2}:\d{1,2}\b", msg.split("Допустимые", 1)[-1] if "Допустимые" in msg
+                                     else msg.split("allowed", 1)[-1])
+                if allowed:     # отказ до создания задачи — ничего не оплачено, можно повторить в другом формате
+                    raise AspectUnsupported(msg, allowed)
             log.error("%s Polza HTTP %s: %s", tag, r.status_code, msg[:500])
             raise RuntimeError(f"HTTP {r.status_code}: {msg[:300]}")
         return r.json()
@@ -298,6 +369,13 @@ def _short(obj, limit=1500):
 
 
 def extract_image(data):
+    img = _extract_raw(data)
+    if img and data.get("_crop_to"):
+        img = crop_to_aspect(img, data["_crop_to"])
+    return img
+
+
+def _extract_raw(data):
     items = data.get("data")
     items = [items] if isinstance(items, dict) else list(items or [])
     if isinstance(data.get("output"), dict):
