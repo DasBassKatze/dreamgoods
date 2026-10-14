@@ -59,7 +59,8 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
               : `Модель по группе «${p.persona.via}»`}>👤 {p.persona.name}</span>
         )}
         <span className="spacer" />
-        <button disabled={p.done === p.total} onClick={() => generate([p.id])}>▶ Догенерировать</button>
+        <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие"
+          onClick={() => generate([p.id])}>▶ Сгенерировать</button>
       </div>
 
       <div className="refs">

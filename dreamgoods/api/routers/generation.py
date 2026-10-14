@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends
 
 from ...core.events import say
-from ...services import frames
+from ...services import frames, presets
 from ...workers import queue
 from ..deps import need_key, project_id
 from ..schemas import CheckRequest, Selection
@@ -18,19 +18,23 @@ def _to_generate(pid, body: Selection):
 
 @router.post("/generate/preview")
 def preview_generate(body: Selection, pid: int = Depends(project_id)):
-    """Сколько кадров встанет в очередь (для подтверждения и оценки цены)."""
-    return {"count": len(_to_generate(pid, body))}
+    """Сколько кадров встанет в очередь (для подтверждения и оценки цены) и что изменится по пресету."""
+    if body.frame_ids is not None:
+        return {"count": len(_to_generate(pid, body)), "preset": None}
+    sync = presets.sync_for_generation(pid, body.product_ids, dry_run=True, limit=body.limit)
+    return {"count": sync["count"], "preset": sync}
 
 
 @router.post("/generate")
 def generate(body: Selection, pid: int = Depends(project_id)):
     """frame_ids — конкретные кадры (перегенерация); иначе — недостающие кадры выбранных товаров."""
     need_key(pid)
+    sync = presets.sync_for_generation(pid, body.product_ids, limit=body.limit) if body.frame_ids is None else None
     added = frames.enqueue_frames(pid, _to_generate(pid, body))
     if added:
         say("info", (f"↻ На перегенерацию поставлено кадров: {added}" if body.frame_ids is not None
                      else f"▶ В очередь добавлено кадров: {added}"), pid)
-    return {"added": added}
+    return {"added": added, "preset": sync}
 
 
 @router.post("/check/preview")

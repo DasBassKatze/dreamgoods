@@ -124,21 +124,43 @@ def frame_status(qcres):
     return "pass" if qcres["pass"] else "review"
 
 
-def rebuild_frames(s, product, prof, plan=None):
-    """Пересобирает промпты кадров из профиля по плану пресета. Если задание кадра поменялось, прежняя картинка
-    уходит в историю (не удаляется), а кадр становится «не сгенерирован». Кадры с историей не удаляются."""
+def plan_rows(s, product, prof, plan=None):
+    """Кадры товара по действующему пресету: [(промпт, подпись, блок, модель)]."""
     st = context(s, product)[2]
     if plan is None:
         plan = presets.plan_of(st)
     if st.get("plan_mode") == "manual":     # свои методы съёмки: (промпт, подпись, блок, модель)
-        rows = prompts.build_manual(prof, st.get("manual") or [], st.get("market"))
-    else:
-        rows = [(t, "", "", "") for t in prompts.build_prompts(prof, plan, st.get("market"))]
+        return prompts.build_manual(prof, st.get("manual") or [], st.get("market"))
+    return [(t, "", "", "") for t in prompts.build_prompts(prof, plan, st.get("market"))]
+
+
+def frames_differ(s, product, rows, keep_edited=True):
+    """Сколько кадров товара разойдётся с планом пресета: (изменятся/добавятся, уже готовых из них — переснимутся)."""
+    frames = {f.position: f for f in s.scalars(select(Frame).where(Frame.product_id == product.id, Frame.status != "retired")).all()}
+    changed = redo = 0
+    for i, (text, title, _, model) in enumerate(rows, 1):
+        f = frames.get(i)
+        if f is None:
+            changed += 1
+        elif (f.prompt != text and not (keep_edited and f.prompt_edited)) or (f.title or "") != title or (f.model or "") != model:
+            changed += 1
+            redo += bool(f.current_generation_id) and f.prompt != text and not (keep_edited and f.prompt_edited)
+    extra = [f for pos, f in frames.items() if pos > len(rows)]
+    return changed + len(extra), redo + sum(1 for f in extra if f.current_generation_id)
+
+
+def rebuild_frames(s, product, prof, plan=None, keep_edited=False):
+    """Пересобирает промпты кадров из профиля по плану пресета. Если задание кадра поменялось, прежняя картинка
+    уходит в историю (не удаляется), а кадр становится «не сгенерирован». Кадры с историей не удаляются.
+    keep_edited — не трогать промпты, исправленные вручную (при автоматической сверке перед генерацией)."""
+    rows = plan_rows(s, product, prof, plan)
     frames = {f.position: f for f in s.scalars(select(Frame).where(Frame.product_id == product.id)).all()}
     for i, (text, title, _, model) in enumerate(rows, 1):
         f = frames.get(i)
         if f:
             f.title, f.model = title, model
+            if keep_edited and f.prompt_edited and f.status != "retired":
+                continue
             if f.prompt != text and f.current_generation_id:
                 g = s.get(Generation, f.current_generation_id)
                 if g:

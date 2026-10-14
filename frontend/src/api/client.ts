@@ -73,6 +73,16 @@ const patch = <T>(p: string, b: unknown) => request<T>("PATCH", p, b);
 
 export const assetUrl = (id: string, w = 0) => `/api/assets/${id}${w ? `?w=${w}` : ""}`;
 
+/** Что произойдёт с кадрами при приведении к пресету перед генерацией. */
+export interface PresetSync {
+  products: number;
+  frames: number;
+  reshoot: number;
+  need_profile: number;
+  queued_profiles: number;
+  count: number;
+}
+
 export interface Selection {
   product_ids?: number[] | null;
   frame_ids?: number[] | null;
@@ -89,8 +99,8 @@ export function projectApi(id: number) {
     catalog: (kind: "image" | "qc", refresh = false) =>
       get<{ models: CatalogModel[]; error: string }>(`${p}/catalog?kind=${kind}${refresh ? "&refresh=true" : ""}`),
 
-    previewGenerate: (sel: Selection) => post<{ count: number }>(`${p}/generate/preview`, sel),
-    generate: (sel: Selection) => post<{ added: number }>(`${p}/generate`, sel),
+    previewGenerate: (sel: Selection) => post<{ count: number; preset: PresetSync | null }>(`${p}/generate/preview`, sel),
+    generate: (sel: Selection) => post<{ added: number; preset: PresetSync | null }>(`${p}/generate`, sel),
     previewCheck: (sel: Selection & { only_unchecked?: boolean }) => post<{ count: number }>(`${p}/check/preview`, sel),
     check: (sel: Selection & { only_unchecked?: boolean }) => post<{ added: number }>(`${p}/check`, sel),
     stop: () => post<{ cancelled: number }>(`${p}/stop`),
