@@ -14,10 +14,11 @@ export function Header({ dialogs, onProjectsChanged }: { dialogs: Dialogs; onPro
   const exportZip = async () => {
     const include = await ui.choose({
       title: "Скачать кадры",
-      text: "Какие кадры положить в архив? В архиве — папки по артикулам и отчёт report.csv.",
+      text: "«Принятые» — принятые вручную, прошедшие ИИ-проверку и кадры без проверки; кадры на ручной проверке (брак) — " +
+        "только в «Все готовые». В архиве — папки по артикулам и report.csv, где перечислены и кадры, не попавшие в архив, с причиной.",
       choices: [
         { value: "all", label: "Все готовые" },
-        { value: "accepted", label: "Только принятые", primary: true },
+        { value: "accepted", label: "Принятые", primary: true },
       ],
     });
     if (!include) return;
