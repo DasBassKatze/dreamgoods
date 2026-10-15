@@ -5,6 +5,7 @@ import { useActions } from "../hooks/useActions";
 import { useProject } from "../ProjectContext";
 import { SHORT_MARKET, useRunOptions } from "../features/generate/runOptions";
 import { pad } from "../lib/format";
+import { Icon } from "../layout/Icon";
 import { FrameTile } from "./FrameTile";
 import { useUI } from "./ui";
 
@@ -60,16 +61,16 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
           <span className="pbusy">составляю профиль по фото…</span>
         ) : p.profile ? (
           <span className="pchip2" title="Профиль товара — открыть и поправить" onClick={profileClick}>
-            🧠 {p.profile.category}{p.profile.subcategory ? ` · ${p.profile.subcategory}` : ""} · {p.profile.summary}
+            <Icon name="spark" size={13} />{p.profile.category}{p.profile.subcategory ? ` · ${p.profile.subcategory}` : ""} · {p.profile.summary}
           </span>
         ) : (
-          <button title="ИИ составит профиль товара по фото: описание, детали, чек-лист проверки, кадры" onClick={profileClick}>🧠 Профиль</button>
+          <button title="ИИ составит профиль товара по фото: описание, детали, чек-лист проверки, кадры" onClick={profileClick}><Icon name="spark" size={14} /> Профиль по фото</button>
         )}
-        {own && <span className="tag preset-tag" title="Свой пресет товара" onClick={dialogs.openPresets}>🎛 {own.name}</span>}
+        {own && <span className="tag preset-tag" title="Свой пресет товара" onClick={dialogs.openPresets}><Icon name="presets" size={13} />{own.name}</span>}
         {p.persona && (
           <span className="tag preset-tag" onClick={dialogs.openPersonas}
             title={p.persona.via === "товар" ? "Модель выбрана в профиле товара" : p.persona.via === "проект" ? "Модель проекта"
-              : `Модель по группе «${p.persona.via}»`}>👤 {p.persona.name}</span>
+              : `Модель по группе «${p.persona.via}»`}><Icon name="personas" size={13} />{p.persona.name}</span>
         )}
         <span className="mk-chip" title="Площадка и формат по пресету товара">{label}</span>
         <span className="spacer" />
@@ -104,7 +105,7 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
           Промптов для этого товара нет.
           <div className="row center">
             <button className="primary" disabled={busy || !chosen.length} onClick={() => profiles([p.id], true)}>
-              ✨ Составить профиль и промпты по фото
+              Составить профиль и промпты по фото
             </button>
           </div>
         </div>

@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/account", tags=["личный кабинет"])
 def balance(request: Request):
     u = auth.user(request)
     if not u.client_id:
-        return {"balance": None, "billing": False, "entries": [], "spent_month": 0, "markup": 1}
+        return {"balance": None, "billing": False, "entries": [], "spent_month": 0, "markup": 1, "prices": []}
     out = billing.account(u.client_id)
     out.pop("markup", None)
     return out

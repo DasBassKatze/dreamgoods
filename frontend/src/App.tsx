@@ -26,6 +26,7 @@ import { usePersistentState } from "./hooks/usePersistentState";
 import { useProjectState } from "./hooks/useProjectState";
 import { useRoute, type Route } from "./hooks/useRoute";
 import { ProjectsSidebar } from "./layout/ProjectsSidebar";
+import { SECTION_ROUTES, SectionNav } from "./layout/SectionNav";
 import { TopBar } from "./layout/TopBar";
 import { ProjectCtx, type ProjectScope } from "./ProjectContext";
 
@@ -214,6 +215,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
           onNewProject={createProject} open={menuOpen} onClose={() => setMenuOpen(false)} />
         <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
           {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
+          {scope && SECTION_ROUTES.includes(route) && <SectionNav route={route} go={go} />}
           {page}
         </main>
       </div>

@@ -49,7 +49,7 @@ export function PersonaManager({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal title={<>👤 Модели клиента <span className="hint">· {state.project.client}</span></>} width={1100} onClose={onClose}
+    <Modal title={<>Модели клиента <span className="hint">· {state.project.client}</span></>} width={1100} onClose={onClose}
       actions={!creating && <button className="primary" onClick={() => setCreating(true)}>＋ Новая модель</button>}>
       <div className="hint mb10">
         Модель — человек, который «носит» товар на кадрах в использовании и на общих планах. С ней все кадры получаются

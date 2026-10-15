@@ -86,14 +86,14 @@ export function ProfileEditor({ productId, onClose }: { productId: number; onClo
     run(async () => {
       await api.setProductPersona(productId, v ? +v : null);
       await reload();
-      ui.toast("Модель для товара сохранена. Чтобы одежда и сцены подобрались под неё — «🧠 Пересоставить ИИ»");
+      ui.toast("Модель для товара сохранена. Чтобы одежда и сцены подобрались под неё — «Пересоставить ИИ»");
     });
 
   const setStyle = (v: string) =>
     run(async () => {
       await api.setProductStyle(productId, v ? +v : null);
       await reload();
-      ui.toast("Оформление товара сохранено. Чтобы локации и настроение подобрались под него — «🧠 Пересоставить ИИ»");
+      ui.toast("Оформление товара сохранено. Чтобы локации и настроение подобрались под него — «Пересоставить ИИ»");
     });
 
   const body = (): ProfileData => {
@@ -144,7 +144,7 @@ export function ProfileEditor({ productId, onClose }: { productId: number; onClo
   return (
     <Modal title={`Профиль товара · ${data?.sku || "…"}`} width={980} onClose={onClose}
       footer={<>
-        <button onClick={regenerate}>🧠 Пересоставить ИИ</button>
+        <button onClick={regenerate}>Пересоставить ИИ</button>
         <span className="spacer" />
         <button onClick={() => save(false)}>Сохранить</button>
         <button className="primary" onClick={() => save(true)}>

@@ -73,7 +73,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
             <div key={g.id} className={`ig ${g.junk ? "junk" : ""} ${over === g.id ? "over" : ""}`} {...dropProps(g.id)}>
               <div className="ig-h">
                 {g.junk ? (
-                  <><b>🚫 Не использовать</b><span className="hint">размытые, случайные и лишние фото — в товары не попадут</span></>
+                  <><b>Не использовать</b><span className="hint">размытые, случайные и лишние фото — в товары не попадут</span></>
                 ) : (
                   <>
                     <input type="text" value={g.name} title="Артикул товара" onChange={(e) => rename(g.id, e.target.value)} />

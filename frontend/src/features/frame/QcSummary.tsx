@@ -2,8 +2,8 @@ import type { Frame, QcCounts } from "../../api/types";
 import { rub } from "../../lib/format";
 
 const TITLE: Record<string, string> = {
-  pass: "✅ ИИ-проверка пройдена",
-  review: "⚠️ ИИ нашёл брак — нужно ваше решение",
+  pass: "ИИ-проверка пройдена",
+  review: "ИИ нашёл брак — нужно ваше решение",
   accepted: "✔ Принято вами",
 };
 
@@ -32,7 +32,7 @@ export function QcSummary({ frame: f }: { frame: Frame }) {
     return (
       <div className="qc">
         <h4>Кадр не проверялся ИИ</h4>
-        <div className="hint">Нажмите «🔍 Проверить ИИ» или оцените сами.</div>
+        <div className="hint">Нажмите «Проверить ИИ» или оцените сами.</div>
       </div>
     );
   }

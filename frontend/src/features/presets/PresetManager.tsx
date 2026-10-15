@@ -56,7 +56,7 @@ export function PresetManager({ onClose, initialApply }: { onClose: () => void; 
     });
 
   return (
-    <Modal title="🎛 Пресеты генерации" width={1180} onClose={onClose}>
+    <Modal title="Пресеты генерации" width={1180} onClose={onClose}>
       {!data ? <div className="empty">Загрузка…</div> : (
         <div className="presets">
           <div className="preset-list">

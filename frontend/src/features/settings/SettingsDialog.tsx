@@ -95,7 +95,7 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
         <Row label="Передача фото">{check("upload_refs", "загружать фото-референсы в хранилище Polza и передавать ссылками — меньше сбоев «Image fetch failed», запросы легче")}</Row>
         <Row label="Фото модели клиента">
           {num("persona_refs", 1, 4)}
-          <div className="hint">сколько фото модели отправлять вместе с фото товара (кадры с человеком). Саму модель выбирают в «👤 Модель»</div>
+          <div className="hint">сколько фото модели отправлять вместе с фото товара (кадры с человеком). Саму модель выбирают в «Модель»</div>
         </Row>
 
         <h4>ИИ-проверка</h4>

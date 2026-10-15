@@ -140,7 +140,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   if (!open) return null;
   const progress = view?.progress;
   return (
-    <Modal title={<>📥 Импорт фото{sid != null && <span className="hint"> · сессия {sid}</span>}</>} width={1280}
+    <Modal title={<>Загрузка фото{sid != null && <span className="hint"> · сессия {sid}</span>}</>} width={1280}
       onClose={step === "done" ? finish : onClose}>
       {step === "upload" && (
         <UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze} />
@@ -160,7 +160,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
       {step === "done" && result && (
         <>
           <div className="empty">
-            ✅ Добавлено <b>{result.photos}</b> фото в <b>{result.folders.length}</b> товаров
+            Добавлено <b>{result.photos}</b> фото в <b>{result.folders.length}</b> товаров
             {result.labels > 0 && <>, этикеток (в генерацию не идут): <b>{result.labels}</b></>}.
             {result.merged.length > 0 && <div>Дополнены существующие товары: {result.merged.join(", ")}</div>}
             {opts.auto_profile && <p>Для новых товаров ИИ составляет профиль и промпты — они появятся в списке через несколько секунд.</p>}

@@ -157,10 +157,10 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
 
       <div className="row mt10">
         <button disabled={running} className={panel === "more" ? "on" : ""} onClick={() => setPanel(panel === "more" ? null : "more")}>＋ Ещё варианты…</button>
-        {hasMain && <button disabled={running} className={panel === "edit" ? "on" : ""} onClick={() => setPanel(panel === "edit" ? null : "edit")}>✏️ Изменить внешность…</button>}
-        {hasMain && <button disabled={running} onClick={sheet}>{hasSheet ? "↻ Переделать ракурсы" : "🧍 Сделать ракурсы (портрет, ¾, профиль)"}</button>}
-        <button disabled={running} onClick={() => input.current?.click()}>📷 Добавить фото</button>
-        {hasMain && p.source === "upload" && <button disabled={running} onClick={() => act(() => api.describePersona(p.id), "ИИ описывает внешность и стиль…")}>🧠 Описать по фото</button>}
+        {hasMain && <button disabled={running} className={panel === "edit" ? "on" : ""} onClick={() => setPanel(panel === "edit" ? null : "edit")}>Изменить внешность…</button>}
+        {hasMain && <button disabled={running} onClick={sheet}>{hasSheet ? "↻ Переделать ракурсы" : "Сделать ракурсы (портрет, ¾, профиль)"}</button>}
+        <button disabled={running} onClick={() => input.current?.click()}>Добавить фото</button>
+        {hasMain && p.source === "upload" && <button disabled={running} onClick={() => act(() => api.describePersona(p.id), "ИИ описывает внешность и стиль…")}>Описать по фото</button>}
         <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
       </div>
 

@@ -41,7 +41,7 @@ export function StyleManager({ onClose }: { onClose: () => void }) {
   const refresh = async () => { await load(); await reload(); };
 
   return (
-    <Modal title={<>🎨 Референсы оформления <span className="hint">· {state.project.client}</span></>} width={1100} onClose={onClose}
+    <Modal title={<>Оформление <span className="hint">· {state.project.client}</span></>} width={1100} onClose={onClose}
       actions={!creating && <button className="primary" onClick={() => setCreating(true)}>＋ Новый референс</button>}>
       <div className="hint mb10">
         Фото-пример того, как должны выглядеть кадры: свет, цвет, фон и обстановка, композиция, настроение. ИИ разбирает стиль,
@@ -179,7 +179,7 @@ function StyleCard({ r, blocks, onChange, run }: { r: StyleRef; blocks: StyleLis
         <button disabled={running || !r.photos.length} onClick={() => act(async () => {
           if (note !== r.note) await api.updateStyle(r.id, { note });
           await api.describeStyle(r.id);
-        }, "ИИ заново разбирает стиль…")}>🧠 Разобрать заново</button>
+        }, "ИИ заново разбирает стиль…")}>Разобрать заново</button>
         <span className="spacer" />
         {dirty && <button className="primary" onClick={() => act(() => api.updateStyle(r.id, { note, description: desc }), "Сохранено")}>Сохранить</button>}
       </div>

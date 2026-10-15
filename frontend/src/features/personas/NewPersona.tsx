@@ -63,8 +63,8 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
   return (
     <div className="persona-new">
       <div className="seg mb10">
-        <button className={mode === "generated" ? "on" : ""} onClick={() => setMode("generated")}>✨ Сгенерировать образ</button>
-        <button className={mode === "upload" ? "on" : ""} onClick={() => setMode("upload")}>📷 Загрузить фото своей модели</button>
+        <button className={mode === "generated" ? "on" : ""} onClick={() => setMode("generated")}>Сгенерировать образ</button>
+        <button className={mode === "upload" ? "on" : ""} onClick={() => setMode("upload")}>Загрузить фото своей модели</button>
       </div>
       <div className="form grid">
         <label className="form-label">Название</label>

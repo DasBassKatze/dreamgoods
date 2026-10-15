@@ -7,7 +7,7 @@
 """
 import contextvars
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from .. import db
 from ..core.logs import log
@@ -116,8 +116,14 @@ def account(client_id, limit=200):
         month = s.scalar(select(func.coalesce(func.sum(BalanceEntry.amount_rub), 0)).where(
             BalanceEntry.client_id == c.id, BalanceEntry.kind == "charge",
             BalanceEntry.created_at >= func.date_trunc("month", func.now())))
+        op = func.split_part(BalanceEntry.what, " · ", 1)
+        prices = s.execute(select(op, func.count(BalanceEntry.id), func.avg(BalanceEntry.amount_rub))
+                           .where(BalanceEntry.client_id == c.id, BalanceEntry.kind == "charge",
+                                  BalanceEntry.created_at >= func.now() - text("interval '90 days'"))
+                           .group_by(op).order_by(func.count(BalanceEntry.id).desc())).all()
         return {"balance": round(c.balance_rub or 0, 2), "billing": c.billing, "markup": markup_of(c, org),
                 "spent_month": abs(round(float(month or 0), 2)),
+                "prices": [{"what": w or "прочее", "count": n, "avg": abs(round(float(a or 0), 2))} for w, n, a in prices],
                 "entries": [entry_view(e) for e in rows]}
 
 

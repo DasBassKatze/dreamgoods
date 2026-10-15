@@ -808,3 +808,54 @@ button.big { padding: 11px 26px; font-size: 15px; font-weight: 600; border-radiu
 .content aside { top: calc(var(--top) + 14px); }
 .details { max-height: calc(100vh - var(--top) - 28px); }
 .details > * { flex-shrink: 0; }
+.price-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.price-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.price-card small { color: var(--muted); }
+.price-card b { font-size: 20px; }
+.modal { z-index: 100; }
+.toast { z-index: 200; }
+.section-nav { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 28px 0; }
+.section-nav .crumb { border: none; background: none; padding: 6px 4px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; font-weight: 500; }
+.section-nav .crumb:hover { color: var(--accent); }
+.section-nav .crumb .ico { transform: rotate(90deg); }
+.section-nav .pills button { display: inline-flex; align-items: center; gap: 6px; }
+.section-nav + .page { padding-top: 14px; }
+@media (max-width: 900px) {
+  .section-nav { padding: 12px 14px 0; }
+  .section-nav .pills { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .section-nav .pills button { white-space: nowrap; }
+}
+
+/* ───── телефон: формы в одну колонку, таблицы прокручиваются, вкладки — снизу ───── */
+@media (max-width: 700px) {
+  .opts, .pf-row, .facts, .bar-row { grid-template-columns: 1fr; }
+  .pf-row > label:first-child { padding-top: 0; }
+  .opts .ch .hint { margin-left: 0; }
+  .table-wrap, .page-body table { display: block; overflow-x: auto; }
+  .page-head { flex-wrap: wrap; }
+  .box { padding: 12px; }
+  .modal { padding: 8px; align-items: stretch; }
+  .box { max-height: none; height: 100%; }
+}
+@media (max-width: 900px) {
+  :root { --bottom: 60px; }
+  .tabs-top { position: fixed; left: 0; right: 0; bottom: 0; height: var(--bottom); z-index: 35; background: #fff; border-top: 1px solid var(--line);
+    justify-content: space-around; padding: 0 4px env(safe-area-inset-bottom); overflow: visible !important; }
+  .tabs-top > button, .tabs-top .menu-wrap > button { flex: 1; justify-content: center; padding: 0 4px !important; font-size: 12.5px; }
+  .tabs-top .menu-wrap { flex: 1; }
+  .tabs-top > button.on::after, .tabs-top .menu-wrap > button.on::after { top: -1px; bottom: auto; }
+  .tabs-top .menu { position: fixed; top: auto !important; bottom: calc(var(--bottom) + 8px); right: 8px; left: auto; }
+  .tabs-top .menu-wrap > button .ico { display: none; }
+  .topbar > .spacer { display: block !important; flex: 1; }
+  .brand span { display: inline !important; font-size: 17px; }
+  .app-body { padding-bottom: var(--bottom); }
+  .toast { bottom: calc(var(--bottom) + 14px); }
+  .projects-side { bottom: var(--bottom) !important; }
+}
+.lbl-short { display: none; }
+@media (max-width: 900px) { .lbl-long { display: none; } .lbl-short { display: inline; } }
+@media (max-width: 700px) {
+  .page table { display: block; overflow-x: auto; max-width: 100%; }
+  .page table td, .page table th { white-space: nowrap; }
+}
+.tag .ico, .pchip2 .ico, .preset-tag .ico { margin-right: 4px; vertical-align: -2px; }

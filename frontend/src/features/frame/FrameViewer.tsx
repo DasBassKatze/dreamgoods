@@ -176,7 +176,7 @@ export function FrameViewer({ productId, frameId, filter, onNavigate, onClose }:
                   title={(v.edit ? `Правка: ${v.edit}` : "Генерация") + (v.cost != null ? ` · ${rub(v.cost)} · ${v.model}` : "")}>
                   {v.asset ? <img src={assetUrl(v.asset, 160)} alt="" /> : <span className="spinner" />}
                   {v.current && <i className="vt cur">основная</i>}
-                  {!v.current && v.edit && <i className="vt">✏</i>}
+                  {!v.current && v.edit && <i className="vt"></i>}
                   {v.qc && <i className={`vq ${v.qc}`}>{v.qc === "pass" ? "✓" : "✗"}</i>}
                 </button>
               ))}
@@ -197,14 +197,14 @@ export function FrameViewer({ productId, frameId, filter, onNavigate, onClose }:
                 <button className="ok" disabled={busy} onClick={() => review("ok")}>✓ Принять <span className="kbd">1</span></button>
                 <button className="bad" disabled={busy} onClick={() => review("bad")}>✗ Брак <span className="kbd">2</span></button>
                 <button className="bad" disabled={busy} onClick={() => review("badregen")}>✗ Брак и переделать <span className="kbd">3</span></button>
-                <button disabled={busy} onClick={() => review("check")} title="ИИ-проверка этой картинки">🔍</button>
+                <button disabled={busy} onClick={() => review("check")} title="ИИ-проверка этой картинки">Проверить ИИ</button>
               </div>
             </section>
           )}
 
           {f.asset ? (
             <section className="lb-sec edit-sec">
-              <h4>✏️ Правка фото</h4>
+              <h4>Правка фото</h4>
               <div className="hint">Опишите своими словами, что изменить{sourceId ? " в выбранной версии" : ""}. Остальное — композиция,
                 свет, модель и сам товар — останется как есть. Старая версия сохранится в истории.</div>
               <textarea className="edit-input" rows={3} value={edit} placeholder="Например: убери складку на заднике и сделай фон чуть теплее"
@@ -214,7 +214,7 @@ export function FrameViewer({ productId, frameId, filter, onNavigate, onClose }:
                 {QUICK.map((q) => <button key={q} className="qchip" onClick={() => setEdit((cur) => (cur.trim() ? `${cur.trim()}; ${q.toLowerCase()}` : q))}>{q}</button>)}
               </div>
               <div className="row">
-                <button className="primary" disabled={busy || edit.trim().length < 3} onClick={submitEdit}>✏️ Изменить фото</button>
+                <button className="primary" disabled={busy || edit.trim().length < 3} onClick={submitEdit}>Изменить фото</button>
                 <span className="hint">Ctrl+Enter</span>
               </div>
             </section>
@@ -260,7 +260,7 @@ function AdminPrompt({ frameId }: { frameId: number }) {
   }, [open, text, api, frameId, ui]);
   return (
     <details className="lb-sec admin-only" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary>🛠 Промпт кадра (админ)</summary>
+      <summary>Промпт кадра (админ)</summary>
       {text == null ? <div className="hint">Загрузка…</div> : (
         <>
           <textarea value={text} onChange={(e) => setText(e.target.value)} />

@@ -14,7 +14,7 @@ export function BalancePage() {
   }, [ui]);
   return (
     <section className="page narrow">
-      <div className="page-head"><h1>Баланс</h1></div>
+      <div className="page-head"><h1>Тарифы и баланс</h1></div>
       {!d ? <div className="empty">Загрузка…</div> : (
         <>
           <div className="balance-hero">
@@ -27,6 +27,21 @@ export function BalancePage() {
               <b>{rub(d.spent_month)}</b>
             </div>
           </div>
+          {d.prices && d.prices.length > 0 && (
+            <>
+              <h2>Сколько стоят операции</h2>
+              <div className="price-grid">
+                {d.prices.map((x) => (
+                  <div key={x.what} className="price-card">
+                    <small>{x.what}</small>
+                    <b>≈ {rub(x.avg)}</b>
+                    <span className="hint">в среднем · {x.count} за 90 дней</span>
+                  </div>
+                ))}
+              </div>
+              <p className="hint">Цена зависит от пресета: качество, разрешение и модель генерации. «Улучшить до 4K» и «Удалить фон» стоят как правка кадра.</p>
+            </>
+          )}
           <p className="lead">Каждая генерация, правка и ИИ-проверка списывается сразу после выполнения. Если баланс закончился,
             новые задания не запускаются — уже начатые доделывают текущую попытку. Пополнить баланс можно у администратора сервиса.</p>
           <h2>История операций</h2>

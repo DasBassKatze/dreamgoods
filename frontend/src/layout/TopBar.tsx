@@ -74,7 +74,7 @@ export function TopBar(p: Props) {
         {master && (
           <div className="menu-wrap">
             <button className={p.route.startsWith("m-") ? "on" : ""} onClick={() => setOpen(open === "manage" ? "" : "manage")}>
-              Управление <Icon name="chevron" size={14} />
+              <span className="lbl-long">Управление</span><span className="lbl-short">Ещё</span> <Icon name="chevron" size={14} />
             </button>
             {open === "manage" && (
               <div className="menu">

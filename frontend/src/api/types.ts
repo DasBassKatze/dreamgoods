@@ -438,6 +438,8 @@ export interface AccountBalance {
   balance: number | null;
   billing: boolean;
   spent_month: number;
+  /** средняя цена операций за 90 дней — для вкладки «Тарифы» */
+  prices?: { what: string; count: number; avg: number }[];
   entries: LedgerEntry[];
 }
 

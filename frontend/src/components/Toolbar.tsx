@@ -1,6 +1,7 @@
 import { useActions } from "../hooks/useActions";
 import { useProject } from "../ProjectContext";
 import { useUI } from "./ui";
+import { Icon } from "../layout/Icon";
 
 export type Filter = "all" | "todo" | "review" | "err";
 
@@ -24,7 +25,7 @@ export function Toolbar({ filter, onFilter, query, onQuery }: {
         <div className="progress"><i style={{ width: `${t.total ? (t.done / t.total) * 100 : 0}%` }} /></div>
       </div>
       <span className="spacer" />
-      <input className="search" type="search" placeholder="🔎 Артикул или название…" value={query} onChange={(e) => onQuery(e.target.value)} />
+      <input className="search" type="search" placeholder="Артикул или название…" value={query} onChange={(e) => onQuery(e.target.value)} />
       <span className="seg">
         {FILTERS.map(([k, name, n]) => (
           <button key={k} className={`${filter === k ? "on" : ""} ${k === "err" && n ? "has-err" : ""}`} onClick={() => onFilter(k)}>
@@ -77,8 +78,8 @@ export function ListBar() {
         </span>
       )}
       <span className="spacer" />
-      <button title="Прогнать ИИ-проверку по уже сгенерированным кадрам без новой генерации" onClick={checkReady}>🔍 Проверить готовые</button>
-      <button title="Для товаров без промптов: ИИ составит профиль товара по фото и промпты кадров" onClick={newProfiles}>✨ Промпты для новых</button>
+      <button title="Прогнать ИИ-проверку по уже сгенерированным кадрам без новой генерации" onClick={checkReady}><Icon name="search" size={15} /> Проверить готовые</button>
+      <button title="Для товаров без промптов: ИИ составит профиль товара по фото и промпты кадров" onClick={newProfiles}><Icon name="spark" size={15} /> Промпты для новых</button>
       <span className="toggles">
         <label className="switch" title="Проверять каждый кадр ИИ">
           <input type="checkbox" checked={s.qc_enabled}
