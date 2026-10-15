@@ -206,7 +206,8 @@ def apply(prompt, description, n_product, n_persona, style=None):
     else:
         intro += "If the outfit described below does not suit this person, dress them in a similar style that does. "
     if s.get("expression"):
-        intro += f"Expression and posing manner: {s['expression'].rstrip('.')}. "
+        intro += (f"General posing manner: {s['expression'].rstrip('.')} (if a specific facial expression for this photo "
+                  "is given below, it takes priority). ")
     # описание человека из профиля товара заменяем на модель клиента, чтобы не было двух разных людей
     out = re.sub(r"Model: .*?, tasteful high-fashion editorial style\.",
                  "Model: the same person as in the model reference photos, tasteful high-fashion editorial style.", prompt, count=1)

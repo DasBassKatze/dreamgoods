@@ -2,11 +2,13 @@
 import time
 import traceback
 
+from sqlalchemy import select
+
 from .. import db
 from ..ai import persona as personas
 from ..ai import prompts as P
 from ..ai import styleref
-from ..ai import polza, qc
+from ..ai import polza, qc, series
 from ..ai.images import PostSlot, fit_side, ref_for
 from ..core import presets as presets_core
 from ..core import storage
@@ -56,6 +58,17 @@ def handle(job_id):
         if sref and not styleref.applies(P.block_of(base_prompt), sref.blocks, "main marketplace cover" in base_prompt.lower()):
             sref, style_assets = None, []
         style_name, style_desc, style_note = (sref.name, sref.description, sref.note) if sref else ("", "", "")
+        emotion, anchor_id = "", None
+        if not edit and st.get("series", True):     # серия товара как одна фотосессия (ai/series.py)
+            mates = s.scalars(select(Frame).where(Frame.product_id == product.id, Frame.status != "retired")
+                              .order_by(Frame.position)).all()
+            group = series.group_of(base_prompt)
+            same = [f for f in mates if series.group_of(f.prompt) == group]
+            if same and same[0].id != frame.id:
+                anchor_id = same[0].id
+            if series.is_full_body(base_prompt):
+                full = [f.id for f in mates if series.is_full_body(f.prompt)]
+                emotion = series.emotion_for(sku, full.index(frame.id) if frame.id in full else 0)
     trace = Trace(f"[{sku} #{pos:02d}]")
     side = int(st.get("ref_side") or 1536)
     refs = [ref_for(a, side) for a in ref_assets]
@@ -65,6 +78,14 @@ def handle(job_id):
     style_refs = [ref_for(a, side) for a in style_assets]
     if style_refs:
         log.info("%s оформление «%s»: фото %d", trace, style_name, len(style_refs))
+    anchor_refs = []
+    if anchor_id:
+        asset = _wait_anchor(anchor_id, job_id, trace)
+        if asset is not None:
+            anchor_refs = [ref_for(asset, side)]
+            log.info("%s серия: опорный кадр — тот же свет, цвет и образ, что на нём", trace)
+    if emotion:
+        log.info("%s эмоция модели в кадре: %s", trace, emotion)
     if edit:   # фото 1 — текущая версия кадра в полном размере, дальше — фото товара
         refs = [ref_for(source_asset, max(side, 2048))] + refs
         log.info("%s ✏ правка версии #%s: %s", trace, source_gen, edit)
@@ -73,7 +94,11 @@ def handle(job_id):
         if edit:
             return p
         p = styleref.apply(p, len(refs), len(persona_refs), len(style_refs), style_desc, style_note)
-        return personas.apply(p, persona_desc, len(refs), len(persona_refs), persona_style)
+        p = personas.apply(p, persona_desc, len(refs), len(persona_refs), persona_style)
+        if not st.get("series", True):
+            return series.orient(p, st.get("aspect"))
+        n_anchor = len(refs) + len(persona_refs) + len(style_refs) + 1 if anchor_refs else 0
+        return series.apply(p, st.get("aspect"), emotion, n_anchor)
     qc_on = bool(st.get("qc_enabled"))
     check_refs = qc_refs(ids["product"], st, ids, trace) if qc_on else []
     regen = qc_on and bool(st.get("qc_autoregen", True))
@@ -108,7 +133,8 @@ def handle(job_id):
                     s.flush()
                     pend.append(g.id)
             try:
-                data = polza.generate(st, key, gen_prompt, refs + persona_refs + style_refs, str(trace), on_task=on_task)
+                data = polza.generate(st, key, gen_prompt, refs + persona_refs + style_refs + anchor_refs, str(trace),
+                                         on_task=on_task)
                 try:
                     post.acquire()          # не больше POST_LIMIT полноразмерных картинок в памяти одновременно
                     img = polza.extract_image(data)
@@ -202,6 +228,32 @@ def handle(job_id):
         f.current_generation_id = best["gen"]
         f.status = frame_status(best["qc"])
     _report(sku, pos, ids["project"], qc_on, best, attempts, total, time.time() - t0, error, edit)
+
+
+ANCHOR_WAIT = 8 * 60
+
+
+def _wait_anchor(anchor_id, job_id, trace):
+    """Картинка опорного кадра серии. Если он сейчас снимается — ждём (поток спит, это дёшево), чтобы весь товар
+    снимался «от первого кадра». Если опорного кадра нет и он не в работе — снимаем без него."""
+    deadline = time.time() + ANCHOR_WAIT
+    noted = False
+    while True:
+        with db.session() as s:
+            f = s.get(Frame, anchor_id)
+            if f is None:
+                return None
+            g = s.get(Generation, f.current_generation_id) if f.current_generation_id else None
+            if g and g.output_asset_id and f.status != "rejected":
+                return g.output_asset
+            busy = s.scalar(select(Job.id).where(Job.frame_id == anchor_id, Job.status.in_(("queued", "running"))))
+        if not busy or time.time() > deadline or cancelled(job_id):
+            return None
+        if not noted:
+            set_note(job_id, "ждёт опорный кадр серии")
+            log.info("%s серия: жду опорный кадр — он снимается первым", trace)
+            noted = True
+        time.sleep(5)
 
 
 def _best(attempts):

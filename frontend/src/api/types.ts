@@ -70,6 +70,7 @@ export interface Settings {
   max_refs: number;
   ref_side: number;
   upload_refs: boolean;
+  series: boolean;
   qc_enabled: boolean;
   qc_autoregen: boolean;
   qc_retries: number;

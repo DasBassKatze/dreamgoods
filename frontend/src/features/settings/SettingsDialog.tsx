@@ -91,6 +91,7 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
         </Row>
         <Row label="Референсов в генерацию">{num("max_refs", 1, 14)}</Row>
         <Row label="Сжатие референсов, px">{num("ref_side", 512, 3072, 128)}</Row>
+        <Row label="Серия кадров">{check("series", "снимать кадры товара как одну фотосессию: сначала опорный кадр (обложка, первый кадр на модели), остальные — по нему с тем же светом, цветом и образом; в полный рост — разные эмоции модели")}</Row>
         <Row label="Передача фото">{check("upload_refs", "загружать фото-референсы в хранилище Polza и передавать ссылками — меньше сбоев «Image fetch failed», запросы легче")}</Row>
         <Row label="Фото модели клиента">
           {num("persona_refs", 1, 4)}
