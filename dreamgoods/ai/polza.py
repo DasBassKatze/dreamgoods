@@ -477,9 +477,69 @@ def qc_endpoint(st):
 def _parse_json(text):
     text = re.sub(r"```(?:json)?", "", text or "")
     a, b = text.find("{"), text.rfind("}")
-    if a < 0 or b <= a:
+    if a < 0:
         raise ValueError("модель ответила не JSON: " + text[:200])
-    return json.loads(text[a:b + 1])
+    body = text[a:b + 1] if b > a else text[a:]
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        return json.loads(_repair_json(text[a:]))
+
+
+def _repair_json(s):
+    """Типичные поломки JSON от языковых моделей: кавычки внутри строки без «\\» (размер 15", кнопка "Пуск"),
+    переносы строк внутри строки, запятая перед } или ], ответ, обрезанный на середине."""
+    out, stack, in_str, i, n = [], [], False, 0, len(s)
+    while i < n:
+        c = s[i]
+        if in_str:
+            if c == "\\" and i + 1 < n:
+                out.append(s[i:i + 2])
+                i += 2
+                continue
+            if c == '"':
+                j = i + 1
+                while j < n and s[j] in " \t\r\n":
+                    j += 1
+                if j >= n or s[j] in ",:}]":      # кавычка закрывает строку
+                    in_str = False
+                    out.append(c)
+                else:                            # кавычка внутри текста — экранируем
+                    out.append('\\"')
+            elif c == "\n":
+                out.append("\\n")
+            elif c == "\r":
+                pass
+            elif c == "\t":
+                out.append("\\t")
+            else:
+                out.append(c)
+        else:
+            if c == '"':
+                in_str = True
+            elif c in "{[":
+                stack.append("}" if c == "{" else "]")
+            elif c in "}]":
+                while out and out[-1].strip() == "":
+                    out.pop()
+                if out and out[-1] == ",":       # лишняя запятая перед закрывающей скобкой
+                    out.pop()
+                if stack:
+                    stack.pop()
+                out.append(c)
+                if not stack:                    # объект закончился — дальше пояснения модели
+                    break
+                i += 1
+                continue
+            out.append(c)
+        i += 1
+    if in_str:                                   # ответ обрезан на середине строки
+        out.append('"')
+    tail = "".join(out).rstrip()
+    tail = re.sub(r",\s*$", "", tail)
+    tail = re.sub(r'(,|\{)\s*"[^"]*"\s*:?\s*$', r"\1", tail)   # оборванный ключ без значения
+    tail = re.sub(r",\s*$", "", tail)
+    return tail + "".join(reversed(stack))
 
 
 _NO_REASONING = set()      # адреса API, которые не принимают параметр reasoning
@@ -547,9 +607,13 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
                            "поставьте в настройках «Рассуждения» ниже")
     try:
         res = _parse_json(msg)
-    except Exception:
-        log.error("%s %s: модель ответила не JSON: %s", tag, what, (msg or "")[:800])
-        raise
+    except Exception as e:
+        log.error("%s %s: модель ответила испорченным JSON (%s): %s", tag, what, e, (msg or "")[:3000])
+        cut = choice.get("finish_reason") == "length"
+        raise RuntimeError(f"{what}: модель {model} ответила испорченным JSON"
+                           + (" — ответ обрезан по лимиту токенов" if cut else "")
+                           + ", починить автоматически не удалось. Запустите ещё раз; если повторяется — смените модель"
+                           f" ({e})") from e
     return res, cost, secs
 
 
