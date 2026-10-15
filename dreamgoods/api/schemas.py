@@ -40,7 +40,7 @@ class RestoreRequest(BaseModel):
 
 
 class ParallelUpdate(BaseModel):
-    n: int = Field(..., ge=1, le=12)
+    n: int = Field(..., ge=1, le=200)
 
 
 class RefsUpdate(BaseModel):

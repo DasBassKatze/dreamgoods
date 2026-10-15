@@ -5,6 +5,7 @@
 генерация могла быть уже оплачена.
 """
 import os
+import random
 import socket
 import threading
 import time
@@ -73,9 +74,22 @@ def register_instance():
     threading.Thread(target=_heartbeat, daemon=True, name="heartbeat").start()
 
 
+def _trim_memory():
+    """Linux: вернуть системе память, освобождённую после обработки картинок (glibc держит её у себя).
+    При сотнях потоков без этого процесс «раздувается» до гигабайт. На Windows не нужно."""
+    try:
+        import ctypes
+        import sys
+        if sys.platform.startswith("linux"):
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
 def _heartbeat():
     while True:
         time.sleep(15)
+        _trim_memory()
         try:
             with db.session() as s:
                 s.execute(update(Instance).where(Instance.id == INSTANCE_ID).values(heartbeat_at=utcnow()))
@@ -149,7 +163,7 @@ def _where(s, j):
     return j.kind
 
 
-MAX_WORKERS = 12
+MAX_WORKERS = 200          # потоки дешёвые: ожидание Polza — сон на событии, опрос статусов общий (ai/throttle.py)
 _par = {"t": 0.0, "n": None}
 
 
@@ -200,7 +214,7 @@ def _worker(name, idx=1):
             time.sleep(5)
             continue
         if not got:
-            _wake.wait(2)
+            _wake.wait(3 + random.uniform(0, 2))     # разброс — сотни простаивающих потоков не опрашивают базу строем
             _wake.clear()
             continue
         job_id, kind = got
@@ -220,7 +234,7 @@ def _worker(name, idx=1):
 
 
 def start_workers(n=None):
-    n = n or max(config.WORKERS, MAX_WORKERS)
+    n = n or MAX_WORKERS
     for i in range(1, n + 1):
         threading.Thread(target=_worker, args=(f"worker-{i}", i), daemon=True, name=f"worker-{i}").start()
     log.info("Очередь: одновременных заданий %d (можно до %d — меняется в админ-панели)", parallel(), n)

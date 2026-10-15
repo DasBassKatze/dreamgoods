@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ..core.logs import log, mb
+from . import throttle
 from .model_notes import note_for
 
 API = "https://polza.ai/api/v1"
@@ -29,7 +30,7 @@ POLL_GIVE_UP = 24 * 3600         # результат Polza хранит сут�
 # там, где повтор безопасен:
 #   • ошибка установки соединения (запрос ещё не ушёл) — повтор для любых запросов, в том числе платных POST;
 #   • обрыв/таймаут чтения и 429/5xx — повтор только для GET (опрос статуса, скачивание, баланс): они бесплатны.
-POOL_SIZE = 32
+POOL_SIZE = 128
 
 
 def _make_session():
@@ -80,6 +81,12 @@ def nearest_aspect(target, allowed):
 
 def crop_to_aspect(img_bytes, target):
     """Обрезка по центру до нужного формата (после генерации в ближайшем допустимом)."""
+    from .images import DECODE_SLOTS
+    with DECODE_SLOTS:
+        return _crop_to_aspect(img_bytes, target)
+
+
+def _crop_to_aspect(img_bytes, target):
     from io import BytesIO
     from PIL import Image
     im = Image.open(BytesIO(img_bytes))
@@ -152,8 +159,15 @@ def _upload_one(key, item, tag, force=False):
         hit = _uploads.get((key[-8:], h))
     if hit and hit[1] > now and not force:
         return {"type": "url", "data": hit[0]}, True
-    r = http.post(STORAGE_URL, headers={"Authorization": f"Bearer {key}"}, timeout=(20, 120),
+    lim = throttle.limiter("upload", key)
+    with throttle.upload_slots:
+        lim.acquire()
+        r = http.post(STORAGE_URL, headers={"Authorization": f"Bearer {key}"}, timeout=(20, 120),
                       json={"base64": b64, "mimeType": mime, "storagePolicy": "TEMP_UPLOAD"})
+    if r.status_code in (429, 503):
+        lim.on_throttle(r.headers.get("Retry-After"))
+    else:
+        lim.on_ok()
     if r.status_code >= 400:
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
     url = (r.json() or {}).get("url")
@@ -259,13 +273,18 @@ def _generate_once(st, key, prompt, refs, tag="", on_task=None):
 
 
 def _submit(headers, body, tag):
-    """POST /media. Повтор только если запрос точно не ушёл или Polza ответила «занято» — иначе риск двойной оплаты."""
-    for attempt in range(4):
+    """POST /media. Скорость — адаптивный ограничитель ключа (throttle.py). Повтор только если запрос точно не ушёл
+    или Polza ответила «занято» (задача не создана) — иначе риск двойной оплаты."""
+    key = headers.get("Authorization", "")[7:]
+    lim = throttle.limiter("submit", key)
+    busy = 0
+    for attempt in range(12):
+        lim.acquire()
         try:
             r = http.post(f"{API}/media", headers=headers, json=body, timeout=(20, 180))
         except requests.RequestException as e:
             if _not_sent(e) and attempt < 3:
-                log.warning("%s нет соединения с Polza (попытка %d/4), запрос не ушёл — повторяю: %s", tag, attempt + 1, e)
+                log.warning("%s нет соединения с Polza (попытка %d), запрос не ушёл — повторяю: %s", tag, attempt + 1, e)
                 time.sleep(5 * (attempt + 1))
                 continue
             if _not_sent(e):
@@ -273,11 +292,10 @@ def _submit(headers, body, tag):
             log.error("%s связь с Polza оборвалась после отправки запроса — повтор не делаю (риск двойной оплаты): %s", tag, e)
             raise RuntimeError("связь с Polza оборвалась сразу после отправки запроса; повтор не делался, чтобы не "
                                "заплатить дважды. Если в кабинете Polza генерация списана — перегенерируйте кадр позже")
-        if r.status_code in (429, 502, 503, 504) and attempt < 3:
-            wait = int(r.headers.get("Retry-After") or 0) or 10 * (attempt + 1)
-            log.warning("%s Polza занята: HTTP %s (попытка %d/4), жду %d с: %s", tag, r.status_code, attempt + 1, wait,
-                        r.text[:200])
-            time.sleep(min(wait, 60))
+        if r.status_code in (429, 502, 503, 504) and busy < 8:
+            busy += 1
+            lim.on_throttle(r.headers.get("Retry-After"))     # все потоки этого ключа притормозят
+            log.debug("%s Polza занята: HTTP %s (%d-й раз): %s", tag, r.status_code, busy, r.text[:200])
             continue
         if r.status_code >= 400:
             try:
@@ -291,8 +309,9 @@ def _submit(headers, body, tag):
                     raise AspectUnsupported(msg, allowed)
             log.error("%s Polza HTTP %s: %s", tag, r.status_code, msg[:500])
             raise RuntimeError(f"HTTP {r.status_code}: {msg[:300]}")
+        lim.on_ok()
         return r.json()
-    raise RuntimeError("Polza перегружена — попробуйте позже")
+    raise RuntimeError("Polza перегружена — задача не создана, попробуйте позже")
 
 
 def get_task(key, task_id, timeout=(10, 45)):
@@ -303,35 +322,25 @@ def get_task(key, task_id, timeout=(10, 45)):
     return r.json()
 
 
+_poller = None
+
+
+def poller():
+    global _poller
+    if _poller is None:
+        _poller = throttle.TaskPoller(lambda k, t: get_task(k, t))
+    return _poller
+
+
 def wait_task(key, task_id, tag, t0, limit):
-    """Ждём завершения задачи. Временные сбои связи не прерывают ожидание: опрос продолжается.
-    Если за limit секунд результата нет — Pending (задача продолжит дозагружаться в фоне)."""
-    deadline = time.time() + limit
-    last, fails, data = None, 0, {}
-    while True:
-        time.sleep(POLL_EVERY if fails == 0 else min(30, POLL_EVERY * (fails + 1)))
-        try:
-            data = get_task(key, task_id)
-            if fails:
-                log.info("%s связь с Polza восстановлена после %d неудачных опросов", tag, fails)
-            fails = 0
-        except Exception as e:
-            fails += 1
-            (log.warning if fails in (1, 5, 20) else log.debug)(
-                "%s опрос статуса не удался (%d подряд): %s — продолжаю ждать", tag, fails, str(e)[:200])
-            if time.time() > deadline:
-                raise Pending(f"нет связи с Polza дольше {limit // 60} мин; задача {task_id} принята — "
-                              "результат будет дозагружен автоматически, когда связь появится", task_id)
-            continue
-        status = data.get("status")
-        if status != last:
-            log.info("%s статус: %s → %s (%.0f с)", tag, last or "создана", status, time.time() - t0)
-            last = status
-        if status in ("completed", "failed", "cancelled"):
-            return data
-        if time.time() > deadline:
-            raise Pending(f"Polza генерирует дольше {limit // 60} мин; задача {task_id} не потеряна — "
-                          "результат будет дозагружен автоматически", task_id)
+    """Ждём завершения задачи через общий опросчик (throttle.TaskPoller): поток задания спит, статусы опрашиваются
+    пакетно. Временные сбои связи не прерывают ожидание. Нет результата за limit секунд — Pending
+    (задача не потеряна и дозагрузится в фоне)."""
+    data = poller().wait(key, task_id, tag, t0, limit)
+    if data is None:
+        raise Pending(f"Polza генерирует дольше {int(limit) // 60} мин; задача {task_id} не потеряна — "
+                      "результат будет дозагружен автоматически", task_id)
+    return data
 
 
 def finish(data, tag, t0):
@@ -398,7 +407,8 @@ def download(url, tries=4):
     for a in range(tries):
         try:
             log.debug("скачиваю результат (попытка %d): %s", a + 1, url)
-            r = http.get(url, timeout=(15, 180))
+            with throttle.download_slots:
+                r = http.get(url, timeout=(15, 180))
             r.raise_for_status()
             if not r.content:
                 raise RuntimeError("пустой файл")
@@ -562,13 +572,16 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
     t0 = time.time()
     r = None
     attempt = 0
-    while attempt < 3:
+    while attempt < 6:
         try:
-            r = http.post(f"{base}/chat/completions", headers=headers, json=body, timeout=(20, 240))
+            lim = throttle.limiter("chat", key or base)
+            lim.acquire()
+            with throttle.chat_slots:
+                r = http.post(f"{base}/chat/completions", headers=headers, json=body, timeout=(20, 240))
         except requests.RequestException as e:
             attempt += 1
             log.warning("%s %s: модель недоступна (попытка %d/3): %s", tag, what, attempt, e)
-            if attempt == 3:
+            if attempt >= 3:
                 raise RuntimeError(f"{what}: нет связи с моделью: {e}")
             time.sleep(8)
             continue
@@ -577,10 +590,15 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
             _NO_REASONING.add(base)
             body.pop("reasoning")
             continue
-        if r.status_code in (429, 500, 502, 503) and attempt < 2:
+        if r.status_code in (429, 503):
+            lim.on_throttle(r.headers.get("Retry-After"))
+        elif r.status_code < 400:
+            lim.on_ok()
+        if r.status_code in (429, 500, 502, 503) and attempt < 5:
             attempt += 1
-            log.warning("%s %s: HTTP %s (попытка %d/3)", tag, what, r.status_code, attempt)
-            time.sleep(10 * attempt)
+            log.warning("%s %s: HTTP %s (попытка %d/5)", tag, what, r.status_code, attempt)
+            if r.status_code in (500, 502):        # 429/503 ждёт ограничитель скорости
+                time.sleep(5 * attempt)
             continue
         if r.status_code >= 400:
             log.error("%s %s: HTTP %s: %s", tag, what, r.status_code, r.text[:500])

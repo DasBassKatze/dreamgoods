@@ -119,7 +119,14 @@ function Overview({ o, reload, onCatalog }: { o: AdminOverview; reload: () => Pr
             <b style={{ width: 24 }}>{par}</b>
             <button className="primary" disabled={par === o.queue.parallel} onClick={saveParallel}>Применить</button>
           </div>
-          <div className="hint mt4">Больше — быстрее, но выше риск упереться в лимиты провайдера (HTTP 429). Обычно 3–6.</div>
+          <div className="hint mt4">Потоки почти ничего не стоят: пока Polza рисует, поток спит, а статусы проверяет общий опросчик.
+            Скорость отправки сервис подбирает сам — растёт, пока Polza отвечает, и снижается при «занято» (HTTP 429).</div>
+          <div className="met mt8">
+            <div><span>Заданий: в работе / в очереди</span><b>{o.queue.running} / {o.queue.queued}</b></div>
+            <div><span>Ждут результат у Polza</span><b>{o.queue.waiting_polza}</b></div>
+            <div><span>Скорость отправки задач</span><b>{o.queue.limits.submit_rate != null ? `${o.queue.limits.submit_rate} в сек.` : "—"}</b></div>
+            <div><span>Отказов «занято» за час</span><b className={o.queue.limits.throttled_hour ? "bad-text" : ""}>{o.queue.limits.throttled_hour}</b></div>
+          </div>
           <div className="row">
             <button disabled={!o.pending} onClick={resume}>⤵ Дозагрузить сейчас ({o.pending})</button>
           </div>

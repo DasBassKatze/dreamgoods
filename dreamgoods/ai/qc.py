@@ -24,6 +24,12 @@ def _aspect_value(a):
 
 def tech_check(img, st, tag=""):
     """Слой 1: быстрые проверки кодом. Возвращает (список проблем, сведения)."""
+    from .images import DECODE_SLOTS
+    with DECODE_SLOTS:
+        return _tech_check(img, st, tag)
+
+
+def _tech_check(img, st, tag=""):
     issues = []
     with Image.open(io.BytesIO(img)) as im:
         w, h = im.size
@@ -114,12 +120,13 @@ def vlm_check(st, task, refs, img, trace):
         desc = f"Reference {n}" + (f" — view: {r['view']}" if r.get("view") else "") \
             + (f"; visible here: {r['note']}" if r.get("note") else "") + (f". {labels[r['tag']]}" if r.get("tag") else "") + ":"
         content.append({"type": "text", "text": desc})
-        content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(r["data"], 768)}})
+        content.append({"type": "image_url", "image_url": {"url": r.get("url") or jpeg_data_url(r["data"], 768)}})
     shot = (f"\n\nThe generated image is a {view.upper()} shot of the product. Judge only the side of the product that faces "
             f"the camera; details that exist only on other sides are hidden in this shot and are not defects.") if view else ""
     content.append({"type": "text", "text": "TASK given to the image generator:\n" + task + shot + "\n\nGENERATED IMAGE to inspect:"})
     # кадр целиком в высоком разрешении: нарезка на части разрезала товар, и модель «не находила» детали на краях кусков
-    content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}})
+    content.append({"type": "image_url", "image_url": {"url": img if isinstance(img, str) else
+                                                       jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}})
     size = sum(len(c["image_url"]["url"]) for c in content if c["type"] == "image_url")
     log.info("%s → сверка: %s · строгость: %s · ракурс кадра: %s · референсы: %s · запрос %s", tag, st.get("qc_model"),
              {"strict": "строго", "critical": "только критичное"}.get(st.get("qc_strictness"), "обычно"),
@@ -226,7 +233,8 @@ def count_check(st, task, img, trace):
         "Count the product units visible in the image (entity name: product)."
     # увеличенные четверти нужны, чтобы разглядеть пальцы и ноги; для предметных кадров хватает общего вида
     content = [{"type": "text", "text": ask + "\n\nIMAGE:"},
-               {"type": "image_url", "image_url": {"url": jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}}]
+               {"type": "image_url", "image_url": {"url": img if isinstance(img, str) else
+                                                   jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}}]
     log.info("%s → подсчёт: %s · считаем: людей, части тела%s · %s · рассуждения %s", tag, model,
              (", " + ", ".join(names)) if names else "", "кадр целиком",
              st.get("qc_count_reasoning") or "auto")
@@ -286,11 +294,21 @@ def count_check(st, task, img, trace):
                                 for p in people]}}
 
 
+def prepare(img, st, tag=""):
+    """Всё, что нужно проверке от картинки: техпроверка и JPEG для модели. Дальше оригинал (до десятков МБ при 4K)
+    можно не держать в памяти, пока идёт запрос к модели проверки."""
+    issues, info = tech_check(img, st, tag)
+    return {"issues": issues, "info": info, "url": jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}
+
+
 def run_qc(st, task, refs, img, trace):
     """Проверка кадра: технический фильтр → одна сверка (только причины брака) → по желанию отдельный подсчёт.
-    Кадр принят, если причин брака нет."""
+    Кадр принят, если причин брака нет. img — байты картинки или результат prepare()."""
     tag = str(trace)
-    issues, info = tech_check(img, st, tag)
+    if not isinstance(img, dict):
+        img = prepare(img, st, tag)
+    issues, info = img["issues"], img["info"]
+    img = img["url"]
     if issues and st.get("qc_cascade", True):
         log.info("%s каскад: техпроверка провалена — модель не вызываю", tag)
         reasons, cost, counts = list(issues), 0.0, None

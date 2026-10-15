@@ -2,9 +2,20 @@
 
 Перед первым запуском поднимите PostgreSQL:  docker compose up -d
 """
+import os
 import sys
 import threading
 import webbrowser
+
+
+
+def _limit_malloc_arenas():
+    """Linux (сервер): сотни потоков заданий × по арене памяти glibc на поток = гигабайты «занятой» памяти после
+    обработки картинок. Две арены + периодический malloc_trim держат процесс компактным. Переменная читается только
+    при старте процесса, поэтому перезапускаем себя с ней. На Windows не нужно."""
+    if sys.platform.startswith("linux") and "MALLOC_ARENA_MAX" not in os.environ:
+        os.environ["MALLOC_ARENA_MAX"] = "2"
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 from dreamgoods.core import config
 from dreamgoods.core.logs import log, setup_logging
@@ -105,4 +116,5 @@ def main():
 
 
 if __name__ == "__main__":
+    _limit_malloc_arenas()
     main()

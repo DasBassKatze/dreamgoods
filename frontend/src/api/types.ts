@@ -380,7 +380,8 @@ export interface AdminOverview {
   pending: number;
   errors_24h: number;
   metrics: Metrics;
-  queue: { parallel: number; max: number };
+  queue: { parallel: number; max: number; waiting_polza: number; running: number; queued: number;
+    limits: { submit_rate: number | null; submitted: number; throttled_hour: number; poll_rate: number | null } };
   model: { model: string; providers: string; resolution: string; aspect: string; qc_model: string };
   default_password: boolean;
 }

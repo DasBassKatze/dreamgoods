@@ -1,9 +1,11 @@
 """Референсы товара для генерации и для проверки (с ракурсами)."""
 import threading
+from collections import OrderedDict
 
 from sqlalchemy import select
 
 from .. import db
+from ..ai.images import jpeg_data_url
 from ..ai import views
 from ..core import storage
 from ..core.logs import log
@@ -55,19 +57,36 @@ def qc_refs(product_id, st, ids, trace):
         return _qc_refs(product_id, st, ids, trace)
 
 
+_qc_cache, _qc_lock = OrderedDict(), threading.Lock()
+
+
+def _qc_url(asset):
+    """Фото товара для проверки — JPEG 768 px (кэш: в памяти не держим оригиналы по 5–10 МБ на каждое задание)."""
+    k = asset.storage_key
+    with _qc_lock:
+        if k in _qc_cache:
+            _qc_cache.move_to_end(k)
+            return _qc_cache[k]
+    url = jpeg_data_url(storage.get(asset), 768)
+    with _qc_lock:
+        _qc_cache[k] = url
+        while len(_qc_cache) > 600:
+            _qc_cache.popitem(last=False)
+    return url
+
+
 def _qc_refs(product_id, st, ids, trace):
     with db.session() as s:
         photos = s.scalars(select(ProductPhoto).where(ProductPhoto.product_id == product_id, ProductPhoto.is_reference.is_(True),
                                                       ProductPhoto.role != "label")
                            .order_by(ProductPhoto.position, ProductPhoto.id).limit(12)).all()
         items = [(p.id, p.asset, p.view, p.view_note) for p in photos]
-    data = {pid: storage.get(a) for pid, a, _, _ in items}
-    unknown = [pid for pid, _, v, _ in items if not v]
+    unknown = [(pid, a) for pid, a, v, _ in items if not v]
     labels = {}
-    if unknown:
+    if unknown:     # ракурсы ещё не подписаны — один раз, оригиналы нужны только здесь
         try:
-            res = views.classify_views(st, [data[pid] for pid in unknown], trace)
-            labels = dict(zip(unknown, res))
+            res = views.classify_views(st, [storage.get(a) for _, a in unknown], trace)
+            labels = dict(zip([pid for pid, _ in unknown], res))
             with db.session() as s:
                 for pid, (v, note) in labels.items():
                     ph = s.get(ProductPhoto, pid)
@@ -77,7 +96,7 @@ def _qc_refs(product_id, st, ids, trace):
             log.warning("%s ракурсы референсов не определены (%s) — проверка без них", trace, e)
             trace.usage.clear()
     out = []
-    for pid, _, v, note in items:
+    for pid, a, v, note in items:
         v2, n2 = labels.get(pid, (v, note))
-        out.append({"data": data[pid], "view": v2 or "", "note": n2 or ""})
+        out.append({"url": _qc_url(a), "view": v2 or "", "note": n2 or ""})
     return out
