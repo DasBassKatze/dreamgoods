@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, authApi, onAuthLost, projectApi } from "./api/client";
 import type { Me, ProjectRef } from "./api/types";
-import { Header } from "./components/Header";
-import { LogPanel } from "./components/LogPanel";
 import { PageMode } from "./components/Modal";
-import { ProductList } from "./components/ProductList";
-import { ProjectBar } from "./components/ProjectBar";
-import { ListBar, Toolbar, type Filter } from "./components/Toolbar";
+import type { Filter } from "./components/Toolbar";
 import { useUI } from "./components/ui";
 import { AccountPage } from "./features/account/AccountPage";
 import { BalancePage } from "./features/account/BalancePage";
@@ -14,6 +10,9 @@ import { AdminPanel } from "./features/admin/AdminPanel";
 import { LoginPage } from "./features/auth/LoginPage";
 import { ModelCatalog, type CatalogKind, type CatalogPick } from "./features/catalog/ModelCatalog";
 import { FrameViewer } from "./features/frame/FrameViewer";
+import { GalleryPage } from "./features/gallery/GalleryPage";
+import { GenerationPage } from "./features/generate/GenerationPage";
+import { HistoryPage } from "./features/history/HistoryPage";
 import { ImportWizard } from "./features/import/ImportWizard";
 import { FinancePage } from "./features/master/FinancePage";
 import { KeysPage } from "./features/master/KeysPage";
@@ -54,7 +53,7 @@ export function App() {
   return <Workspace key={me.id} me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
 }
 
-const NEEDS_PROJECT: Route[] = ["products", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
+const NEEDS_PROJECT: Route[] = ["products", "gallery", "history", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
 
 function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const ui = useUI();
@@ -67,7 +66,6 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
   const [pickedByProject, setPickedByProject] = usePersistentState<Record<string, number[]>>("picked-frames", {});
   const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(0);
 
   const [viewer, setViewer] = useState<{ productId: number; frameId: number } | null>(null);
@@ -75,6 +73,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [catalog, setCatalog] = useState<CatalogKind | null>(null);
   const [picked, setPicked] = useState<CatalogPick | null>(null);
 
+  useEffect(() => { window.scrollTo(0, 0); }, [route]);
   // чужие разделы не открываются по ссылке
   useEffect(() => {
     if (!master && route.startsWith("m-")) go("products");
@@ -196,21 +195,10 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
       case "m-settings": return <PageMode.Provider value><SettingsDialog onClose={toProducts} onPickModel={setCatalog} picked={picked} /></PageMode.Provider>;
       case "m-analytics": return <AdminPanel onCatalog={() => setCatalog("image")} />;
       case "m-log": return <AdminPanel onCatalog={() => setCatalog("image")} logOnly />;
+      case "gallery": return <GalleryPage dialogs={dialogs} />;
+      case "history": return <HistoryPage dialogs={dialogs} onBalance={() => go(master ? "m-finance" : "balance")} />;
       default:
-        return (
-          <>
-            <Header dialogs={dialogs} onProjectsChanged={loadProjects} />
-            <ProjectBar dialogs={dialogs} />
-            <Toolbar filter={filter} onFilter={setFilter} query={query} onQuery={setQuery} />
-            <div className="layout">
-              <div className="main-col">
-                <ListBar />
-                <ProductList filter={filter} query={query} dialogs={dialogs} />
-              </div>
-              <aside><LogPanel /></aside>
-            </div>
-          </>
-        );
+        return <GenerationPage key={projectId} dialogs={dialogs} filter={filter} onFilter={setFilter} onProjectsChanged={loadProjects} />;
     }
   })();
 

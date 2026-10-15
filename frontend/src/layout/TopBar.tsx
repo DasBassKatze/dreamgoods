@@ -5,12 +5,13 @@ import { rub } from "../lib/format";
 import { Icon } from "./Icon";
 
 const TABS: [Route, string][] = [
-  ["products", "Товары"],
-  ["import", "Загрузка"],
-  ["presets", "Пресеты"],
-  ["personas", "Модели"],
-  ["styles", "Оформление"],
+  ["products", "Генерация"],
+  ["gallery", "Галерея"],
+  ["history", "История"],
+  ["balance", "Тарифы"],
 ];
+/** Разделы, которые открываются кнопками со страницы генерации, — подсвечивают вкладку «Генерация». */
+const UNDER_GEN: Route[] = ["products", "import", "presets", "personas", "styles"];
 const MASTER: [Route, string][] = [
   ["m-users", "Пользователи"],
   ["m-finance", "Финансы"],
@@ -58,13 +59,18 @@ export function TopBar(p: Props) {
         <span>DreamGoods</span>
       </div>
       <nav className="tabs-top" aria-label="Разделы">
-        {TABS.map(([r, label]) => (
-          <button key={r} className={p.route === r ? "on" : ""} aria-current={p.route === r ? "page" : undefined} onClick={() => pick(r)}>
+        {TABS.map(([tab, label]) => {
+          // у мастера своего баланса нет — «Тарифы» ведут в финансы кабинетов
+          const r: Route = tab === "balance" && master ? "m-finance" : tab;
+          const on = r === "products" ? UNDER_GEN.includes(p.route) : p.route === r;
+          return (
+          <button key={tab} className={on ? "on" : ""} aria-current={on ? "page" : undefined} onClick={() => pick(r)}>
             {label}
             {r === "products" && p.busy && <i className="dot-run" title="Идёт генерация" />}
             {r === "products" && p.reviewCount > 0 && <em className="tab-badge" title="Кадры ждут вашего решения">{p.reviewCount}</em>}
           </button>
-        ))}
+          );
+        })}
         {master && (
           <div className="menu-wrap">
             <button className={p.route.startsWith("m-") ? "on" : ""} onClick={() => setOpen(open === "manage" ? "" : "manage")}>

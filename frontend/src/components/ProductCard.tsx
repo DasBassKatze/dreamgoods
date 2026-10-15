@@ -3,6 +3,8 @@ import { assetUrl } from "../api/client";
 import type { Product } from "../api/types";
 import { useActions } from "../hooks/useActions";
 import { useProject } from "../ProjectContext";
+import { SHORT_MARKET, useRunOptions } from "../features/generate/runOptions";
+import { pad } from "../lib/format";
 import { FrameTile } from "./FrameTile";
 import { useUI } from "./ui";
 
@@ -12,13 +14,24 @@ const VIEW_RU: Record<string, string> = {
   detail: "деталь", pair: "пара", worn: "на человеке", packaging: "упаковка",
 };
 
-export function ProductCard({ product: p, dialogs }: { product: Product; dialogs: Dialogs }) {
+interface Props {
+  product: Product;
+  dialogs: Dialogs;
+  focus: number | null;
+  onFocus: (productId: number, frameId: number) => void;
+}
+
+export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
   const { api, reload, run, selected, toggleSelected, state, pickedFrames, togglePicked } = useProject();
-  const { generate, regenerate, profiles } = useActions();
+  const { generate, regenerate, profiles, quick } = useActions();
+  const opts = useRunOptions();
   const ui = useUI();
   const chosen = p.photos.filter((x) => x.selected);
   const busy = p.profile_job?.state === "running";
   const own = p.preset_id ? state.presets.find((x) => x.id === p.preset_id) : null;
+  const eff = own || state.preset;
+  const aspect = eff?.aspect || "3:4";
+  const label = [eff?.market && eff.market !== "none" ? SHORT_MARKET[eff.market] : "", aspect].filter(Boolean).join(" · ");
 
   const toggleRef = (asset: string) =>
     run(async () => {
@@ -58,9 +71,10 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
             title={p.persona.via === "товар" ? "Модель выбрана в профиле товара" : p.persona.via === "проект" ? "Модель проекта"
               : `Модель по группе «${p.persona.via}»`}>👤 {p.persona.name}</span>
         )}
+        <span className="mk-chip" title="Площадка и формат по пресету товара">{label}</span>
         <span className="spacer" />
-        <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие"
-          onClick={() => generate([p.id])}>▶ Сгенерировать</button>
+        <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие (с пожеланиями из строки запуска)"
+          onClick={() => generate([p.id], 0, opts)}>Сгенерировать</button>
       </div>
 
       <div className="refs">
@@ -79,7 +93,9 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
       {p.total ? (
         <div className="frames">
           {p.frames.map((f) => (
-            <FrameTile key={f.id} frame={f} onOpen={() => dialogs.openFrame(p.id, f.id)} onRegen={() => regenerate(p, f)}
+            <FrameTile key={f.id} frame={f} fileName={`${p.sku}_${pad(f.i)}`} aspect={aspect} label={label}
+              focused={focus === f.id} onFocus={() => onFocus(p.id, f.id)} onUpscale={() => quick(p, f, "upscale")}
+              onOpen={() => dialogs.openFrame(p.id, f.id)} onRegen={() => regenerate(p, f)}
               picked={pickedFrames.has(f.id)} onPick={(on) => togglePicked(f.id, on)} />
           ))}
         </div>

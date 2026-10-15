@@ -38,8 +38,22 @@ def handle(job_id):
         sku, pos, base_prompt, prev_gen = product.sku, frame.position, frame.prompt, frame.current_generation_id
         # модель генерации: своя у ручного метода → модель блока пресета → общая (не стреляем из пушки по воробьям)
         st = presets_core.model_for(st, presets_core.BLOCK_OF_PROMPT.get(P.block_of(base_prompt), ""), frame.model)
+        run = job.payload or {}
+        brief = (run.get("brief") or "").strip()            # пожелания к запуску (строка над кадрами)
+        if run.get("market"):                               # площадка запуска поверх пресета
+            rules = presets_core.market_rules({"key": run["market"], "cover": True})
+            st = dict(st, market=rules)
+            if rules.get("aspect"):
+                st["aspect"] = rules["aspect"]
+            if rules.get("min_side"):
+                st["qc_min_side"] = rules["min_side"]
+        if run.get("aspect"):
+            st = dict(st, aspect=run["aspect"])
+        if run.get("resolution"):                           # «Улучшить до 4K»
+            st = dict(st, resolution=run["resolution"], out_side=3600)
         comment = (job.payload or {}).get("comment", "")
         edit = ((job.payload or {}).get("edit") or "").strip()     # правка готового фото по промпту
+        edit_label = (job.payload or {}).get("label") or ""
         source_gen, source_asset = None, None
         if edit:
             source_gen = int((job.payload or {}).get("source") or prev_gen or 0)
@@ -47,6 +61,8 @@ def handle(job_id):
             if not sg or sg.frame_id != frame.id or not sg.output_asset_id:
                 raise RuntimeError("нет исходной картинки для правки — сначала сгенерируйте кадр")
             source_asset = sg.output_asset
+            if source_asset.width and source_asset.height:   # правка сохраняет формат исходной версии
+                st = dict(st, aspect=polza.nearest_aspect(f"{source_asset.width}:{source_asset.height}", presets_core.ASPECTS))
         ref_assets = [p.asset for p in photos]
         if edit:
             ref_assets = ref_assets[:4]   # для правки фото товара нужны только как сверка — хватит четырёх
@@ -95,6 +111,12 @@ def handle(job_id):
             return p
         p = styleref.apply(p, len(refs), len(persona_refs), len(style_refs), style_desc, style_note)
         p = personas.apply(p, persona_desc, len(refs), len(persona_refs), persona_style)
+        if brief:
+            p += f"\n\nCLIENT WISHES for this photo set (may be in Russian; follow them unless they contradict keeping the product identical): {brief}"
+        m = st.get("market") or {}
+        if run.get("market") and "main marketplace cover" in base_prompt.lower():
+            p += (f"\n\nThis cover must follow the rules of {m.get('name')}: {m.get('cover_bg')}, the product filling "
+                  f"{m.get('cover_fill')}" + (f", {m.get('cover_extra')}" if m.get("cover_extra") else "") + ".")
         if not st.get("series", True):
             return series.orient(p, st.get("aspect"))
         n_anchor = len(refs) + len(persona_refs) + len(style_refs) + 1 if anchor_refs else 0
@@ -128,7 +150,7 @@ def handle(job_id):
             def on_task(task_id, a=a, gen_prompt=gen_prompt):
                 with db.session() as s:
                     g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
-                                   status="pending", external_id=task_id, instruction=edit, source_id=source_gen)
+                                   status="pending", external_id=task_id, instruction=edit_label or edit, source_id=source_gen)
                     s.add(g)
                     s.flush()
                     pend.append(g.id)
@@ -160,7 +182,7 @@ def handle(job_id):
                         g.status, g.error, g.seconds = "error", str(e)[:2000], time.time() - ta
                     if not pend:
                         s.add(Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
-                                         status="error", error=str(e)[:2000], seconds=time.time() - ta, instruction=edit,
+                                         status="error", error=str(e)[:2000], seconds=time.time() - ta, instruction=edit_label or edit,
                                          source_id=source_gen))
                 break
             cost = polza.cost_of(data)
@@ -174,7 +196,7 @@ def handle(job_id):
                 g = s.get(Generation, pend[-1]) if pend else None
                 if g is None:
                     g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
-                                   instruction=edit, source_id=source_gen)
+                                   instruction=edit_label or edit, source_id=source_gen)
                     s.add(g)
                 g.provider, g.status, g.output_asset_id, g.cost_rub = provider, "ok", asset.id, cost
                 g.seconds, g.external_id = time.time() - ta, str(data.get("id") or g.external_id or "")

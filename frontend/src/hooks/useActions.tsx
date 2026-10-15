@@ -3,17 +3,42 @@ import { useUI } from "../components/ui";
 import { pad, rub } from "../lib/format";
 import { useProject } from "../ProjectContext";
 
+/** Пожелания к одному запуску: текст, площадка и формат поверх пресета. */
+export interface RunOptions {
+  brief?: string;
+  market?: string;
+  aspect?: string;
+}
+
 /** Действия запуска с подтверждением и оценкой цены — общие для шапки, карточек и просмотра кадра. */
 export function useActions() {
   const { api, state, reload, selected, run } = useProject();
   const ui = useUI();
 
-  const generate = (productIds: number[] | null, limit = 0) =>
+  const generate = (productIds: number[] | null, limit = 0, opts: RunOptions = {}) =>
     run(async () => {
-      const p = await api.previewGenerate({ product_ids: productIds, limit });
+      const p = await api.previewGenerate({ product_ids: productIds, limit, ...opts });
       const ps = p.preset;
       if (!p.count && !ps?.need_profile) {
-        ui.toast("Все кадры уже готовы и соответствуют пресету");
+        const wishes = !!(opts.brief?.trim() || opts.market || opts.aspect);
+        const ids = state.products.filter((x) => !productIds || productIds.includes(x.id))
+          .flatMap((x) => x.frames.filter((f) => f.asset && f.state !== "queued" && f.state !== "running").map((f) => f.id))
+          .slice(0, limit || undefined);
+        if (!wishes || !ids.length) {
+          ui.toast("Все кадры уже готовы и соответствуют пресету");
+          return;
+        }
+        const avg = state.totals.avg_cost;
+        const ok = await ui.confirm({
+          title: "Переснять готовые кадры?",
+          text: <>Все кадры уже готовы. Переснять {ids.length} кадр(ов) с новыми пожеланиями{avg ? ` (≈ ${rub(ids.length * avg)})` : ""}?
+            <p className="hint">Прежние варианты останутся в истории кадра — к ним можно вернуться.</p></>,
+          ok: "Переснять",
+        });
+        if (!ok) return;
+        const r = await api.generate({ frame_ids: ids, ...opts });
+        ui.toast(r.added ? `В очереди кадров: ${r.added}` : "Кадры уже в очереди");
+        await reload();
         return;
       }
       const s = state.settings;
@@ -27,6 +52,7 @@ export function useActions() {
       const notes = [
         ps?.products ? `Кадры ${ps.products} товар(ов) приведены к пресету` + (ps.reshoot
           ? `: ${ps.reshoot} готовых кадр(ов) снимутся заново, прежние варианты останутся в истории.` : ".") : "",
+        opts.brief?.trim() ? `Пожелания к запуску: «${opts.brief.trim().slice(0, 140)}${opts.brief.trim().length > 140 ? "…" : ""}»` : "",
         ps?.need_profile ? `Для ${ps.need_profile} товар(ов) ИИ сначала составит профиль по фото — их кадры встанут в очередь сами.` : "",
       ].filter(Boolean);
       const ok = await ui.confirm({
@@ -36,7 +62,7 @@ export function useActions() {
         ok: "Сгенерировать",
       });
       if (!ok) return;
-      const r = await api.generate({ product_ids: productIds, limit });
+      const r = await api.generate({ product_ids: productIds, limit, ...opts });
       ui.toast(r.added || r.preset?.queued_profiles
         ? `В очереди кадров: ${r.added}${r.preset?.queued_profiles ? ` · профилей: ${r.preset.queued_profiles}` : ""}`
         : "Нечего запускать");
@@ -83,5 +109,23 @@ export function useActions() {
       await reload();
     });
 
-  return { generate, regenerate, checkReady, profiles };
+  /** «Улучшить до 4K» и «Удалить фон» — новая версия кадра правкой, прежняя остаётся в истории. */
+  const quick = (product: Product, frame: Frame, action: "upscale" | "remove_bg") =>
+    run(async () => {
+      if (!frame.asset) return;
+      const avg = state.totals.avg_cost;
+      const what = action === "upscale" ? "Улучшить кадр до 4K" : "Удалить фон (чистый белый)";
+      const ok = await ui.confirm({
+        title: what,
+        text: <>{what} — кадр {pad(frame.i)} товара {product.sku}{avg ? ` (≈ ${rub(avg)})` : ""}?
+          <p className="hint">Получится новая версия кадра; текущая останется в «Вариациях».</p></>,
+        ok: action === "upscale" ? "Улучшить" : "Удалить фон",
+      });
+      if (!ok) return;
+      await api.quick(frame.id, action);
+      ui.toast("Кадр поставлен в очередь");
+      await reload();
+    });
+
+  return { generate, regenerate, checkReady, profiles, quick };
 }

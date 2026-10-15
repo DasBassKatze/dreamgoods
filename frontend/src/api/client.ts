@@ -8,6 +8,7 @@ import type {
   UsersListing,
   CatalogModel,
   FrameVersion,
+  HistoryItem,
   ImportResult,
   ImportView,
   PersonaListing,
@@ -72,6 +73,8 @@ const put = <T>(p: string, b: unknown) => request<T>("PUT", p, b);
 const patch = <T>(p: string, b: unknown) => request<T>("PATCH", p, b);
 
 export const assetUrl = (id: string, w = 0) => `/api/assets/${id}${w ? `?w=${w}` : ""}`;
+/** Ссылка «скачать оригинал» с понятным именем файла. */
+export const downloadUrl = (id: string, name: string) => `/api/assets/${id}?dl=${encodeURIComponent(name)}`;
 
 /** Что произойдёт с кадрами при приведении к пресету перед генерацией. */
 export interface PresetSync {
@@ -87,6 +90,10 @@ export interface Selection {
   product_ids?: number[] | null;
   frame_ids?: number[] | null;
   limit?: number;
+  /** пожелания к этому запуску — поверх пресета */
+  brief?: string;
+  market?: string;
+  aspect?: string;
 }
 
 /** Методы проекта. */
@@ -110,6 +117,8 @@ export function projectApi(id: number) {
     setPrompt: (frameId: number, text: string) => put<{ ok: true }>(`${p}/frames/${frameId}/prompt`, { text }),
     editFrame: (frameId: number, instruction: string, sourceId?: number) =>
       post<{ ok: true }>(`${p}/frames/${frameId}/edit`, { instruction, source_id: sourceId ?? null }),
+    quick: (frameId: number, action: "upscale" | "remove_bg") => post<{ ok: true }>(`${p}/frames/${frameId}/quick`, { action }),
+    runs: (before?: number) => get<{ items: HistoryItem[] }>(`${p}/history${before ? `?before=${before}` : ""}`),
     history: (frameId: number) => get<{ versions: FrameVersion[] }>(`${p}/frames/${frameId}/history`),
     restore: (frameId: number, generationId: number) =>
       post<{ ok: true }>(`${p}/frames/${frameId}/restore`, { generation_id: generationId }),

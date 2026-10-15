@@ -268,6 +268,30 @@ export interface PresetRef {
   total: number;
   quality: string;
   plan_mode?: "auto" | "manual";
+  /** площадка и формат пресета — для плашки «Wildberries · 3:4» */
+  market?: MarketKey;
+  market_name?: string;
+  aspect?: string;
+}
+
+/** Запись вкладки «История»: одна генерация или правка кадра. */
+export interface HistoryItem {
+  id: number;
+  frame_id: number;
+  product_id: number;
+  sku: string;
+  position: number;
+  title: string;
+  asset: string | null;
+  status: "ok" | "pending" | "error";
+  current: boolean;
+  edit: string;
+  attempt: number;
+  created: string | null;
+  qc: "pass" | "fail" | null;
+  error: string;
+  model?: string;
+  cost?: number;
 }
 
 export type BlockKey = "studio" | "detail" | "worn" | "full" | "lifestyle";

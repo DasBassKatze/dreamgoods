@@ -38,6 +38,14 @@ def _plain(line):
     return {**line, "text": _MONEY.sub("", line["text"])}
 
 
+def _market_badge(market, st):
+    """Площадка и формат пресета для плашки на карточке товара: «Wildberries · 3:4»."""
+    r = presets_core.market_rules(market or {})
+    key = r.get("key") or "none"
+    return {"market": key, "market_name": "" if key == "none" else r.get("name", ""),
+            "aspect": r.get("aspect") or st.get("aspect") or "3:4"}
+
+
 def state(project_id, admin=False):
     with db.session() as s:
         project = s.get(Project, project_id)
@@ -162,7 +170,8 @@ def state(project_id, admin=False):
         met = metrics(s, project_id, spent_all) if admin else None
         proj = {"id": project.id, "name": project.name, "client": project.client.name}
         preset_names = {x.id: {"id": x.id, "name": x.name, "total": presets_core.preset_total(x), "quality": x.quality,
-                                     "plan_mode": x.plan_mode or "auto"}
+                                     "plan_mode": x.plan_mode or "auto",
+                                     **_market_badge(x.market, st)}
                         for x in s.scalars(select(GenerationPreset).where(GenerationPreset.org_id == org.id,
                                                                           GenerationPreset.archived.is_(False),
                                                                           GenerationPreset.client_id.is_(None)

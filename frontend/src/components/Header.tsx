@@ -1,13 +1,12 @@
 import type { Dialogs } from "../App";
 import { api } from "../api/client";
-import { useActions } from "../hooks/useActions";
+import { Icon } from "../layout/Icon";
 import { useProject } from "../ProjectContext";
 import { useUI } from "./ui";
 
 /** Шапка страницы «Товары и кадры»: проект и главные действия. */
-export function Header({ dialogs, onProjectsChanged }: { dialogs: Dialogs; onProjectsChanged: () => void }) {
-  const { state, api: papi, selected, reload, run, limit, pickedFrames } = useProject();
-  const { generate } = useActions();
+export function Header({ onProjectsChanged }: { dialogs?: Dialogs; onProjectsChanged: () => void }) {
+  const { state, api: papi, selected, reload, run, pickedFrames } = useProject();
   const ui = useUI();
   const r = state.runner;
 
@@ -66,12 +65,8 @@ export function Header({ dialogs, onProjectsChanged }: { dialogs: Dialogs; onPro
           <i /> {r.stopping ? "останавливаю…" : `в работе ${r.running} · в очереди ${r.queued}`}
         </span>
       )}
-      <button onClick={dialogs.openImport}>Загрузить фото</button>
-      <button onClick={exportZip}>Скачать ZIP</button>
-      <button className="primary" onClick={() => generate(selected.size ? [...selected] : null, limit)}>
-        {selected.size ? `Запустить выбранные (${selected.size})` : "Запустить все"}
-      </button>
-      <button className="danger" disabled={!r.busy} onClick={stop}>Стоп</button>
+      <button onClick={exportZip}><Icon name="download" size={16} /> Скачать ZIP</button>
+      {r.busy && <button className="danger" onClick={stop}>Стоп</button>}
     </div>
   );
 }

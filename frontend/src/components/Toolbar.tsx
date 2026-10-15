@@ -38,7 +38,7 @@ export function Toolbar({ filter, onFilter, query, onQuery }: {
 
 /** Строка над списком: выбор товаров и групповые действия. */
 export function ListBar() {
-  const { state, api, reload, run, selected, setSelected, limit, setLimit, pickedFrames, setPicked } = useProject();
+  const { state, api, reload, run, selected, setSelected, pickedFrames, setPicked } = useProject();
   const { checkReady, profiles } = useActions();
   const ui = useUI();
   const s = state.settings;
@@ -76,10 +76,6 @@ export function ListBar() {
           <button className="link" onClick={() => setPicked([])}>снять</button>
         </span>
       )}
-      <label className="check" title="Сколько кадров максимум поставить за один запуск; 0 — все">
-        лимит <input type="number" min={0} value={limit} style={{ width: 60 }}
-          onChange={(e) => setLimit(Math.max(0, +e.target.value || 0))} />
-      </label>
       <span className="spacer" />
       <button title="Прогнать ИИ-проверку по уже сгенерированным кадрам без новой генерации" onClick={checkReady}>🔍 Проверить готовые</button>
       <button title="Для товаров без промптов: ИИ составит профиль товара по фото и промпты кадров" onClick={newProfiles}>✨ Промпты для новых</button>

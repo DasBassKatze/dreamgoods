@@ -1,13 +1,18 @@
 import type { Dialogs } from "../App";
 import { assetUrl } from "../api/client";
 import { useProject } from "../ProjectContext";
+import { Icon } from "../layout/Icon";
 
 /** Настройки съёмки проекта: пресет, оформление, модель клиента. Нейросеть генерации выбирается в пресете. */
 export function ProjectBar({ dialogs }: { dialogs: Dialogs }) {
   const { state } = useProject();
   return (
     <div className="projectbar">
-            <button className="pb-card" onClick={dialogs.openPresets} title="Пресет генерации проекта: качество, площадка и план кадров">
+      <button className="pb-card upload" onClick={dialogs.openImport} title="Загрузить фото товаров — сервис сам разложит их по артикулам">
+        <span className="pb-ico"><Icon name="upload" size={20} /></span>
+        <span className="pb-text"><small>Фото товаров</small><b>Загрузить фото</b><em>{state.products.length} товар(ов) в проекте</em></span>
+      </button>
+      <button className="pb-card" onClick={dialogs.openPresets} title="Пресет генерации проекта: качество, площадка и план кадров">
         <span className="pb-ico">🎛</span>
         <span className="pb-text"><small>Пресет</small>
           <b>{state.preset ? state.preset.name : "не выбран"}</b>

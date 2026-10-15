@@ -15,8 +15,9 @@ CACHE = {"Cache-Control": "private, max-age=31536000, immutable"}   # файлы
 
 
 @router.get("/api/assets/{asset_id}")
-def asset(asset_id: uuid.UUID, request: Request, w: int = 0):
-    """Оригинал (w=0) или JPEG-превью шириной до w px. Только файлы своего кабинета."""
+def asset(asset_id: uuid.UUID, request: Request, w: int = 0, dl: str = ""):
+    """Оригинал (w=0) или JPEG-превью шириной до w px. Только файлы своего кабинета.
+    dl — скачать оригинал файлом с этим именем (расширение — по типу файла)."""
     if not access.asset_allowed(auth.user(request), asset_id):
         raise LookupError("файл не найден")
     with db.session() as s:
@@ -24,6 +25,11 @@ def asset(asset_id: uuid.UUID, request: Request, w: int = 0):
         if not a:
             raise LookupError("файл не найден")
         s.expunge(a)
+    if dl:
+        ext = {"image/png": ".png", "image/webp": ".webp", "image/jpeg": ".jpg"}.get(a.mime, "")
+        name = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in dl)[:80] or "frame"
+        return Response(storage.get(a), media_type=a.mime,
+                        headers={**CACHE, "Content-Disposition": f'attachment; filename="{name}{ext}"'})
     if w <= 0:
         return Response(storage.get(a), media_type=a.mime, headers=CACHE)
     return Response(storage.thumb(a, min(w, 1600)), media_type="image/jpeg", headers=CACHE)

@@ -10,10 +10,17 @@ class ProjectCreate(BaseModel):
 
 
 class Selection(BaseModel):
-    """Какие товары/кадры. Пусто — все в проекте."""
+    """Какие товары/кадры. Пусто — все в проекте. brief/market/aspect — пожелания к этому запуску (поверх пресета)."""
     product_ids: list[int] | None = None
     frame_ids: list[int] | None = None
     limit: int = Field(0, ge=0)
+    brief: str = Field("", max_length=1500)
+    market: str = ""
+    aspect: str = ""
+
+
+class QuickAction(BaseModel):
+    action: Literal["upscale", "remove_bg"]
 
 
 class CheckRequest(Selection):

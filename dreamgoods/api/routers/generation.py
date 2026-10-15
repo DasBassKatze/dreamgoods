@@ -1,5 +1,7 @@
 """Очередь: генерация, проверка, остановка, ошибки."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+
+from ...core import admin
 
 from ...core.events import say
 from ...services import frames, presets
@@ -8,6 +10,19 @@ from ..deps import need_key, project_id
 from ..schemas import CheckRequest, Selection
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["очередь"])
+
+
+def _run_options(body: Selection):
+    """Пожелания к запуску: текст, площадка и формат поверх пресета (только непустые)."""
+    from ...core import presets as P
+    out = {}
+    if body.brief.strip():
+        out["brief"] = body.brief.strip()
+    if body.market in P.MARKETS and body.market not in ("none", "custom"):
+        out["market"] = body.market
+    if body.aspect in P.ASPECTS:
+        out["aspect"] = body.aspect
+    return out or None
 
 
 def _to_generate(pid, body: Selection):
@@ -30,7 +45,7 @@ def generate(body: Selection, pid: int = Depends(project_id)):
     """frame_ids — конкретные кадры (перегенерация); иначе — недостающие кадры выбранных товаров."""
     need_key(pid)
     sync = presets.sync_for_generation(pid, body.product_ids, limit=body.limit) if body.frame_ids is None else None
-    added = frames.enqueue_frames(pid, _to_generate(pid, body))
+    added = frames.enqueue_frames(pid, _to_generate(pid, body), payload=_run_options(body))
     if added:
         say("info", (f"↻ На перегенерацию поставлено кадров: {added}" if body.frame_ids is not None
                      else f"▶ В очередь добавлено кадров: {added}"), pid)
@@ -61,3 +76,9 @@ def stop(pid: int = Depends(project_id)):
 def clear_errors(pid: int = Depends(project_id)):
     frames.clear_errors(pid)
     return {"ok": True}
+
+
+@router.get("/history")
+def history(request: Request, before: int | None = None, pid: int = Depends(project_id)):
+    """История генераций проекта (вкладка «История»)."""
+    return {"items": frames.project_history(pid, admin.is_admin(request), before=before)}

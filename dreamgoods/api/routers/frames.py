@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from ...core import admin
 from ...services import frames
 from ..deps import need_key, project_id
-from ..schemas import EditRequest, PromptUpdate, RestoreRequest, ReviewRequest
+from ..schemas import EditRequest, PromptUpdate, QuickAction, RestoreRequest, ReviewRequest
 
 router = APIRouter(prefix="/api/projects/{project_id}/frames/{frame_id}", tags=["кадры"])
 
@@ -25,6 +25,14 @@ def edit(frame_id: int, body: EditRequest, pid: int = Depends(project_id)):
     """Правка готового фото: «что изменить» → новая версия кадра (прежняя остаётся в истории)."""
     need_key(pid)
     frames.edit(pid, frame_id, body.instruction, body.source_id)
+    return {"ok": True}
+
+
+@router.post("/quick")
+def quick(frame_id: int, body: QuickAction, pid: int = Depends(project_id)):
+    """Улучшить до 4K / убрать фон — правка готового кадра готовой инструкцией."""
+    need_key(pid)
+    frames.quick(pid, frame_id, body.action)
     return {"ok": True}
 
 
