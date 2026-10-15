@@ -117,7 +117,7 @@ class Pending(RuntimeError):
         super().__init__(msg)
         self.task_id = task_id
 KIND = {"сверка": "qc", "подсчёт": "count", "ожидания": "spec", "профиль": "profile", "сортировка": "sort",
-        "ракурсы": "views", "модель: описание": "persona", "подразделы": "profile", "оформление": "style"}
+        "ракурсы": "views", "модель: описание": "persona", "модель: изменение": "persona", "подразделы": "profile", "оформление": "style"}
 
 
 def _num(v):
@@ -545,7 +545,7 @@ def _repair_json(s):
 _NO_REASONING = set()      # адреса API, которые не принимают параметр reasoning
 
 
-def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=None):
+def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=None, _retry=True):
     """Запрос к OpenAI-совместимому чату (Polza, vLLM, Ollama). Возвращает (разобранный JSON, стоимость ₽, секунды).
     reasoning: auto — как решит модель; none/minimal/low/medium/high — уровень «размышлений» (они оплачиваются как ответ).
     Расход пишется в trace (потом — в журнал расходов)."""
@@ -610,6 +610,11 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
     except Exception as e:
         log.error("%s %s: модель ответила испорченным JSON (%s): %s", tag, what, e, (msg or "")[:3000])
         cut = choice.get("finish_reason") == "length"
+        if _retry:      # один повтор: обрезанному ответу — вдвое больше лимит, иначе — та же просьба ещё раз
+            log.warning("%s %s: повторяю запрос%s", tag, what, " с увеличенным лимитом ответа" if cut else "")
+            res, cost2, secs2 = chat(st, model, system, content, trace, what, max_tokens * 2 if cut else max_tokens,
+                                     reasoning, _retry=False)
+            return res, cost + cost2, secs + secs2
         raise RuntimeError(f"{what}: модель {model} ответила испорченным JSON"
                            + (" — ответ обрезан по лимиту токенов" if cut else "")
                            + ", починить автоматически не удалось. Запустите ещё раз; если повторяется — смените модель"
