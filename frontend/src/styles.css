@@ -86,6 +86,12 @@ aside { position: sticky; top: 72px; display: flex; flex-direction: column; gap:
 .tools { position: absolute; top: 6px; right: 6px; display: none; gap: 4px; }
 .tile:hover .tools { display: flex; }
 .tools button { padding: 2px 7px; font-size: 13px; background: rgba(255,255,255,.92); }
+.tile .pick { position: absolute; right: 6px; bottom: 6px; z-index: 2; display: none; padding: 3px 4px 1px; border-radius: 6px;
+  background: rgba(255,255,255,.92); line-height: 0; cursor: pointer; }
+.tile .pick input { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.tile:hover .pick, .tile.picked .pick { display: block; }
+.tile.picked { outline: 3px solid var(--accent); outline-offset: -3px; }
+@media (hover: none) { .tile .pick { display: block; } }
 
 /* журнал и метрики */
 .log { max-height: calc(100vh - 420px); min-height: 160px; overflow: auto; font: 12px/1.45 ui-monospace, Consolas, monospace; }

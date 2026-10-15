@@ -28,17 +28,25 @@ def safe_name(name, fallback="без_артикула"):
     return name[:120] or fallback
 
 
-def export_zip(project_id, include="accepted"):
+def export_zip(project_id, include="accepted", frame_ids=None, product_ids=None):
     """ZIP: <артикул>/<NN>.png + report.csv. include: accepted (принятые, прошедшие проверку и без проверки) | all (все
-    готовые). В report.csv — все кадры проекта, в том числе не попавшие в архив, с причиной."""
+    готовые) | picked (выделенные кадры frame_ids, любого статуса). product_ids — только эти товары.
+    В report.csv — все кадры выгружаемых товаров, в том числе не попавшие в архив, с причиной."""
+    frame_ids, product_ids = set(frame_ids or ()), set(product_ids or ())
+    if include == "picked" and not frame_ids:
+        raise ValueError("не выделено ни одного кадра")
     config.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     with db.session() as s:
         project = s.get(Project, project_id)
-        rows = s.execute(select(Product.id, Product.sku, Frame.position, Frame.status, Frame.block, Generation, Frame.id)
-                         .join(Frame, Frame.product_id == Product.id)
-                         .outerjoin(Generation, Generation.id == Frame.current_generation_id)
-                         .where(Product.project_id == project_id, Frame.status != "retired")
-                         .order_by(func.lower(Product.sku), Product.id, Frame.position)).all()
+        q = (select(Product.id, Product.sku, Frame.position, Frame.status, Frame.block, Generation, Frame.id)
+             .join(Frame, Frame.product_id == Product.id)
+             .outerjoin(Generation, Generation.id == Frame.current_generation_id)
+             .where(Product.project_id == project_id, Frame.status != "retired"))
+        if include == "picked":         # кадры другого проекта в список не попадут: фильтр по проекту выше
+            q = q.where(Frame.id.in_(frame_ids))
+        elif product_ids:
+            q = q.where(Product.id.in_(product_ids))
+        rows = s.execute(q.order_by(func.lower(Product.sku), Product.id, Frame.position)).all()
         items, skipped, folders, used = [], [], {}, set()
         for pid, sku, pos, status, block, g, fid in rows:
             if pid not in folders:          # одинаковые артикулы у разных товаров — разные папки, а не перезапись
@@ -58,7 +66,8 @@ def export_zip(project_id, include="accepted"):
             q = s.scalars(select(QCCheck).where(QCCheck.generation_id == g.id).order_by(QCCheck.id.desc()).limit(1)).first()
             cost = s.scalar(select(func.coalesce(func.sum(UsageEntry.amount_rub), 0)).where(UsageEntry.frame_id == fid))
             items.append((folders[pid], sku, pos, status, block, g.output_asset, g.model, q, float(cost or 0)))
-        name = safe_name(f"{project.client.name}_{project.name}_{datetime.now():%Y%m%d-%H%M}".replace(" ", "_"), "export")
+        part = "_выделенные" if include == "picked" else ("_выбранные" if product_ids else "")
+        name = safe_name(f"{project.client.name}_{project.name}{part}_{datetime.now():%Y%m%d-%H%M}".replace(" ", "_"), "export")
     path = config.EXPORT_DIR / f"{name}.zip"
     rep = io.StringIO()
     w = csv.writer(rep, delimiter=";")

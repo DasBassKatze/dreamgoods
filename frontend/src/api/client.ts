@@ -132,7 +132,9 @@ export function projectApi(id: number) {
     applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][] }[], label_mode: string, auto_profile: boolean) =>
       post<ImportResult>(`${p}/imports/${sid}/apply`, { groups, label_mode, auto_profile }),
 
-    exportUrl: (include: "accepted" | "all") => `${p}/export?include=${include}`,
+    exportUrl: (include: "accepted" | "all" | "picked", ids: { frames?: number[]; products?: number[] } = {}) =>
+      `${p}/export?include=${include}` + (ids.frames?.length ? `&frames=${ids.frames.join(",")}` : "")
+      + (ids.products?.length ? `&products=${ids.products.join(",")}` : ""),
 
     presets: () => get<PresetListing>(`${p}/presets`),
     savePreset: (id: number | null, body: Omit<Preset, "id" | "total" | "is_default" | "products">) =>

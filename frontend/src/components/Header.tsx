@@ -6,24 +6,31 @@ import { useUI } from "./ui";
 
 /** Шапка страницы «Товары и кадры»: проект и главные действия. */
 export function Header({ dialogs, onProjectsChanged }: { dialogs: Dialogs; onProjectsChanged: () => void }) {
-  const { state, api: papi, selected, reload, run, limit } = useProject();
+  const { state, api: papi, selected, reload, run, limit, pickedFrames } = useProject();
   const { generate } = useActions();
   const ui = useUI();
   const r = state.runner;
 
   const exportZip = async () => {
-    const include = await ui.choose({
+    const picked = pickedFrames.size;
+    const products = selected.size;
+    const include = await ui.choose<"accepted" | "all" | "picked">({
       title: "Скачать кадры",
       text: "«Принятые» — принятые вручную, прошедшие ИИ-проверку и кадры без проверки; кадры на ручной проверке (брак) — " +
-        "только в «Все готовые». В архиве — папки по артикулам и report.csv, где перечислены и кадры, не попавшие в архив, с причиной.",
+        "только в «Все готовые». В архиве — папки по артикулам и report.csv, где перечислены и кадры, не попавшие в архив, с причиной." +
+        (products && !picked ? ` Выгружаются только выбранные товары (${products}).` : "") +
+        (!picked ? " Чтобы скачать отдельные кадры — отметьте их галочкой на плитке кадра (или Ctrl+клик)." : ""),
       choices: [
-        { value: "all", label: "Все готовые" },
-        { value: "accepted", label: "Принятые", primary: true },
+        ...(picked ? [{ value: "picked" as const, label: `Выделенные кадры (${picked})`, primary: true }] : []),
+        { value: "all", label: products && !picked ? `Все готовые в выбранных` : "Все готовые" },
+        { value: "accepted", label: products && !picked ? `Принятые в выбранных` : "Принятые", primary: !picked },
       ],
     });
     if (!include) return;
     ui.toast("Готовлю архив…");
-    window.location.href = papi.exportUrl(include);
+    window.location.href = include === "picked"
+      ? papi.exportUrl("picked", { frames: [...pickedFrames] })
+      : papi.exportUrl(include, { products: picked ? [] : [...selected] });
   };
 
   const stop = () =>

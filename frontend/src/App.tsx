@@ -64,6 +64,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [projectId, setProjectId] = usePersistentState<number | null>(`project_${me.id}`, null);
   const { state, offline, reload } = useProjectState(projectId);
   const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
+  const [pickedByProject, setPickedByProject] = usePersistentState<Record<string, number[]>>("picked-frames", {});
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(0);
@@ -98,6 +99,10 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     if (!state || projectId == null || !papi || state.project.id !== projectId) return null;
     const selected = new Set(selectedByProject[projectId] || []);
     const save = (ids: number[]) => setSelectedByProject((all) => ({ ...all, [projectId]: ids }));
+    // выделенные кадры: только те, что ещё есть в проекте (кадр могли удалить или пересобрать)
+    const frameIds = new Set(state.products.flatMap((p) => p.frames.map((f) => f.id)));
+    const pickedFrames = new Set((pickedByProject[projectId] || []).filter((id) => frameIds.has(id)));
+    const savePicked = (ids: number[]) => setPickedByProject((all) => ({ ...all, [projectId]: ids }));
     return {
       state,
       api: papi,
@@ -110,6 +115,15 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         save([...next]);
       },
       setSelected: save,
+      pickedFrames,
+      // через функцию обновления: плитки кадров запоминают обработчик, он не должен опираться на старый выбор
+      togglePicked: (id, on) => setPickedByProject((all) => {
+        const next = new Set(all[projectId] || []);
+        if (on) next.add(id);
+        else next.delete(id);
+        return { ...all, [projectId]: [...next] };
+      }),
+      setPicked: savePicked,
       product: (id) => state.products.find((p) => p.id === id),
       limit,
       setLimit,
@@ -121,7 +135,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         }
       },
     };
-  }, [state, projectId, papi, selectedByProject, setSelectedByProject, reload, ui, limit]);
+  }, [state, projectId, papi, selectedByProject, setSelectedByProject, pickedByProject, setPickedByProject, reload, ui, limit]);
 
   const dialogs: Dialogs = {
     openFrame: (productId, frameId) => setViewer({ productId, frameId }),
