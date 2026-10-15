@@ -145,7 +145,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
             {d.market.key === "custom" ? (
               <div className="row nowrap">
                 <select value={d.market.aspect || market.aspect} onChange={(e) => setMarket({ aspect: e.target.value })}>
-                  {listing.aspects.map((a) => <option key={a}>{a}</option>)}
+                  {listing.aspects.map((a) => <option key={a} value={a}>{listing.aspect_names?.[a] || a}</option>)}
                 </select>
                 <input type="number" min={0} max={4096} step={100} value={d.market.min_side ?? market.min_side} style={{ width: 110 }}
                   onChange={(e) => setMarket({ min_side: +e.target.value || 0 })} /> <span className="hint">px — меньше считается браком техпроверки</span>

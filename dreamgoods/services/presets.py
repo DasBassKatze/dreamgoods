@@ -78,7 +78,7 @@ def listing(project_id):
                 "no_subcategory": no_sub,
                 "markets": [{"key": k, **{x: v[x] for x in ("name", "aspect", "min_side", "hint", "cover_bg", "cover_fill", "cover_extra")}}
                             for k, v in P.MARKETS.items()],
-                "aspects": list(P.ASPECTS),
+                "aspects": list(P.ASPECTS), "aspect_names": P.ASPECT_NAMES,
                 "strictness": [{"key": k, **v} for k, v in P.STRICTNESS.items()],
                 "model_stats": model_stats(s, org.id)}
 

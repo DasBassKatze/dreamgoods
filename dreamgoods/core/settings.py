@@ -87,6 +87,9 @@ def clean(body):
             v = max(lo, min(hi, int(float(v or 0))))
         elif k in BOOLS:
             v = bool(v)
+        elif k == "aspect":
+            from .presets import ASPECTS
+            v = v if v in ASPECTS else DEFAULTS["aspect"]
         elif k == "qc_strictness":
             v = v if v in ("strict", "normal", "critical") else "normal"
         elif k in ("qc_reasoning", "qc_count_reasoning"):

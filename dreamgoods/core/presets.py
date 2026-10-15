@@ -60,10 +60,21 @@ MARKETS = {
                 "cover_bg": "a pure white background (#FFFFFF)",
                 "cover_fill": "at least two thirds of the frame",
                 "cover_extra": "no extraneous people or animals, no watermarks, no store logos"},
+    "avito": {"name": "Авито", "aspect": "4:3", "min_side": 960,
+              "hint": "горизонтальные 4:3 (так фото показываются в объявлении и в выдаче), рекомендуют от 1600×1200 px; "
+                      "главное фото — товар целиком и крупно, без телефонов, ссылок, надписей и водяных знаков",
+              "cover_bg": "a clean, bright, uncluttered neutral background",
+              "cover_fill": "about 70% of the frame, centered, with even margins on all sides (the cover is also shown cropped to a square)",
+              "cover_extra": "the whole product is visible and sharp; no phone numbers, links, text, logos or watermarks"},
     "custom": {"name": "Своя", "aspect": "3:4", "min_side": 1000, "hint": "свои формат и правила обложки",
                "cover_bg": "a pure white background (#FFFFFF)", "cover_fill": "about 80% of the frame", "cover_extra": ""},
 }
-ASPECTS = ("3:4", "4:5", "9:16", "1:1", "2:3", "16:9")
+# Форматы кадра. Если модель какой-то формат не умеет, кадр генерируется в ближайшем и обрезается (ai/polza.py).
+ASPECTS = ("3:4", "4:5", "2:3", "9:16", "1:1", "4:3", "5:4", "3:2", "16:9", "21:9")
+ASPECT_NAMES = {"3:4": "3:4 — вертикальный, WB/Ozon/Маркет", "4:5": "4:5 — вертикальный, соцсети", "2:3": "2:3 — вертикальный",
+                "9:16": "9:16 — сторис, Reels", "1:1": "1:1 — квадрат", "4:3": "4:3 — горизонтальный, Авито",
+                "5:4": "5:4 — горизонтальный", "3:2": "3:2 — горизонтальный", "16:9": "16:9 — широкий, баннер",
+                "21:9": "21:9 — сверхширокий баннер"}
 
 # Строгость ИИ-проверки: что считать браком
 STRICTNESS = {

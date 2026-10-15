@@ -269,7 +269,7 @@ export interface PresetRef {
 
 export type BlockKey = "studio" | "detail" | "worn" | "full" | "lifestyle";
 export type QualityKey = "draft" | "standard" | "premium" | "custom";
-export type MarketKey = "none" | "wb" | "ozon" | "ymarket" | "custom";
+export type MarketKey = "none" | "wb" | "ozon" | "ymarket" | "avito" | "custom";
 export type StrictnessKey = "strict" | "normal" | "critical";
 
 export interface PresetMarket {
@@ -310,6 +310,7 @@ export interface PresetListing {
   no_subcategory: number;
   markets: { key: MarketKey; name: string; aspect: string; min_side: number; hint: string; cover_bg: string; cover_fill: string; cover_extra: string }[];
   aspects: string[];
+  aspect_names?: Record<string, string>;
   strictness: { key: StrictnessKey; name: string; hint: string }[];
   model_stats: { block: BlockKey; model: string; n: number; avg_cost: number; first_pass: number | null }[];
 }
