@@ -26,7 +26,8 @@ import { StyleManager } from "./features/styles/StyleManager";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useProjectState } from "./hooks/useProjectState";
 import { useRoute, type Route } from "./hooks/useRoute";
-import { Sidebar } from "./layout/Sidebar";
+import { ProjectsSidebar } from "./layout/ProjectsSidebar";
+import { TopBar } from "./layout/TopBar";
 import { ProjectCtx, type ProjectScope } from "./ProjectContext";
 
 export interface Dialogs {
@@ -92,6 +93,11 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+  // картинки проектов в списке слева обновляются, когда появляются новые готовые кадры
+  const doneNow = state?.totals.done;
+  useEffect(() => {
+    if (doneNow != null) loadProjects();
+  }, [doneNow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const papi = useMemo(() => (projectId == null ? null : projectApi(projectId)), [projectId]);
 
@@ -209,15 +215,20 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   })();
 
   const body = (
-    <div className="shell">
-      <Sidebar me={me} route={route} go={go} projects={projects} projectId={projectId} onProject={setProjectId}
-        onNewProject={createProject} balance={account}
-        polza={master && state ? { value: state.balance, error: state.balance_error } : null} reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy}
-        onLogout={onLogout} open={menuOpen} onToggle={() => setMenuOpen((x) => !x)} />
-      <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
-        {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
-        {page}
-      </main>
+    <div className="app">
+      <TopBar me={me} route={route} go={go} balance={account}
+        polza={master && state ? { value: state.balance, error: state.balance_error } : null}
+        reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
+        onMenu={() => setMenuOpen((x) => !x)} />
+      <div className="app-body">
+        <ProjectsSidebar master={master} projects={projects} projectId={projectId}
+          onProject={(id) => { setProjectId(id); if (!NEEDS_PROJECT.includes(route)) go("products"); }}
+          onNewProject={createProject} open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
+          {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
+          {page}
+        </main>
+      </div>
     </div>
   );
 

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Request
 
 from ...core import auth
-from ...services import billing
+from ...services import billing, projects
 
 router = APIRouter(prefix="/api/account", tags=["личный кабинет"])
 
@@ -15,3 +15,9 @@ def balance(request: Request):
     out = billing.account(u.client_id)
     out.pop("markup", None)
     return out
+
+
+@router.get("/storage")
+def storage(request: Request):
+    """Занятое место в хранилище и квота (мастер — по всему сервису)."""
+    return projects.storage_usage(auth.user(request))

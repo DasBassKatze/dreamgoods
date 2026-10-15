@@ -192,6 +192,7 @@ export const authApi = {
   logout: () => post<{ ok: true }>("/api/auth/logout"),
   password: (old: string, next: string) => post<{ ok: true }>("/api/auth/password", { old, new: next }),
   balance: () => get<AccountBalance>("/api/account/balance"),
+  storage: () => get<{ used: number; quota: number }>("/api/account/storage"),
 };
 
 export const adminApi = {

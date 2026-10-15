@@ -38,14 +38,75 @@ def org_of(s):
 
 
 def projects(user=None):
-    """Проекты пользователя: мастер видит все, пользователь — только своего клиента."""
+    """Проекты пользователя: мастер видит все, пользователь — только своего клиента.
+    С каждым: товаров, готовых кадров и картинка для списка (последний готовый кадр или первое фото товара)."""
+    from ..db.models import Frame, Generation, Product, ProductPhoto
     with db.session() as s:
         q = (select(Project, Client).join(Client, Client.id == Project.client_id)
              .where(Project.archived.is_(False)).order_by(Client.name, Project.name))
         if user is not None and not user.master:
             q = q.where(Project.client_id == (user.client_id or 0))
         rows = s.execute(q).all()
-        return [{"id": p.id, "name": p.name, "client": c.name, "client_id": c.id} for p, c in rows]
+        ids = [p.id for p, _ in rows]
+        counts = dict(s.execute(select(Product.project_id, func.count(Product.id)).where(Product.project_id.in_(ids))
+                                .group_by(Product.project_id)).all()) if ids else {}
+        thumbs = {}
+        if ids:
+            for pid, asset in s.execute(select(Product.project_id, Generation.output_asset_id)
+                                        .join(Frame, Frame.product_id == Product.id)
+                                        .join(Generation, Generation.id == Frame.current_generation_id)
+                                        .where(Product.project_id.in_(ids)).order_by(Generation.id)).all():
+                thumbs[pid] = asset                       # последний готовый кадр
+            for pid, asset in s.execute(select(Product.project_id, ProductPhoto.asset_id)
+                                        .join(ProductPhoto, ProductPhoto.product_id == Product.id)
+                                        .where(Product.project_id.in_(ids), ProductPhoto.role != "label")
+                                        .order_by(ProductPhoto.id.desc())).all():
+                thumbs.setdefault(pid, asset)             # нет кадров — фото товара
+        return [{"id": p.id, "name": p.name, "client": c.name, "client_id": c.id, "products": counts.get(p.id, 0),
+                 "thumb": str(thumbs[p.id]) if p.id in thumbs else None} for p, c in rows]
+
+
+_storage_cache = {}
+
+
+def storage_usage(user):
+    """Сколько места занимают файлы кабинета (фото товаров, кадры, модели, оформление, импорт). Мастер — всего сервиса.
+    Квота: своя у кабинета (настройка мастера) или общая из настроек организации."""
+    import time
+    from sqlalchemy import union
+    from ..db.models import (Asset, Frame, Generation, ImportFile, ImportSession, Persona, PersonaPhoto, Product,
+                             ProductPhoto, StyleRef, StyleRefPhoto)
+    key = ("all" if user.master else user.client_id)
+    hit = _storage_cache.get(key)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    with db.session() as s:
+        org = s.get(Organization, user.org_id)
+        default_gb = float((org.settings or {}).get("storage_quota_gb") or 10)
+        if user.master:
+            used = s.scalar(select(func.coalesce(func.sum(Asset.bytes), 0)).where(Asset.org_id == user.org_id)) or 0
+            quota_gb = float((org.settings or {}).get("storage_total_gb") or 100)
+        else:
+            cid = user.client_id or 0
+            parts = union(
+                select(ProductPhoto.asset_id.label("a")).join(Product, Product.id == ProductPhoto.product_id)
+                .join(Project, Project.id == Product.project_id).where(Project.client_id == cid),
+                select(Generation.output_asset_id.label("a")).join(Frame, Frame.id == Generation.frame_id)
+                .join(Product, Product.id == Frame.product_id).join(Project, Project.id == Product.project_id)
+                .where(Project.client_id == cid, Generation.output_asset_id.is_not(None)),
+                select(PersonaPhoto.asset_id.label("a")).join(Persona, Persona.id == PersonaPhoto.persona_id)
+                .where(Persona.client_id == cid),
+                select(StyleRefPhoto.asset_id.label("a")).join(StyleRef, StyleRef.id == StyleRefPhoto.style_ref_id)
+                .where(StyleRef.client_id == cid),
+                select(ImportFile.asset_id.label("a")).join(ImportSession, ImportSession.id == ImportFile.session_id)
+                .join(Project, Project.id == ImportSession.project_id).where(Project.client_id == cid),
+            ).subquery()
+            used = s.scalar(select(func.coalesce(func.sum(Asset.bytes), 0)).where(Asset.id.in_(select(parts.c.a)))) or 0
+            c = s.get(Client, cid)
+            quota_gb = float(getattr(c, "storage_quota_gb", None) or default_gb) if c else default_gb
+    out = {"used": int(used), "quota": int(quota_gb * 1024 ** 3)}
+    _storage_cache[key] = (time.time() + 60, out)
+    return out
 
 
 def rename_project(project_id, name):

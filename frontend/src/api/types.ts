@@ -5,6 +5,8 @@ export interface ProjectRef {
   name: string;
   client: string;
   client_id?: number;
+  products?: number;
+  thumb?: string | null;
 }
 
 export type FrameState = "missing" | "queued" | "running" | "checking" | "error" | "done";
