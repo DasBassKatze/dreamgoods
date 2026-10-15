@@ -98,9 +98,20 @@ def _model(st):
     return st.get("profile_model") or st.get("qc_model")
 
 
-def specs_from_brief(st, brief, n, trace):
-    """n разных паспортов по пожеланиям клиента. Возвращает (список, стоимость)."""
-    res, cost, _ = chat(st, _model(st), SPEC_PROMPT.format(n=n), [{"type": "text", "text": f"Client's wishes: {brief}"}],
+REF_NOTE = ("The client also attached reference photos (inspiration for the look). Take from them what the wishes ask for; "
+            "if the wishes do not say, take hairstyle, makeup, clothing style, accessories and overall vibe. "
+            "Do NOT describe or reproduce the identity of anyone in the references: the model must be a NEW, different person "
+            "(own face, own features).")
+
+
+def specs_from_brief(st, brief, n, trace, refs=()):
+    """n разных паспортов по пожеланиям клиента (и фото-референсам образа). Возвращает (список, стоимость)."""
+    content = [{"type": "text", "text": f"Client's wishes: {brief}"}]
+    if refs:
+        content.append({"type": "text", "text": REF_NOTE})
+        for data in refs[:4]:
+            content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(data, 1024)}})
+    res, cost, _ = chat(st, _model(st), SPEC_PROMPT.format(n=n), content,
                         trace, "модель: описание", 1500 * n + 600, "none")
     specs = [_clean_spec(v) for v in (res.get("variants") or [])][:n]
     specs = [x for x in specs if x["appearance"]]
@@ -150,8 +161,14 @@ def _fmt(spec):
                 background=dot(look.get("background"), "light grey"))
 
 
-def candidate_prompt(spec):
-    return CANDIDATE.format(**_fmt(spec), tail=TAIL)
+def candidate_prompt(spec, n_refs=0):
+    p = CANDIDATE.format(**_fmt(spec), tail=TAIL)
+    if n_refs:
+        photos = "Photo 1 is the client's style reference" if n_refs == 1 else f"Photos 1-{n_refs} are the client's style references"
+        p = (f"{photos}: borrow the styling from them (hair styling, makeup, clothing style, "
+             "accessories, mood) as described below. The person must be a NEW, different individual — do not copy the face "
+             "or identity of anyone in the reference photos. " + p)
+    return p
 
 
 def edit_prompt(spec):

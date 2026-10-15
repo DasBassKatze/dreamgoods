@@ -173,6 +173,8 @@ export function projectApi(id: number) {
     archivePersona: (id: number) => request<{ ok: true }>("DELETE", `${p}/personas/${id}`),
     uploadPersonaPhoto: (id: number, file: File) =>
       request<{ ok: true }>("POST", `${p}/personas/${id}/photos?name=${encodeURIComponent(file.name)}`, file),
+    uploadPersonaRef: (id: number, file: File) =>
+      request<{ ok: true }>("POST", `${p}/personas/${id}/refs?name=${encodeURIComponent(file.name)}`, file),
     deletePersonaPhoto: (id: number, photoId: number) => request<{ ok: true }>("DELETE", `${p}/personas/${id}/photos/${photoId}`),
     describePersona: (id: number) => post<{ ok: true }>(`${p}/personas/${id}/describe`),
     personaCandidates: (id: number, count: number, brief?: string) =>

@@ -7,6 +7,7 @@ import { SHORT_MARKET, useRunOptions } from "../features/generate/runOptions";
 import { pad } from "../lib/format";
 import { Icon } from "../layout/Icon";
 import { FrameTile } from "./FrameTile";
+import { ProductSettings } from "./ProductSettings";
 import { useUI } from "./ui";
 
 const VIEW_RU: Record<string, string> = {
@@ -66,17 +67,13 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
         ) : (
           <button title="ИИ составит профиль товара по фото: описание, детали, чек-лист проверки, кадры" onClick={profileClick}><Icon name="spark" size={14} /> Профиль по фото</button>
         )}
-        {own && <span className="tag preset-tag" title="Свой пресет товара" onClick={dialogs.openPresets}><Icon name="presets" size={13} />{own.name}</span>}
-        {p.persona && (
-          <span className="tag preset-tag" onClick={dialogs.openPersonas}
-            title={p.persona.via === "товар" ? "Модель выбрана в профиле товара" : p.persona.via === "проект" ? "Модель проекта"
-              : `Модель по группе «${p.persona.via}»`}><Icon name="personas" size={13} />{p.persona.name}</span>
-        )}
         <span className="mk-chip" title="Площадка и формат по пресету товара">{label}</span>
         <span className="spacer" />
         <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие (с пожеланиями из строки запуска)"
           onClick={() => generate([p.id], 0, opts)}>Сгенерировать</button>
       </div>
+
+      <ProductSettings product={p} dialogs={dialogs} />
 
       <div className="refs">
         <span className="lbl">Референсы {chosen.length} из {p.photos.length}:</span>

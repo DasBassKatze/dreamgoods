@@ -49,6 +49,12 @@ async def upload(persona_id: int, request: Request, name: str = "model.jpg", pid
     return personas.upload_photo(pid, persona_id, await request.body(), name)
 
 
+@router.post("/personas/{persona_id}/refs")
+async def upload_ref(persona_id: int, request: Request, name: str = "ref.jpg", pid: int = Depends(project_id)):
+    """Референс образа (пример стиля для генерации модели). Тело запроса — байты картинки."""
+    return personas.upload_ref(pid, persona_id, await request.body(), name)
+
+
 @router.delete("/personas/{persona_id}/photos/{photo_id}")
 def delete_photo(persona_id: int, photo_id: int, pid: int = Depends(project_id)):
     personas.delete_photo(pid, persona_id, photo_id)

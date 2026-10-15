@@ -222,9 +222,10 @@ def apply(project_id, preset_id, product_ids=None, categories=None, everything=F
             for p in need_ai:
                 if enqueue(s, "profile", project_id, product_id=p.id, payload={"build": True}, priority=20):
                     queued += 1
-        name = preset.name if preset else "без пресета"
+        name = preset.name if preset else ""
     summary.update(rebuilt=rebuilt, queued=queued)
-    say("ok", f"🎛 Пресет «{name}» назначен товарам: {len(targets)}"
+    say("ok", (f"🎛 Пресет «{name}» назначен товарам: {len(targets)}" if name
+               else f"🎛 Товары снова на пресете проекта: {len(targets)}")
         + (f"; промпты пересобраны сразу: {rebuilt}" if rebuilt else "")
         + (f"; ИИ составляет профиль заново: {queued}" if queued else ""), project_id)
     return summary

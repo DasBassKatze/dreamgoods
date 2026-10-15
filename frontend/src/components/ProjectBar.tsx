@@ -6,6 +6,7 @@ import { Icon } from "../layout/Icon";
 /** Настройки съёмки проекта: пресет, оформление, модель клиента. Нейросеть генерации выбирается в пресете. */
 export function ProjectBar({ dialogs }: { dialogs: Dialogs }) {
   const { state } = useProject();
+  const ownPresets = state.products.filter((x) => x.preset_id && x.preset_id !== state.preset?.id).length;
   return (
     <div className="projectbar">
       <button className="pb-card upload" onClick={dialogs.openImport} title="Загрузить фото товаров — сервис сам разложит их по артикулам">
@@ -15,8 +16,9 @@ export function ProjectBar({ dialogs }: { dialogs: Dialogs }) {
       <button className="pb-card" onClick={dialogs.openPresets} title="Пресет генерации проекта: качество, площадка и план кадров">
         <span className="pb-ico"><Icon name="presets" size={20} /></span>
         <span className="pb-text"><small>Пресет</small>
-          <b>{state.preset ? state.preset.name : "не выбран"}</b>
-          {state.preset && <em>{state.preset.total} кадр. на товар{state.preset.plan_mode === "manual" ? " · свои методы" : ""}</em>}
+          <b>{state.preset ? state.preset.name : ownPresets ? "у товаров свои" : "не выбран"}</b>
+          <em>{state.preset ? `${state.preset.total} кадр. на товар${state.preset.plan_mode === "manual" ? " · свои методы" : ""}` : ""}
+            {ownPresets ? `${state.preset ? " · " : ""}свой пресет у ${ownPresets} тов.` : ""}</em>
         </span>
       </button>
       <button className="pb-card" onClick={dialogs.openStyles} title="Референс оформления: пример стиля съёмки для кадров">

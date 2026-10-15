@@ -859,3 +859,19 @@ button.big { padding: 11px 26px; font-size: 15px; font-weight: 600; border-radiu
   .page table td, .page table th { white-space: nowrap; }
 }
 .tag .ico, .pchip2 .ico, .preset-tag .ico { margin-right: 4px; vertical-align: -2px; }
+/* настройки генерации на карточке товара */
+.psettings { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 10px 12px; margin: 0 0 10px; background: var(--soft); border: 1px solid var(--line); border-radius: 12px; }
+.ps-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ps-field > span { font-size: 11.5px; color: var(--muted); font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
+.ps-field select { font-size: 13px; padding: 5px 28px 5px 9px; max-width: 240px; background-color: #fff; }
+.ps-field.own select { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.ps-sum { font-size: 12.5px; color: var(--muted); padding-bottom: 7px; }
+.psettings .link { padding-bottom: 7px; font-size: 12.5px; }
+@media (max-width: 700px) { .ps-field, .ps-field select { width: 100%; max-width: none; } }
+.ref-previews { display: flex; gap: 6px; margin-top: 8px; }
+.ref-previews img { width: 64px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.persona-refs { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.persona-photos.small .pphoto { width: 96px; }
+.ref-add { width: 96px; aspect-ratio: 3/4; border: 1px dashed var(--line-2); border-radius: 10px; background: #fff; color: var(--muted); display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.ref-add:hover { border-color: var(--accent); color: var(--accent); }
+.persona-photos.small .pphoto img { aspect-ratio: 3/4; height: auto; width: 100%; object-fit: cover; }

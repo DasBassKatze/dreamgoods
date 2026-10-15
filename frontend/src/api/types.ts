@@ -145,6 +145,8 @@ export interface ProjectState {
   };
   log: LogLine[];
   totals: { done: number; total: number; review: number; spent_all: number | null; avg_cost: number | null };
+  /** готовые модели и оформления кабинета — для настроек товара */
+  options?: { personas: { id: number; name: string }[]; styles: { id: number; name: string }[] };
   metrics: Metrics | null;
   balance: number | null;
   balance_error: string;
@@ -219,7 +221,7 @@ export interface ImportResult {
   merged: string[];
 }
 
-export type PersonaPhotoKind = "main" | "photo" | "sheet" | "candidate";
+export type PersonaPhotoKind = "main" | "photo" | "sheet" | "candidate" | "ref";
 
 export interface PersonaPhoto {
   id: number;

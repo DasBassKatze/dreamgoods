@@ -5,8 +5,9 @@ import { PersonaGroups } from "./PersonaGroups";
 import { useUI } from "../../components/ui";
 import { rub } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
+import { Icon } from "../../layout/Icon";
 
-const KIND_RU: Record<string, string> = { main: "основное", photo: "фото", sheet: "ракурс", candidate: "вариант" };
+const KIND_RU: Record<string, string> = { main: "основное", photo: "фото", sheet: "ракурс", candidate: "вариант", ref: "референс" };
 const VIEW_RU: Record<string, string> = { portrait: "портрет", "three-quarter": "¾", side: "профиль", "full front": "в рост" };
 const STYLE_FIELDS: [keyof PersonaStyle, string, string][] = [
   ["makeup", "Макияж", "dark plum lipstick, smoky black eyeliner, pale matte skin"],
@@ -35,7 +36,9 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
   const input = useRef<HTMLInputElement>(null);
   const running = p.job?.state === "running";
   const candidates = p.photos.filter((x) => x.kind === "candidate");
-  const kept = p.photos.filter((x) => x.kind !== "candidate");
+  const kept = p.photos.filter((x) => x.kind !== "candidate" && x.kind !== "ref");
+  const refs = p.photos.filter((x) => x.kind === "ref");
+  const refInput = useRef<HTMLInputElement>(null);
   const hasMain = p.photos.some((x) => x.kind === "main");
   const hasSheet = p.photos.some((x) => x.kind === "sheet");
   const avg = state.totals.avg_cost;
@@ -104,6 +107,11 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
       await api.describePersona(p.id);
     }, "Фото добавлены, ИИ обновляет паспорт образа");
 
+  const addRefs = (files: FileList | null) =>
+    act(async () => {
+      for (const f of [...(files || [])].slice(0, Math.max(0, 4 - refs.length))) await api.uploadPersonaRef(p.id, f);
+    }, "Референсы добавлены — они учтутся в следующих вариантах образа");
+
   const countSelect = (
     <select value={count} onChange={(e) => setCount(+e.target.value)} title="Сколько вариантов сгенерировать">
       {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n} {n === 1 ? "вариант" : n < 5 ? "варианта" : "вариантов"}</option>)}
@@ -168,6 +176,15 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
         <div className="persona-panel">
           <div className="hint">Новые варианты по пожеланиям — можно уточнить их перед генерацией:</div>
           <textarea className="short" value={brief} placeholder="пол, возраст, внешность, стиль" onChange={(e) => setBrief(e.target.value)} />
+          <div className="persona-refs">
+            <b>Референсы образа</b>
+            <span className="hint">причёска, макияж, одежда, настроение — лицо не копируется{refs.length ? ` · ${refs.length} из 4` : ""}</span>
+            <div className="persona-photos small">
+              {refs.map(photo)}
+              {refs.length < 4 && <button className="ref-add" onClick={() => refInput.current?.click()}><Icon name="plus" size={18} />фото</button>}
+            </div>
+            <input ref={refInput} type="file" accept="image/*" multiple hidden onChange={(e) => { addRefs(e.target.files); e.target.value = ""; }} />
+          </div>
           <div className="row">{countSelect}<span className="hint">каждый вариант — одна генерация{price(1)}</span>
             <span className="spacer" /><button onClick={() => setPanel(null)}>Отмена</button>
             <button className="primary" disabled={!brief.trim()} onClick={more}>Сгенерировать {count}{price(count)}</button></div>
