@@ -898,3 +898,13 @@ button.big { padding: 11px 26px; font-size: 15px; font-weight: 600; border-radiu
 .rep-two > div { min-width: 0; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 @media (max-width: 900px) { .rep-two { grid-template-columns: 1fr; } .rep-row .ps-field, .rep-row select, .rep-row input { width: 100%; } }
+.rep-custom { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.rep-group { border: none; margin: 0; padding: 0; min-width: 0; }
+.rep-group legend { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: 6px; display: flex; gap: 10px; align-items: baseline; }
+.rep-group legend .link { font-size: 12px; font-weight: 500; }
+.rep-group.off { opacity: .45; }
+.rep-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.rep-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 5px 11px 5px 8px; border: 1px solid var(--line-2); border-radius: 999px; background: #fff; cursor: pointer; }
+.rep-check input { margin: 0; accent-color: var(--accent); }
+.rep-check.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+td.strong { font-weight: 600; }

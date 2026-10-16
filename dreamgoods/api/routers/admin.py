@@ -103,12 +103,15 @@ def keys_delete(key_id: int, request: Request):
 
 @router.get("/report")
 def report(request: Request, date_from: str = "", date_to: str = "", client_id: int | None = None, usn_rate: float = 0.06,
-           format: str = "json"):
-    """Отчёт за период: деньги клиентов, себестоимость Polza, наценка, объём работы. format=csv — файл для Excel."""
+           format: str = "json", metrics: str = "", sections: str = "", cols: str = ""):
+    """Отчёт за период: деньги клиентов, себестоимость Polza, наценка, объём работы. format=csv — файл для Excel.
+    metrics, sections, cols — что включить в CSV (ключи через запятую; пусто — всё, «none» — ничего из группы)."""
     rep = reports.build(auth.user(request), date_from or None, date_to or None, client_id, max(0.0, min(usn_rate, 0.2)))
     if format == "csv":
         name = f"dreamgoods_report_{rep['from']}_{rep['to']}.csv"
-        return Response(reports.to_csv(rep), media_type="text/csv; charset=utf-8",
+        sel = lambda v, allowed: [] if v == "none" else reports.pick(v, allowed)
+        body = reports.to_csv(rep, sel(metrics, reports.METRICS), sel(sections, reports.SECTIONS), sel(cols, reports.CLIENT_COLS))
+        return Response(body, media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{name}"'})
     return rep
 

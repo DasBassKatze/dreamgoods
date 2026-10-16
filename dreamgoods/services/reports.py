@@ -132,47 +132,88 @@ def build(cu, date_from=None, date_to=None, client_id=None, usn_rate=0.06):
               for d, r in sorted(days.items())]
     return {"from": d1.isoformat(), "to": d2.isoformat(), "client_id": int(client_id) if client_id else None,
             "summary": summary, "clients": rows, "by_kind": by_kind, "by_model": by_model, "by_day": by_day,
-            "client_list": [{"id": c.id, "name": c.name} for c in sorted(clients.values(), key=lambda c: c.name.lower())]}
+            "client_name": clients[int(client_id)].name if client_id else "",
+            "client_list": [{"id": c.id, "name": c.name} for c in sorted(clients.values(), key=lambda c: c.name.lower())],
+            "catalog": catalog()}
 
 
-def to_csv(rep):
-    """CSV для Excel: разделитель «;», запятая в дробях, UTF-8 с BOM. Разделы идут друг под другом."""
+# Что можно включить в отчёт: показатели сводки, разделы и колонки таблицы пользователей. Пусто — всё.
+METRICS = [("topups", "Поступило от клиентов (пополнения), ₽", "rub"), ("adjust", "Корректировки балансов, ₽", "rub"),
+           ("charged", "Списано с балансов за услуги, ₽", "rub"), ("charged_cost", "Себестоимость Polza по списаниям, ₽", "rub"),
+           ("margin", "Наценка по списаниям, ₽", "rub"), ("polza", "Весь расход Polza, ₽", "rub"),
+           ("polza_unbilled", "Расход Polza без оплаты клиентом, ₽", "rub"), ("result", "Итог: списано − весь расход Polza, ₽", "rub"),
+           ("balances_end", "Остаток на балансах на конец периода, ₽", "rub"), ("images", "Сгенерировано изображений", "num"),
+           ("edits", "Из них правок", "num"), ("checks", "ИИ-проверок", "num"), ("errors", "Ошибок заданий", "num"),
+           ("clients_paying", "Платящих пользователей", "num"), ("usn_tax", "Оценка налога с пополнений, ₽", "rub")]
+SECTIONS = [("clients", "По пользователям"), ("by_kind", "По видам операций"), ("by_model", "По моделям"), ("by_day", "По дням")]
+CLIENT_COLS = [("topup", "Пополнения", "rub"), ("adjust", "Корректировки", "rub"), ("charged", "Списано", "rub"),
+               ("charged_cost", "Себестоимость списаний", "rub"), ("margin", "Наценка", "rub"), ("polza", "Весь расход Polza", "rub"),
+               ("images", "Изображений", "num"), ("edits", "Правок", "num"), ("balance_end", "Остаток на конец", "rub")]
+GENERAL = {"metrics": ["topups", "charged", "margin", "polza", "result", "balances_end", "images", "errors", "usn_tax"],
+           "sections": [k for k, _ in SECTIONS], "cols": [k for k, *_ in CLIENT_COLS]}
+
+
+def catalog():
+    return {"metrics": [{"key": k, "label": l, "type": t} for k, l, t in METRICS],
+            "sections": [{"key": k, "label": l} for k, l in SECTIONS],
+            "cols": [{"key": k, "label": l, "type": t} for k, l, t in CLIENT_COLS], "general": GENERAL}
+
+
+def pick(value, allowed):
+    """Список ключей из «a,b,c» в порядке справочника; пусто или «all» — всё."""
+    keys = [x[0] for x in allowed]
+    if not value or value == "all":
+        return keys
+    want = {x.strip() for x in value.split(",")}
+    return [k for k in keys if k in want]
+
+
+def to_csv(rep, metrics=None, sections=None, cols=None):
+    """CSV для Excel: разделитель «;», запятая в дробях, UTF-8 с BOM. Разделы идут друг под другом.
+    metrics/sections/cols — что включить (None — всё)."""
+    metrics = [k for k, *_ in METRICS] if metrics is None else metrics
+    sections = sections if sections is not None else [k for k, _ in SECTIONS]
+    cols = [k for k, *_ in CLIENT_COLS] if cols is None else cols
     out = io.StringIO()
     w = csv.writer(out, delimiter=";")
     n = lambda v: "" if v is None else (f"{v:.2f}".replace(".", ",") if isinstance(v, float) else v)
+    money = lambda v: "" if v is None else n(float(v))
     s = rep["summary"]
     w.writerow([f"Отчёт DreamGoods за период {rep['from']} — {rep['to']}"])
-    w.writerow([])
-    w.writerow(["Сводка", "Значение"])
-    for label, key in [("Пополнения балансов (поступило от клиентов), ₽", "topups"), ("Корректировки балансов, ₽", "adjust"),
-                       ("Списано с балансов за услуги, ₽", "charged"), ("Себестоимость Polza по списаниям, ₽", "charged_cost"),
-                       ("Наценка (списано − себестоимость), ₽", "margin"), ("Весь расход Polza за период, ₽", "polza"),
-                       ("Расход Polza без оплаты клиентом (мастер, кабинеты без баланса), ₽", "polza_unbilled"),
-                       ("Итог: списано − весь расход Polza, ₽", "result"), ("Остаток на балансах на конец периода, ₽", "balances_end"),
-                       ("Сгенерировано изображений", "images"), ("Из них правок", "edits"), ("ИИ-проверок", "checks"),
-                       ("Ошибок заданий", "errors"), ("Платящих пользователей", "clients_paying"),
-                       (f"Оценка налога {s['usn_rate'] * 100:g}% с пополнений, ₽", "usn_tax")]:
-        w.writerow([label, n(float(s[key])) if isinstance(s[key], (int, float)) and key not in ("images", "edits", "checks", "errors", "clients_paying") else s[key]])
-    w.writerow([])
-    w.writerow(["По пользователям"])
-    w.writerow(["Пользователь", "Пополнения", "Корректировки", "Списано", "Себестоимость списаний", "Наценка", "Весь расход Polza",
-                "Изображений", "Правок", "Остаток на конец"])
-    for r in rep["clients"]:
-        w.writerow([r["client"], n(r["topup"]), n(r["adjust"]), n(r["charged"]), n(r["charged_cost"]), n(r["margin"]),
-                    n(r["polza"]), r["images"], r["edits"], n(r["balance_end"])])
-    w.writerow([])
-    w.writerow(["По видам операций"])
-    w.writerow(["Операция", "Запросов", "Себестоимость Polza"])
-    for r in rep["by_kind"]:
-        w.writerow([r["name"], r["calls"], n(r["cost"])])
-    w.writerow([])
-    w.writerow(["По моделям"])
-    w.writerow(["Модель", "Запросов", "Себестоимость Polza", "Средняя цена запроса"])
-    for r in rep["by_model"]:
-        w.writerow([r["model"], r["calls"], n(r["cost"]), n(float(r["avg"]))])
-    w.writerow([])
-    w.writerow(["По дням"])
-    w.writerow(["Дата", "Пополнения", "Списано", "Расход Polza", "Изображений"])
-    for r in rep["by_day"]:
-        w.writerow([r["day"], n(float(r["topup"])), n(float(r["charge"])), n(float(r["cost"])), r["images"]])
-    return "﻿" + out.getvalue()
+    if rep.get("client_name"):
+        w.writerow([f"Пользователь: {rep['client_name']}"])
+    if metrics:
+        w.writerow([])
+        w.writerow(["Сводка", "Значение"])
+        for key, label, typ in METRICS:
+            if key not in metrics:
+                continue
+            if key == "usn_tax":
+                label = f"Оценка налога {s['usn_rate'] * 100:g}% с пополнений, ₽"
+            w.writerow([label, money(s[key]) if typ == "rub" else s[key]])
+    if "clients" in sections:
+        w.writerow([])
+        w.writerow(["По пользователям"])
+        chosen = [c for c in CLIENT_COLS if c[0] in cols]
+        w.writerow(["Пользователь"] + [l for _, l, _ in chosen])
+        for r in rep["clients"]:
+            w.writerow([r["client"]] + [money(r[k]) if t == "rub" else r[k] for k, _, t in chosen])
+    if "by_kind" in sections:
+        w.writerow([])
+        w.writerow(["По видам операций"])
+        w.writerow(["Операция", "Запросов", "Себестоимость Polza"])
+        for r in rep["by_kind"]:
+            w.writerow([r["name"], r["calls"], money(r["cost"])])
+    if "by_model" in sections:
+        w.writerow([])
+        w.writerow(["По моделям"])
+        w.writerow(["Модель", "Запросов", "Себестоимость Polza", "Средняя цена запроса"])
+        for r in rep["by_model"]:
+            w.writerow([r["model"], r["calls"], money(r["cost"]), money(r["avg"])])
+    if "by_day" in sections:
+        w.writerow([])
+        w.writerow(["По дням"])
+        w.writerow(["Дата", "Пополнения", "Списано", "Расход Polza", "Изображений"])
+        for r in rep["by_day"]:
+            w.writerow([r["day"], money(r["topup"]), money(r["charge"]), money(r["cost"]), r["images"]])
+    return "\ufeff" + out.getvalue()

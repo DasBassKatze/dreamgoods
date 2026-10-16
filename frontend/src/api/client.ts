@@ -22,6 +22,7 @@ import type {
   ProfileResponse,
   ProjectRef,
   ProjectState,
+  ReportSelection,
   ServiceReport,
   Settings,
 } from "./types";
@@ -223,7 +224,9 @@ export const adminApi = {
   deleteKey: (id: number) => request<{ ok: true }>("DELETE", `/api/admin/keys/${id}`),
   report: (q: { from: string; to: string; client?: number | null; rate: number }) =>
     get<ServiceReport>(`/api/admin/report?${reportQuery(q)}`),
-  reportCsvUrl: (q: { from: string; to: string; client?: number | null; rate: number }) => `/api/admin/report?${reportQuery(q)}&format=csv`,
+  reportCsvUrl: (q: { from: string; to: string; client?: number | null; rate: number }, sel?: ReportSelection) =>
+    `/api/admin/report?${reportQuery(q)}&format=csv` + (sel ? (["metrics", "sections", "cols"] as const)
+      .map((k) => `&${k}=${sel[k].length ? sel[k].join(",") : "none"}`).join("") : ""),
   finance: (clientId?: number) => get<FinanceView>(`/api/admin/finance${clientId ? `?client_id=${clientId}` : ""}`),
   overview: (projectId: number) => get<AdminOverview>(`/api/admin/projects/${projectId}/overview`),
   log: (lines = 400, level = "") => get<{ lines: string[] }>(`/api/admin/log?lines=${lines}&level=${level}`),

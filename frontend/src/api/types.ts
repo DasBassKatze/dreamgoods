@@ -505,4 +505,16 @@ export interface ServiceReport {
   by_model: { model: string; calls: number; cost: number; avg: number }[];
   by_day: { day: string; topup: number; charge: number; cost: number; images: number }[];
   client_list: { id: number; name: string }[];
+  client_name: string;
+  catalog: ReportCatalog;
 }
+
+export interface ReportCatalog {
+  metrics: { key: string; label: string; type: "rub" | "num" }[];
+  sections: { key: string; label: string }[];
+  cols: { key: string; label: string; type: "rub" | "num" }[];
+  general: { metrics: string[]; sections: string[]; cols: string[] };
+}
+
+/** Что включить в настраиваемый отчёт. */
+export interface ReportSelection { metrics: string[]; sections: string[]; cols: string[] }
