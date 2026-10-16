@@ -1,4 +1,4 @@
-"""Запуск DreamGoods:  python run_dreamgoods.py [--debug] [--no-browser] [--import-legacy ПАПКА]
+"""Запуск DreamGoods:  python run_dreamgoods.py [--debug] [--no-browser] [--import-legacy ПАПКА] [--reset-master]
 
 Перед первым запуском поднимите PostgreSQL:  docker compose up -d
 """
@@ -87,6 +87,8 @@ def main():
     from dreamgoods.services import presets
     presets.seed(org_id)
     from dreamgoods.core import auth
+    if "--reset-master" in sys.argv:
+        auth.reset_master(org_id)
     auth.bootstrap_master(org_id)
     auth.ensure_master_cabinets(org_id)
     src = None

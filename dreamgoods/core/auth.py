@@ -214,6 +214,24 @@ def ensure_master_cabinets(org_id):
             log.info("Мастер %s: свой кабинет «%s» — генерации напрямую с баланса Polza", u.email, c.name)
 
 
+def reset_master(org_id):
+    """Сброс входа мастера из .env (запуск с --reset-master): логин и пароль — DREAMGOODS_ADMIN_EMAIL / _PASSWORD.
+    Нужен, если пароль забыт или .env поменяли уже после первого запуска. Старые сессии мастера закрываются."""
+    from ..db.models import Session as WebSession
+    email = config.app_env("ADMIN_EMAIL", "admin").strip().lower()
+    password = config.app_env("ADMIN_PASSWORD", "admin")
+    with db.session() as s:
+        u = (s.scalar(select(User).where(User.email == email)) or
+             s.scalar(select(User).where(User.role == "master").order_by(User.id)))
+        if not u:
+            u = User(org_id=org_id, email=email, name="Мастер", role="master")
+            s.add(u)
+            s.flush()
+        u.email, u.role, u.active, u.password_hash = email, "master", True, hash_password(password)
+        s.query(WebSession).filter(WebSession.user_id == u.id).delete()
+    log.warning("Вход мастера сброшен: логин «%s», пароль из DREAMGOODS_ADMIN_PASSWORD в .env", email)
+
+
 def bootstrap_master(org_id):
     """Мастер-аккаунт из .env (DREAMGOODS_ADMIN_EMAIL / DREAMGOODS_ADMIN_PASSWORD), если в базе ещё нет мастера с паролем."""
     email = config.app_env("ADMIN_EMAIL", "admin").strip().lower()
