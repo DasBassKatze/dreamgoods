@@ -36,7 +36,7 @@ export function AdminPanel({ onCatalog, logOnly }: { onCatalog: () => void; logO
   return (
     <section className="page">
       <div className="page-head">
-        <h1>{logOnly ? "Журнал сервера" : "Аналитика"}</h1>
+        <h1>{logOnly ? "Журнал сервера" : "Аналитика проекта"}</h1>
         {!logOnly && <span className="hint">проект «{state.project.name}» · {state.project.client}</span>}
       </div>
       {!logOnly && (

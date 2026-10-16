@@ -112,7 +112,7 @@ export function ReportsPage() {
   return (
     <section className="page reports">
       <div className="page-head">
-        <h1>Отчёты</h1>
+        <h1>Отчёты сервиса</h1>
         {rep && <span className="hint">{fmtDate(rep.from)} — {fmtDate(rep.to)}{rep.client_name ? ` · ${rep.client_name}` : ""}</span>}
         <span className="spacer" />
         <button onClick={load} disabled={loading}>{loading ? "Считаю…" : "Обновить"}</button>

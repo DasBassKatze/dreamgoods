@@ -19,3 +19,19 @@ export function SectionNav({ route, go }: { route: Route; go: (r: Route) => void
     </nav>
   );
 }
+
+const ANALYTICS: [Route, string, string][] = [["m-analytics", "Аналитика проекта", "m-analytics"], ["m-reports", "Отчёты сервиса", "m-reports"]];
+export const ANALYTICS_ROUTES: Route[] = ANALYTICS.map(([r]) => r);
+
+/** «Аналитика и отчёты» мастера: два подраздела — живая аналитика открытого проекта и отчёты сервиса за период. */
+export function AnalyticsNav({ route, go }: { route: Route; go: (r: Route) => void }) {
+  return (
+    <nav className="section-nav" aria-label="Аналитика и отчёты">
+      <span className="pills">
+        {ANALYTICS.map(([r, label, icon]) => (
+          <button key={r} className={route === r ? "on" : ""} onClick={() => go(r)}><Icon name={icon} size={15} /> {label}</button>
+        ))}
+      </span>
+    </nav>
+  );
+}

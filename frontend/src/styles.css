@@ -908,3 +908,6 @@ button.big { padding: 11px 26px; font-size: 15px; font-weight: 600; border-radiu
 .rep-check input { margin: 0; accent-color: var(--accent); }
 .rep-check.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 td.strong { font-weight: 600; }
+a.brand { color: var(--ink); text-decoration: none; border-radius: 10px; }
+a.brand:hover span { color: var(--accent); }
+a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }

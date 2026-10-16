@@ -15,9 +15,8 @@ const UNDER_GEN: Route[] = ["products", "import", "presets", "personas", "styles
 const MASTER: [Route, string][] = [
   ["m-users", "Пользователи"],
   ["m-finance", "Финансы"],
-  ["m-reports", "Отчёты"],
   ["m-keys", "Ключи Polza"],
-  ["m-analytics", "Аналитика"],
+  ["m-analytics", "Аналитика и отчёты"],
   ["m-log", "Журнал сервера"],
   ["m-settings", "Тех. настройки"],
 ];
@@ -51,14 +50,14 @@ export function TopBar(p: Props) {
   return (
     <header className="topbar" ref={ref}>
       <button className="tb-burger" onClick={p.onMenu} aria-label="Проекты"><Icon name="menu" /></button>
-      <div className="brand">
+      <a className="brand" href="#/products" title="На главную — генерация" onClick={(e) => { e.preventDefault(); pick("products"); }}>
         <svg className="brand-mark" width="26" height="26" viewBox="0 0 20 20" aria-hidden="true">
           <defs><linearGradient id="dg-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7c3aed" /><stop offset="1" stopColor="#3b82f6" /></linearGradient></defs>
           <path fill="url(#dg-grad)" d="M9 1.5c.75 4.4 2.3 5.95 6.7 6.7-4.4.75-5.95 2.3-6.7 6.7-.75-4.4-2.3-5.95-6.7-6.7 4.4-.75 5.95-2.3 6.7-6.7z" />
           <path fill="url(#dg-grad)" d="M16 12.5c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z" />
         </svg>
         <span>DreamGoods</span>
-      </div>
+      </a>
       <nav className="tabs-top" aria-label="Разделы">
         {TABS.map(([tab, label]) => {
           // у мастера своего баланса нет — «Тарифы» ведут в финансы кабинетов
@@ -80,7 +79,7 @@ export function TopBar(p: Props) {
             {open === "manage" && (
               <div className="menu">
                 {MASTER.map(([r, label]) => (
-                  <button key={r} className={p.route === r ? "on" : ""} onClick={() => pick(r)}><Icon name={r} size={16} />{label}</button>
+                  <button key={r} className={p.route === r || (r === "m-analytics" && p.route === "m-reports") ? "on" : ""} onClick={() => pick(r)}><Icon name={r} size={16} />{label}</button>
                 ))}
               </div>
             )}
