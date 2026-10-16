@@ -40,7 +40,7 @@ class RestoreRequest(BaseModel):
 
 
 class ParallelUpdate(BaseModel):
-    n: int = Field(..., ge=1, le=12)
+    n: int = Field(..., ge=1, le=200)
 
 
 class RefsUpdate(BaseModel):
@@ -109,7 +109,7 @@ class PresetSave(BaseModel):
     quality: Literal["draft", "standard", "premium", "custom"] = "standard"
     custom: dict = {}                                 # для «Своего»: model, providers, resolution, qc_retries, qc_count, qc_model
     plan: dict = {}                                   # {studio, detail, worn, full, lifestyle}: число кадров (режим auto)
-    market: dict = {}                                 # {key: none|wb|ozon|ymarket|custom, cover: bool, …для custom: aspect, min_side, cover_bg, cover_fill, cover_extra}
+    market: dict = {}                                 # {key: none|wb|ozon|ymarket|avito|custom, cover: bool, …для custom: aspect, min_side, cover_bg, cover_fill, cover_extra}
     strictness: Literal["strict", "normal", "critical"] = "normal"
     plan_mode: Literal["auto", "manual"] = "auto"     # auto — кадры придумывает ИИ по блокам; manual — свои методы съёмки
     manual: list[dict] = []                           # [{title, prompt, block, count, model}]

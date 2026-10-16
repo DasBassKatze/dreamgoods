@@ -5,6 +5,8 @@ export interface ProjectRef {
   name: string;
   client: string;
   client_id?: number;
+  products?: number;
+  thumb?: string | null;
 }
 
 export type FrameState = "missing" | "queued" | "running" | "checking" | "error" | "done";
@@ -70,6 +72,7 @@ export interface Settings {
   max_refs: number;
   ref_side: number;
   upload_refs: boolean;
+  series: boolean;
   qc_enabled: boolean;
   qc_autoregen: boolean;
   qc_retries: number;
@@ -121,7 +124,7 @@ export interface Metrics {
 export interface ProjectState {
   /** true — мастер-аккаунт (видны себестоимость, баланс Polza, метрики) */
   admin: boolean;
-  account: { balance: number; billing: boolean };
+  account: { balance: number; billing: boolean; client?: string };
   project: ProjectRef;
   persona: { id: number; name: string; asset: string | null } | null;
   style_ref: { id: number; name: string; asset: string | null } | null;
@@ -152,6 +155,8 @@ export interface CatalogModel {
   name: string;
   price: string;
   refs?: boolean;
+  note?: string;                 // чем хороша модель и где слабее
+  max_res?: string | null;       // наибольшее разрешение, которое модель реально отдаёт (1K/2K/4K)
   providers: { name: string; price?: string }[];
 }
 
@@ -267,7 +272,7 @@ export interface PresetRef {
 
 export type BlockKey = "studio" | "detail" | "worn" | "full" | "lifestyle";
 export type QualityKey = "draft" | "standard" | "premium" | "custom";
-export type MarketKey = "none" | "wb" | "ozon" | "ymarket" | "custom";
+export type MarketKey = "none" | "wb" | "ozon" | "ymarket" | "avito" | "custom";
 export type StrictnessKey = "strict" | "normal" | "critical";
 
 export interface PresetMarket {
@@ -308,6 +313,7 @@ export interface PresetListing {
   no_subcategory: number;
   markets: { key: MarketKey; name: string; aspect: string; min_side: number; hint: string; cover_bg: string; cover_fill: string; cover_extra: string }[];
   aspects: string[];
+  aspect_names?: Record<string, string>;
   strictness: { key: StrictnessKey; name: string; hint: string }[];
   model_stats: { block: BlockKey; model: string; n: number; avg_cost: number; first_pass: number | null }[];
 }
@@ -377,7 +383,8 @@ export interface AdminOverview {
   pending: number;
   errors_24h: number;
   metrics: Metrics;
-  queue: { parallel: number; max: number };
+  queue: { parallel: number; max: number; waiting_polza: number; running: number; queued: number;
+    limits: { submit_rate: number | null; submitted: number; throttled_hour: number; poll_rate: number | null } };
   model: { model: string; providers: string; resolution: string; aspect: string; qc_model: string };
   default_password: boolean;
 }

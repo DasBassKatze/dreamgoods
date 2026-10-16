@@ -12,10 +12,13 @@ from sqlalchemy import select
 
 from .. import db
 from ..ai import polza
+from ..ai.images import fit_side
 from ..core import keys, storage
+from ..core import presets as presets_core
 from ..core.events import say, utcnow
 from ..core.logs import Trace, log
 from ..db.models import Frame, Generation, Job, Product
+from ..services import billing
 from ..services.common import context, write_usage
 from .queue import ACTIVE, enqueue
 
@@ -57,10 +60,12 @@ def _resume(gid, created):
         frame = s.get(Frame, g.frame_id)
         product = s.get(Product, frame.product_id)
         project, org, st = context(s, product)
-        key, task_id = st.get("api_key"), g.external_id
+        key, task_id, aspect = st.get("api_key"), g.external_id, st.get("aspect")
         others = [k for k in keys.all_secrets(s, org.id) if k != key]
         ids = dict(org=org.id, project=project.id, product=product.id, frame=frame.id)
         sku, pos, model, edit = product.sku, frame.position, g.model, g.instruction
+        job = s.get(Job, g.job_id) if g.job_id else None
+        billing.by_master.set(bool(job and (job.payload or {}).get("by_master")))
     tag = f"[{sku} #{pos:02d}]"
     if not task_id or (created and utcnow() - created > timedelta(seconds=polza.POLL_GIVE_UP)):
         _mark(gid, "error", "результат Polza не получен за сутки")
@@ -85,6 +90,10 @@ def _resume(gid, created):
         say("err", f"❌ {sku} · кадр {pos:02d}: задача Polza завершилась с ошибкой — перегенерируйте кадр", ids["project"])
         return 0
     img = polza.extract_image(data)
+    if img and aspect:      # модель могла генерировать в другом формате — приводим к формату кадра
+        img = polza.crop_to_aspect(img, aspect)
+    if img:                 # и к разрешению пресета, если модель вернула меньше
+        img = fit_side(img, presets_core.out_side(st), tag, int(st.get("qc_min_side") or 0))
     if not img:
         _mark(gid, "error", "в ответе Polza нет картинки")
         return 0

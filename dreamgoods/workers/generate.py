@@ -2,12 +2,14 @@
 import time
 import traceback
 
+from sqlalchemy import select
+
 from .. import db
 from ..ai import persona as personas
 from ..ai import prompts as P
 from ..ai import styleref
-from ..ai import polza, qc
-from ..ai.images import ref_payload
+from ..ai import polza, qc, series
+from ..ai.images import PostSlot, fit_side, ref_for
 from ..core import presets as presets_core
 from ..core import storage
 from ..core.events import say
@@ -56,24 +58,47 @@ def handle(job_id):
         if sref and not styleref.applies(P.block_of(base_prompt), sref.blocks, "main marketplace cover" in base_prompt.lower()):
             sref, style_assets = None, []
         style_name, style_desc, style_note = (sref.name, sref.description, sref.note) if sref else ("", "", "")
+        emotion, anchor_id = "", None
+        if not edit and st.get("series", True):     # серия товара как одна фотосессия (ai/series.py)
+            mates = s.scalars(select(Frame).where(Frame.product_id == product.id, Frame.status != "retired")
+                              .order_by(Frame.position)).all()
+            group = series.group_of(base_prompt)
+            same = [f for f in mates if series.group_of(f.prompt) == group]
+            if same and same[0].id != frame.id:
+                anchor_id = same[0].id
+            if series.is_full_body(base_prompt):
+                full = [f.id for f in mates if series.is_full_body(f.prompt)]
+                emotion = series.emotion_for(sku, full.index(frame.id) if frame.id in full else 0)
     trace = Trace(f"[{sku} #{pos:02d}]")
     side = int(st.get("ref_side") or 1536)
-    refs = [ref_payload(storage.get(a), side) for a in ref_assets]
-    persona_refs = [ref_payload(storage.get(a), side) for a in persona_assets]
+    refs = [ref_for(a, side) for a in ref_assets]
+    persona_refs = [ref_for(a, side) for a in persona_assets]
     if persona_refs:
         log.info("%s модель клиента «%s»: фото %d", trace, persona_name, len(persona_refs))
-    style_refs = [ref_payload(storage.get(a), side) for a in style_assets]
+    style_refs = [ref_for(a, side) for a in style_assets]
     if style_refs:
         log.info("%s оформление «%s»: фото %d", trace, style_name, len(style_refs))
+    anchor_refs = []
+    if anchor_id:
+        asset = _wait_anchor(anchor_id, job_id, trace)
+        if asset is not None:
+            anchor_refs = [ref_for(asset, side)]
+            log.info("%s серия: опорный кадр — тот же свет, цвет и образ, что на нём", trace)
+    if emotion:
+        log.info("%s эмоция модели в кадре: %s", trace, emotion)
     if edit:   # фото 1 — текущая версия кадра в полном размере, дальше — фото товара
-        refs = [ref_payload(storage.get(source_asset), max(side, 2048))] + refs
+        refs = [ref_for(source_asset, max(side, 2048))] + refs
         log.info("%s ✏ правка версии #%s: %s", trace, source_gen, edit)
 
     def full_prompt(p):
         if edit:
             return p
         p = styleref.apply(p, len(refs), len(persona_refs), len(style_refs), style_desc, style_note)
-        return personas.apply(p, persona_desc, len(refs), len(persona_refs), persona_style)
+        p = personas.apply(p, persona_desc, len(refs), len(persona_refs), persona_style)
+        if not st.get("series", True):
+            return series.orient(p, st.get("aspect"))
+        n_anchor = len(refs) + len(persona_refs) + len(style_refs) + 1 if anchor_refs else 0
+        return series.apply(p, st.get("aspect"), emotion, n_anchor)
     qc_on = bool(st.get("qc_enabled"))
     check_refs = qc_refs(ids["product"], st, ids, trace) if qc_on else []
     regen = qc_on and bool(st.get("qc_autoregen", True))
@@ -86,95 +111,106 @@ def handle(job_id):
     if comment:
         log.info("%s в промпт добавлено ваше замечание: %s", trace, comment)
     attempts, error, t0, total = [], None, time.time(), 0.0
-    for a in range(1, tries + 1):
-        if a > 1 and cancelled(job_id):
-            log.info("%s остановлено: новых попыток не делаю", trace)
-            break
-        if a > 1 and not billing.has_funds(ids["project"]):
-            say("err", f"💳 {sku} · кадр {pos:02d}: баланс исчерпан — новые попытки не делаю", ids["project"])
-            break
-        set_note(job_id, f"попытка {a}/{tries}" if tries > 1 else "генерация")
-        ta = time.time()
-        gen_prompt = full_prompt(prompt)
-        pend = []                 # строки generations со статусом pending: номер задачи Polza сохранён до ожидания
+    post = PostSlot()
+    try:
+        for a in range(1, tries + 1):
+            if a > 1 and cancelled(job_id):
+                log.info("%s остановлено: новых попыток не делаю", trace)
+                break
+            if a > 1 and not billing.has_funds(ids["project"]):
+                say("err", f"💳 {sku} · кадр {pos:02d}: баланс исчерпан — новые попытки не делаю", ids["project"])
+                break
+            set_note(job_id, f"попытка {a}/{tries}" if tries > 1 else "генерация")
+            ta = time.time()
+            gen_prompt = full_prompt(prompt)
+            pend = []                 # строки generations со статусом pending: номер задачи Polza сохранён до ожидания
 
-        def on_task(task_id, a=a, gen_prompt=gen_prompt):
-            with db.session() as s:
-                g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
-                               status="pending", external_id=task_id, instruction=edit, source_id=source_gen)
-                s.add(g)
-                s.flush()
-                pend.append(g.id)
-        try:
-            data = polza.generate(st, key, gen_prompt, refs + persona_refs + style_refs, str(trace), on_task=on_task)
+            def on_task(task_id, a=a, gen_prompt=gen_prompt):
+                with db.session() as s:
+                    g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
+                                   status="pending", external_id=task_id, instruction=edit, source_id=source_gen)
+                    s.add(g)
+                    s.flush()
+                    pend.append(g.id)
             try:
-                img = polza.extract_image(data)
-            except Exception as e:      # оплачено, но не скачалось — заберём позже
-                raise polza.Pending(str(e), pend[-1] if pend else "") from e
-            if not img:
-                raise RuntimeError("в ответе Polza нет картинки")
-        except polza.Pending as e:
-            error = e
-            log.warning("%s %s", trace, e)
-            say("info", f"⏳ {sku} · кадр {pos:02d}: {e}", ids["project"])
-            with db.session() as s:        # все, кроме последней, — неудавшиеся попытки внутри одного запроса
+                data = polza.generate(st, key, gen_prompt, refs + persona_refs + style_refs + anchor_refs, str(trace),
+                                         on_task=on_task)
+                try:
+                    post.acquire()          # не больше POST_LIMIT полноразмерных картинок в памяти одновременно
+                    img = polza.extract_image(data)
+                    data = {k: v for k, v in data.items() if k not in ("data", "output")}   # base64 результата больше не нужен
+                except Exception as e:      # оплачено, но не скачалось — заберём позже
+                    raise polza.Pending(str(e), pend[-1] if pend else "") from e
+                if not img:
+                    raise RuntimeError("в ответе Polza нет картинки")
+                img = fit_side(img, presets_core.out_side(st), str(trace), int(st.get("qc_min_side") or 0))
+            except polza.Pending as e:
+                error = e
+                log.warning("%s %s", trace, e)
+                say("info", f"⏳ {sku} · кадр {pos:02d}: {e}", ids["project"])
+                with db.session() as s:        # все, кроме последней, — неудавшиеся попытки внутри одного запроса
+                    for gid in pend[:-1]:
+                        s.get(Generation, gid).status = "error"
+                break
+            except Exception as e:
+                error = e
+                with db.session() as s:
+                    for gid in pend:
+                        g = s.get(Generation, gid)
+                        g.status, g.error, g.seconds = "error", str(e)[:2000], time.time() - ta
+                    if not pend:
+                        s.add(Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
+                                         status="error", error=str(e)[:2000], seconds=time.time() - ta, instruction=edit,
+                                         source_id=source_gen))
+                break
+            cost = polza.cost_of(data)
+            provider = data.get("provider", "")
+            total += cost
+            trace.add("edit" if edit else "generation", st["model"], cost, provider=provider)
+            with db.session() as s:   # оплаченный результат — сразу в базу и хранилище
+                asset = storage.put(s, ids["org"], img, "output", f"{sku}_{pos:02d}_a{a}{'_edit' if edit else ''}.png")
                 for gid in pend[:-1]:
                     s.get(Generation, gid).status = "error"
-            break
-        except Exception as e:
-            error = e
+                g = s.get(Generation, pend[-1]) if pend else None
+                if g is None:
+                    g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
+                                   instruction=edit, source_id=source_gen)
+                    s.add(g)
+                g.provider, g.status, g.output_asset_id, g.cost_rub = provider, "ok", asset.id, cost
+                g.seconds, g.external_id = time.time() - ta, str(data.get("id") or g.external_id or "")
+                s.flush()
+                write_usage(s, ids["org"], ids["project"], ids["product"], ids["frame"], trace, f"generation:{g.id}")
+                gen_id = g.id
+            att = {"gen": gen_id, "qc": None, "n": a, "provider": provider}   # саму картинку не держим — она уже в хранилище
+            prepared = qc.prepare(img, st, str(trace)) if qc_on else None
+            img = None
+            post.release()
+            attempts.append(att)
+            if not qc_on:
+                break
+            set_note(job_id, f"проверка {a}/{tries}" if tries > 1 else "проверка")
+            try:
+                res = qc.run_qc(st, base_prompt, check_refs, prepared, trace)
+            except Exception as e:
+                log.debug("%s трассировка проверки\n%s", trace, traceback.format_exc())
+                say("err", f"⚠️ {sku} · кадр {pos:02d}: проверка не выполнена — {str(e)[:200]}. Кадр сохранён без проверки",
+                    ids["project"])
+                with db.session() as s:
+                    write_usage(s, ids["org"], ids["project"], ids["product"], ids["frame"], trace, f"generation:{gen_id}")
+                break
+            att["qc"] = res
+            total += res["cost"]
             with db.session() as s:
-                for gid in pend:
-                    g = s.get(Generation, gid)
-                    g.status, g.error, g.seconds = "error", str(e)[:2000], time.time() - ta
-                if not pend:
-                    s.add(Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
-                                     status="error", error=str(e)[:2000], seconds=time.time() - ta, instruction=edit,
-                                     source_id=source_gen))
-            break
-        cost = polza.cost_of(data)
-        provider = data.get("provider", "")
-        total += cost
-        trace.add("edit" if edit else "generation", st["model"], cost, provider=provider)
-        with db.session() as s:   # оплаченный результат — сразу в базу и хранилище
-            asset = storage.put(s, ids["org"], img, "output", f"{sku}_{pos:02d}_a{a}{'_edit' if edit else ''}.png")
-            for gid in pend[:-1]:
-                s.get(Generation, gid).status = "error"
-            g = s.get(Generation, pend[-1]) if pend else None
-            if g is None:
-                g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
-                               instruction=edit, source_id=source_gen)
-                s.add(g)
-            g.provider, g.status, g.output_asset_id, g.cost_rub = provider, "ok", asset.id, cost
-            g.seconds, g.external_id = time.time() - ta, str(data.get("id") or g.external_id or "")
-            s.flush()
-            write_usage(s, ids["org"], ids["project"], ids["product"], ids["frame"], trace, f"generation:{g.id}")
-            gen_id = g.id
-        att = {"gen": gen_id, "img": img, "qc": None, "n": a, "provider": provider}
-        attempts.append(att)
-        if not qc_on:
-            break
-        set_note(job_id, f"проверка {a}/{tries}" if tries > 1 else "проверка")
-        try:
-            res = qc.run_qc(st, base_prompt, check_refs, img, trace)
-        except Exception as e:
-            log.debug("%s трассировка проверки\n%s", trace, traceback.format_exc())
-            say("err", f"⚠️ {sku} · кадр {pos:02d}: проверка не выполнена — {str(e)[:200]}. Кадр сохранён без проверки",
-                ids["project"])
-            with db.session() as s:
+                s.add(QCCheck(frame_id=ids["frame"], generation_id=gen_id, model=st.get("qc_model", ""), passed=res["pass"],
+                              reasons=[x for x in res["defects"].split("; ") if x], tech=res["tech"], counts=res["counts"],
+                              info=res["info"], cost_rub=res["cost"], source="gen"))
                 write_usage(s, ids["org"], ids["project"], ids["product"], ids["frame"], trace, f"generation:{gen_id}")
-            break
-        att["qc"] = res
-        total += res["cost"]
-        with db.session() as s:
-            s.add(QCCheck(frame_id=ids["frame"], generation_id=gen_id, model=st.get("qc_model", ""), passed=res["pass"],
-                          reasons=[x for x in res["defects"].split("; ") if x], tech=res["tech"], counts=res["counts"],
-                          info=res["info"], cost_rub=res["cost"], source="gen"))
-            write_usage(s, ids["org"], ids["project"], ids["product"], ids["frame"], trace, f"generation:{gen_id}")
-        if res["pass"]:
-            break
-        say("info", f"🔍 {sku} · кадр {pos:02d} · попытка {a}: брак — {res['defects'][:160]}", ids["project"])
-        prompt = qc.correction(first_prompt, res["fix"] or res["defects"])
+            if res["pass"]:
+                break
+            say("info", f"🔍 {sku} · кадр {pos:02d} · попытка {a}: брак — {res['defects'][:160]}", ids["project"])
+            prompt = qc.correction(first_prompt, res["fix"] or res["defects"])
+    finally:
+        post.release()
 
     if not attempts:
         if isinstance(error, polza.Pending):
@@ -192,6 +228,32 @@ def handle(job_id):
         f.current_generation_id = best["gen"]
         f.status = frame_status(best["qc"])
     _report(sku, pos, ids["project"], qc_on, best, attempts, total, time.time() - t0, error, edit)
+
+
+ANCHOR_WAIT = 8 * 60
+
+
+def _wait_anchor(anchor_id, job_id, trace):
+    """Картинка опорного кадра серии. Если он сейчас снимается — ждём (поток спит, это дёшево), чтобы весь товар
+    снимался «от первого кадра». Если опорного кадра нет и он не в работе — снимаем без него."""
+    deadline = time.time() + ANCHOR_WAIT
+    noted = False
+    while True:
+        with db.session() as s:
+            f = s.get(Frame, anchor_id)
+            if f is None:
+                return None
+            g = s.get(Generation, f.current_generation_id) if f.current_generation_id else None
+            if g and g.output_asset_id and f.status != "rejected":
+                return g.output_asset
+            busy = s.scalar(select(Job.id).where(Job.frame_id == anchor_id, Job.status.in_(("queued", "running"))))
+        if not busy or time.time() > deadline or cancelled(job_id):
+            return None
+        if not noted:
+            set_note(job_id, "ждёт опорный кадр серии")
+            log.info("%s серия: жду опорный кадр — он снимается первым", trace)
+            noted = True
+        time.sleep(5)
 
 
 def _best(attempts):

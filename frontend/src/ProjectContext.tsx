@@ -10,6 +10,10 @@ export interface ProjectScope {
   selected: Set<number>;
   toggleSelected: (productId: number, on: boolean) => void;
   setSelected: (ids: number[]) => void;
+  /** Выделенные кадры (для выгрузки только их). */
+  pickedFrames: Set<number>;
+  togglePicked: (frameId: number, on: boolean) => void;
+  setPicked: (ids: number[]) => void;
   product: (id: number) => Product | undefined;
   /** Сколько кадров максимум ставить за один запуск (0 — без ограничения). */
   limit: number;

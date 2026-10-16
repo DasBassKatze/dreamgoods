@@ -9,9 +9,9 @@ from .. import db
 from ..core import presets as P
 from ..core.events import say
 from ..core.logs import log
-from ..db.models import GenerationPreset, Product, ProductProfile, Project
+from ..db.models import GenerationPreset, Job, Product, ProductPhoto, ProductProfile, Project
 from ..workers.queue import enqueue
-from .common import org_of_project, rebuild_frames
+from .common import LIVE, context, org_of_project, rebuild_frames
 
 
 def seed(org_id):
@@ -78,7 +78,7 @@ def listing(project_id):
                 "no_subcategory": no_sub,
                 "markets": [{"key": k, **{x: v[x] for x in ("name", "aspect", "min_side", "hint", "cover_bg", "cover_fill", "cover_extra")}}
                             for k, v in P.MARKETS.items()],
-                "aspects": list(P.ASPECTS),
+                "aspects": list(P.ASPECTS), "aspect_names": P.ASPECT_NAMES,
                 "strictness": [{"key": k, **v} for k, v in P.STRICTNESS.items()],
                 "model_stats": model_stats(s, org.id)}
 
@@ -122,7 +122,8 @@ def save(project_id, preset_id, data, master=False):
         p.name = (str(data.get("name") or "").strip() or "Новый пресет")[:120]
         p.description = str(data.get("description") or "").strip()
         p.quality = quality
-        p.custom = P.clean_custom(data.get("custom")) if quality == "custom" else {}
+        # основная модель пресета задаётся на любом уровне качества; остальные свои значения — только у «Своего»
+        p.custom = P.clean_custom(data.get("custom")) if quality == "custom" else P.clean_main_model(data.get("custom"))
         p.plan = P.clean_plan(data.get("plan"))
         p.plan_mode = "manual" if data.get("plan_mode") == "manual" else "auto"
         p.manual = P.clean_manual(data.get("manual"))
@@ -227,6 +228,54 @@ def apply(project_id, preset_id, product_ids=None, categories=None, everything=F
         + (f"; промпты пересобраны сразу: {rebuilt}" if rebuilt else "")
         + (f"; ИИ составляет профиль заново: {queued}" if queued else ""), project_id)
     return summary
+
+
+def sync_for_generation(project_id, product_ids=None, dry_run=False, limit=0):
+    """Перед генерацией кадры товаров приводятся к действующему пресету (свой у товара или пресет проекта).
+    Изменившиеся кадры пересобираются (готовая картинка уходит в историю); если в профиле не хватает
+    кадров нужного вида — ИИ составляет профиль заново, а генерация начнётся сама, когда промпты будут готовы.
+    dry_run — посчитать то же самое и откатить: сколько кадров встанет в очередь, сколько переснимется."""
+    from .common import frames_differ, plan_rows
+    from .frames import missing_frames
+    out = {"products": 0, "frames": 0, "reshoot": 0, "need_profile": 0, "queued_profiles": 0, "count": 0}
+    with db.session() as s:
+        q = select(Product).where(Product.project_id == project_id)
+        if product_ids:
+            q = q.where(Product.id.in_(product_ids))
+        for p in s.scalars(q).all():
+            if s.scalar(select(Job.id).where(Job.product_id == p.id, Job.kind == "profile", Job.status.in_(LIVE))):
+                continue                      # профиль уже составляется — генерация начнётся после него
+            st = context(s, p)[2]
+            prof = s.get(ProductProfile, p.current_profile_id).data if p.current_profile_id else None
+            manual = st.get("plan_mode") == "manual"
+            if not prof or (not manual and _needs_profile(prof, P.plan_of(st))):
+                if not s.scalar(select(ProductPhoto.id).where(ProductPhoto.product_id == p.id,
+                                                              ProductPhoto.is_reference.is_(True)).limit(1)):
+                    continue                  # без фото профиль не составить — товар просто пропускаем
+                out["need_profile"] += 1
+                if not dry_run and enqueue(s, "profile", project_id, product_id=p.id,
+                                           payload={"build": True, "generate": True}, priority=20):
+                    out["queued_profiles"] += 1
+                continue
+            changed, redo = frames_differ(s, p, plan_rows(s, p, prof))
+            if not changed:
+                continue
+            out["products"] += 1
+            out["frames"] += changed
+            out["reshoot"] += redo
+            rebuild_frames(s, p, prof, keep_edited=True)
+            if not dry_run:
+                log.info("[%s] кадры приведены к пресету перед генерацией: изменено %d, переснимутся %d", p.sku, changed, redo)
+        s.flush()
+        out["count"] = len(missing_frames(project_id, product_ids, limit, s))
+        if dry_run:
+            s.rollback()
+    if not dry_run and (out["products"] or out["queued_profiles"]):
+        say("info", "🎛 Кадры приведены к пресету: " + ", ".join(x for x in [
+            f"товаров {out['products']}" if out["products"] else "",
+            f"переснимется готовых кадров {out['reshoot']}" if out["reshoot"] else "",
+            f"ИИ составит профиль для {out['queued_profiles']}" if out["queued_profiles"] else ""] if x), project_id)
+    return out
 
 
 def _fallback_plan(s, project_id):

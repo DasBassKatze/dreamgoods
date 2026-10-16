@@ -202,8 +202,8 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
         {p.status !== "ready" && p.groups.length > 0 && <div className="err-text">Модель ещё не готова — группы начнут работать, когда будет выбран образ.</div>}
       </div>
 
-      <details className="persona-passport mt10">
-        <summary>Паспорт образа — то, что получает генератор{p.style?.vibe ? ` · ${p.style.vibe}` : ""}</summary>
+      {state.admin && <details className="persona-passport mt10 admin-only">
+        <summary>Паспорт образа — то, что получает генератор (видно только мастер-аккаунту){p.style?.vibe ? ` · ${p.style.vibe}` : ""}</summary>
         <div className="hint mb8">
           Составляется ИИ для каждого варианта и сохраняется у выбранного. Внешность держится на всех кадрах товара; макияж,
           укладка и аксессуары сохраняются; стиль одежды задаёт, во что одевать модель под товар.
@@ -224,7 +224,7 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
             <button className="primary" onClick={() => act(() => api.updatePersona(p.id, { description: desc, style }), "Паспорт образа сохранён")}>Сохранить паспорт</button>
           </div>
         )}
-      </details>
+      </details>}
     </section>
   );
 }

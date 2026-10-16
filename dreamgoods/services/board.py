@@ -186,7 +186,7 @@ def state(project_id, admin=False):
         settings = public(org, project)
         client = project.client
         markup = billing.markup_of(client, org)
-        account = {"balance": round(client.balance_rub or 0, 2), "billing": client.billing}
+        account = {"balance": round(client.balance_rub or 0, 2), "billing": client.billing, "client": client.name}
     b = polza.balance(st.get("api_key")) if admin else {"value": None, "error": ""}
     log_lines = lines(project_id) if admin else [_plain(x) for x in lines(project_id, include_global=False)]
     spent_v = round(float(spent or 0), 2) if admin else None

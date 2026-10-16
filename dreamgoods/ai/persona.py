@@ -49,7 +49,9 @@ identical (the same person: same face, unless the request concerns the face). If
 vary only how the change is interpreted.
 """ + SPEC_RULES + """
 Also write "change_en": the change request translated to a precise English instruction for an image editor.
-Reply with ONLY JSON: {{"variants": [{{"name_ru": "...", "change_en": "...", "appearance": "...", "style": {{...same keys...}},
+Inside text values never use double quotes (write «...» or single quotes instead).
+Reply with ONLY valid JSON: {{"variants": [{{"name_ru": "...", "change_en": "...", "appearance": "...",
+"style": {{"makeup": "...", "hair_styling": "...", "clothing_style": "...", "accessories": "...", "vibe": "...", "expression": "..."}},
 "look": {{"outfit": "...", "background": "..."}}}}]}}"""
 
 DESCRIBE_PROMPT = """You look at photos of ONE person (a model for product photos) and write their passport for an image generator.
@@ -99,7 +101,7 @@ def _model(st):
 def specs_from_brief(st, brief, n, trace):
     """n разных паспортов по пожеланиям клиента. Возвращает (список, стоимость)."""
     res, cost, _ = chat(st, _model(st), SPEC_PROMPT.format(n=n), [{"type": "text", "text": f"Client's wishes: {brief}"}],
-                        trace, "модель: описание", 900 * n + 400, "none")
+                        trace, "модель: описание", 1500 * n + 600, "none")
     specs = [_clean_spec(v) for v in (res.get("variants") or [])][:n]
     specs = [x for x in specs if x["appearance"]]
     if not specs:
@@ -112,8 +114,9 @@ def specs_from_brief(st, brief, n, trace):
 def specs_for_edit(st, current, request, n, trace):
     """Паспорта после изменения внешности. current — нынешний паспорт модели."""
     text = (f"Current passport: {json.dumps(current, ensure_ascii=False)}\nClient's change request: {request}")
+    # паспорт целиком переписывается в каждом варианте — лимит с запасом, иначе ответ обрезается посреди JSON
     res, cost, _ = chat(st, _model(st), EDIT_PROMPT.format(n=n), [{"type": "text", "text": text}], trace,
-                        "модель: описание", 900 * n + 400, "none")
+                        "модель: изменение", 1500 * n + 600, "none")
     specs = [_clean_spec(v) for v in (res.get("variants") or [])][:n]
     specs = [x for x in specs if x["appearance"]]
     if not specs:
@@ -203,7 +206,8 @@ def apply(prompt, description, n_product, n_persona, style=None):
     else:
         intro += "If the outfit described below does not suit this person, dress them in a similar style that does. "
     if s.get("expression"):
-        intro += f"Expression and posing manner: {s['expression'].rstrip('.')}. "
+        intro += (f"General posing manner: {s['expression'].rstrip('.')} (if a specific facial expression for this photo "
+                  "is given below, it takes priority). ")
     # описание человека из профиля товара заменяем на модель клиента, чтобы не было двух разных людей
     out = re.sub(r"Model: .*?, tasteful high-fashion editorial style\.",
                  "Model: the same person as in the model reference photos, tasteful high-fashion editorial style.", prompt, count=1)

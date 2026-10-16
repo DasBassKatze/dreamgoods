@@ -13,7 +13,8 @@ DEFAULTS = {
     "resolution": "2K",
     "max_refs": 6,
     "ref_side": 1536,
-    "upload_refs": True,        # загружать фото-референсы в хранилище Polza и передавать ссылками (надёжнее base64)
+    "upload_refs": True,
+    "series": True,             # серия товара как одна фотосессия: опорный кадр, единый свет и образ, разные эмоции        # загружать фото-референсы в хранилище Polza и передавать ссылками (надёжнее base64)
     # ИИ-проверка
     "qc_enabled": True,
     "qc_autoregen": True,
@@ -45,7 +46,7 @@ SECRETS = ("api_key", "qc_api_key")
 INTS = {"max_refs": (1, 14), "ref_side": (512, 3072), "qc_retries": (0, 3), "qc_min_side": (0, 4096),
         "qc_image_side": (768, 4096), "plan_a": (0, 8), "plan_b": (0, 6), "plan_c": (0, 4),
         "persona_id": (0, 10**15), "persona_refs": (1, 4), "preset_id": (0, 10**15), "style_ref_id": (0, 10**15)}
-BOOLS = ("fallback", "qc_enabled", "qc_autoregen", "qc_count", "qc_cascade", "upload_refs")
+BOOLS = ("fallback", "qc_enabled", "qc_autoregen", "qc_count", "qc_cascade", "upload_refs", "series")
 REASONING = ("auto", "none", "minimal", "low", "medium", "high")
 
 
@@ -87,6 +88,9 @@ def clean(body):
             v = max(lo, min(hi, int(float(v or 0))))
         elif k in BOOLS:
             v = bool(v)
+        elif k == "aspect":
+            from .presets import ASPECTS
+            v = v if v in ASPECTS else DEFAULTS["aspect"]
         elif k == "qc_strictness":
             v = v if v in ("strict", "normal", "critical") else "normal"
         elif k in ("qc_reasoning", "qc_count_reasoning"):

@@ -5,6 +5,8 @@
 с наценкой (наценка клиента или общая из настроек мастера) — в журнал баланса (balance_ledger).
 Мастер пополняет балансы вручную. При нулевом балансе новые платные задания не ставятся.
 """
+import contextvars
+
 from sqlalchemy import func, select
 
 from .. import db
@@ -14,6 +16,11 @@ from ..db.models import BalanceEntry, Client, Organization, Project
 KIND_RU = {"generation": "генерация кадра", "edit": "правка фото", "qc": "ИИ-проверка", "count": "ИИ-проверка",
            "spec": "ИИ-проверка", "views": "разбор референсов", "profile": "профиль товара", "sort": "разбор импорта",
            "persona": "модель клиента", "persona_image": "образ модели", "style": "оформление"}
+
+
+# Кто запустил текущее действие: мастер платит напрямую с Polza — внутренний баланс кабинета не проверяется
+# и не списывается. Ставится из запроса (API) и переносится в задания очереди (payload.by_master).
+by_master = contextvars.ContextVar("dg_by_master", default=False)
 
 
 class NoFunds(ValueError):
@@ -34,7 +41,7 @@ def markup_of(client, org):
 def charge(s, project_id, usage, tag=""):
     """usage — список расходов операции [{kind, cost}] (из Trace). Списывает с баланса клиента проекта."""
     cost = sum(float(u.get("cost") or 0) for u in usage)
-    if cost <= 0 or not project_id:
+    if cost <= 0 or not project_id or by_master.get():
         return 0.0
     project = s.get(Project, project_id)
     if not project:
@@ -80,7 +87,9 @@ def client_of_project(s, project_id):
 
 
 def ensure_funds(project_id):
-    """Перед платным заданием: у клиента с балансом должно быть больше нуля."""
+    """Перед платным заданием: у клиента с балансом должно быть больше нуля (мастера это не касается)."""
+    if by_master.get():
+        return
     with db.session() as s:
         c = client_of_project(s, project_id)
         if c and c.billing and (c.balance_rub or 0) <= 0:
@@ -89,6 +98,8 @@ def ensure_funds(project_id):
 
 
 def has_funds(project_id):
+    if by_master.get():
+        return True
     with db.session() as s:
         c = client_of_project(s, project_id)
         return not (c and c.billing and (c.balance_rub or 0) <= 0)

@@ -13,7 +13,7 @@ const VIEW_RU: Record<string, string> = {
 };
 
 export function ProductCard({ product: p, dialogs }: { product: Product; dialogs: Dialogs }) {
-  const { api, reload, run, selected, toggleSelected, state } = useProject();
+  const { api, reload, run, selected, toggleSelected, state, pickedFrames, togglePicked } = useProject();
   const { generate, regenerate, profiles } = useActions();
   const ui = useUI();
   const chosen = p.photos.filter((x) => x.selected);
@@ -59,7 +59,8 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
               : `Модель по группе «${p.persona.via}»`}>👤 {p.persona.name}</span>
         )}
         <span className="spacer" />
-        <button disabled={p.done === p.total} onClick={() => generate([p.id])}>▶ Догенерировать</button>
+        <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие"
+          onClick={() => generate([p.id])}>▶ Сгенерировать</button>
       </div>
 
       <div className="refs">
@@ -78,7 +79,8 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
       {p.total ? (
         <div className="frames">
           {p.frames.map((f) => (
-            <FrameTile key={f.id} frame={f} onOpen={() => dialogs.openFrame(p.id, f.id)} onRegen={() => regenerate(p, f)} />
+            <FrameTile key={f.id} frame={f} onOpen={() => dialogs.openFrame(p.id, f.id)} onRegen={() => regenerate(p, f)}
+              picked={pickedFrames.has(f.id)} onPick={(on) => togglePicked(f.id, on)} />
           ))}
         </div>
       ) : (

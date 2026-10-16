@@ -15,6 +15,11 @@ const P: Record<string, string> = {
   logout: "M8 4H4v12h4M12 6.5 15.5 10 12 13.5M15.5 10H8",
   menu: "M3 5h14M3 10h14M3 15h14",
   plus: "M10 4v12M4 10h12",
+  spark: "M10 2.5c.6 3.7 1.8 4.9 5.5 5.5-3.7.6-4.9 1.8-5.5 5.5-.6-3.7-1.8-4.9-5.5-5.5 3.7-.6 4.9-1.8 5.5-5.5zM15.5 13l.6 2 2 .6-2 .6-.6 2-.6-2-2-.6 2-.6z",
+  coin: "M10 17a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM8 7.5h3a1.5 1.5 0 0 1 0 3H8V7.5zM8 10.5h3.5M8 7.5V13",
+  chevron: "M6 8l4 4 4-4",
+  search: "M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM13.5 13.5 17 17",
+  folder: "M3 6a1 1 0 0 1 1-1h4l2 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z",
 };
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {

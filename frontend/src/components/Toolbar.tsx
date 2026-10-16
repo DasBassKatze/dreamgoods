@@ -38,7 +38,7 @@ export function Toolbar({ filter, onFilter, query, onQuery }: {
 
 /** Строка над списком: выбор товаров и групповые действия. */
 export function ListBar() {
-  const { state, api, reload, run, selected, setSelected, limit, setLimit } = useProject();
+  const { state, api, reload, run, selected, setSelected, limit, setLimit, pickedFrames, setPicked } = useProject();
   const { checkReady, profiles } = useActions();
   const ui = useUI();
   const s = state.settings;
@@ -70,6 +70,12 @@ export function ListBar() {
         {selected.size ? <>выбрано <b>{selected.size}</b></> : "выбрать все"}
       </label>
       {selected.size > 0 && <button className="link" onClick={() => setSelected([])}>снять выбор</button>}
+      {pickedFrames.size > 0 && (
+        <span className="hint" title="Выделенные кадры можно скачать отдельно: «Скачать ZIP» → «Выделенные кадры»">
+          кадров выделено <b>{pickedFrames.size}</b>{" "}
+          <button className="link" onClick={() => setPicked([])}>снять</button>
+        </span>
+      )}
       <label className="check" title="Сколько кадров максимум поставить за один запуск; 0 — все">
         лимит <input type="number" min={0} value={limit} style={{ width: 60 }}
           onChange={(e) => setLimit(Math.max(0, +e.target.value || 0))} />

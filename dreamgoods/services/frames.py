@@ -10,17 +10,19 @@ from ..workers.queue import enqueue
 from .common import LIVE, frame_in
 
 
-def missing_frames(project_id, product_ids=None, limit=0):
+def missing_frames(project_id, product_ids=None, limit=0, s=None):
     """Кадры без картинки, которые сейчас не в работе."""
-    with db.session() as s:
-        q = (select(Frame.id).join(Product, Product.id == Frame.product_id)
-             .where(Product.project_id == project_id, Frame.current_generation_id.is_(None), Frame.status.not_in(("accepted", "retired")))
-             .order_by(func.lower(Product.sku), Frame.position))
-        if product_ids:
-            q = q.where(Product.id.in_(product_ids))
-        ids = s.scalars(q).all()
-        busy = set(s.scalars(select(Job.frame_id).where(Job.frame_id.in_(ids), Job.status.in_(LIVE))).all()) if ids else set()
-        ids = [i for i in ids if i not in busy]
+    if s is None:
+        with db.session() as s2:
+            return missing_frames(project_id, product_ids, limit, s2)
+    q = (select(Frame.id).join(Product, Product.id == Frame.product_id)
+         .where(Product.project_id == project_id, Frame.current_generation_id.is_(None), Frame.status.not_in(("accepted", "retired")))
+         .order_by(func.lower(Product.sku), Frame.position))
+    if product_ids:
+        q = q.where(Product.id.in_(product_ids))
+    ids = s.scalars(q).all()
+    busy = set(s.scalars(select(Job.frame_id).where(Job.frame_id.in_(ids), Job.status.in_(LIVE))).all()) if ids else set()
+    ids = [i for i in ids if i not in busy]
     return ids[:limit] if limit else ids
 
 
@@ -48,11 +50,25 @@ def frames_of_project(project_id, frame_ids):
 
 
 def enqueue_frames(project_id, frame_ids, kind="generate", payload=None):
+    """Опорные кадры серии (первый кадр группы товара: обложка, первый кадр на модели) — в очередь первыми:
+    остальные кадры товара снимаются по ним."""
+    from ..ai import series
     n = 0
     with db.session() as s:
+        first = {}
+        if kind == "generate" and frame_ids:
+            for f in s.scalars(select(Frame).where(Frame.id.in_(frame_ids))).all():
+                if f.product_id not in first:
+                    mates = s.scalars(select(Frame).where(Frame.product_id == f.product_id, Frame.status != "retired")
+                                      .order_by(Frame.position)).all()
+                    seen = {}
+                    for m in mates:
+                        seen.setdefault(series.group_of(m.prompt), m.id)
+                    first[f.product_id] = set(seen.values())
         for fid in frame_ids:
             f = s.get(Frame, fid)
-            if enqueue(s, kind, project_id, product_id=f.product_id, frame_id=fid, payload=payload):
+            prio = 90 if fid in first.get(f.product_id, ()) else 100
+            if enqueue(s, kind, project_id, product_id=f.product_id, frame_id=fid, payload=payload, priority=prio):
                 n += 1
     return n
 

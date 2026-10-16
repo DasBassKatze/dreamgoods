@@ -129,6 +129,8 @@ def update(cu, user_id, data):
             auth.validate_password(data["password"])
             u.password_hash = auth.hash_password(data["password"])
         c = s.get(Client, u.client_id) if u.client_id else None
+        if c and u.role == "master" and data.get("billing"):
+            raise ValueError("кабинет мастера работает напрямую с баланса Polza — внутренний баланс ему не нужен")
         if c:
             if "markup" in data:
                 c.markup = None if data["markup"] in (None, "") else max(0.0, float(data["markup"]))

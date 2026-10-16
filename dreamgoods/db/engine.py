@@ -6,7 +6,10 @@ from sqlalchemy.orm import sessionmaker
 
 from ..core import config
 
-engine = create_engine(config.DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=20, future=True)
+# Сотни потоков заданий держат соединение лишь на короткие записи; при пике ждут свободное (pool_timeout),
+# а не открывают новые сверх лимита PostgreSQL (max_connections = 100 по умолчанию).
+engine = create_engine(config.DATABASE_URL, pool_pre_ping=True, pool_size=20, max_overflow=40, pool_timeout=120,
+                       future=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 

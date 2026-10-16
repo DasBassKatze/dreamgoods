@@ -1,6 +1,7 @@
 """Модели клиента (люди на кадрах): свои фото или образ, сгенерированный «для примерки»."""
 from fastapi import APIRouter, Depends, Request
 
+from ...core import admin
 from ...services import personas
 from ..deps import need_key, project_id
 from ..schemas import PersonaCandidates, PersonaChoice, PersonaCreate, PersonaEdit, PersonaUpdate
@@ -9,9 +10,16 @@ router = APIRouter(prefix="/api/projects/{project_id}", tags=["модели кл
 
 
 @router.get("/personas")
-def listing(pid: int = Depends(project_id)):
-    """Модели клиента этого проекта (общие для всех его проектов) и модель по умолчанию в проекте."""
-    return personas.listing(pid)
+def listing(request: Request, pid: int = Depends(project_id)):
+    """Модели клиента этого проекта (общие для всех его проектов) и модель по умолчанию в проекте.
+    Паспорт образа (подробное описание внешности и стиля для генератора) — внутренняя кухня: только мастеру."""
+    out = personas.listing(pid)
+    if not admin.is_admin(request):
+        for p in out["personas"]:
+            p["description"], p["style"] = "", {}
+            for ph in p["photos"]:
+                ph.pop("cost", None)
+    return out
 
 
 @router.post("/personas")
@@ -20,8 +28,12 @@ def create(body: PersonaCreate, pid: int = Depends(project_id)):
 
 
 @router.patch("/personas/{persona_id}")
-def update(persona_id: int, body: PersonaUpdate, pid: int = Depends(project_id)):
-    personas.update(pid, persona_id, body.model_dump())
+def update(persona_id: int, body: PersonaUpdate, request: Request, pid: int = Depends(project_id)):
+    values = body.model_dump()
+    if not admin.is_admin(request):          # паспорт меняет только мастер
+        values.pop("description", None)
+        values.pop("style", None)
+    personas.update(pid, persona_id, values)
     return {"ok": True}
 
 

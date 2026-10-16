@@ -7,6 +7,7 @@ from ..core import storage
 from ..core.events import say
 from ..core.logs import Trace
 from ..db.models import Job, Product, ProductProfile
+from ..services import billing
 from ..services.common import context, library, rebuild_frames, write_usage
 from .queue import set_note
 from ..ai.persona import person_hint as person_hint_of
@@ -23,6 +24,7 @@ def handle(job_id):
         cats = {k: v.get("name", k) for k, v in library(s, org.id).items()}
         ids = dict(org=org.id, project=project.id, product=product.id)
         sku, labels, build = product.sku, product.label_data or {}, bool((job.payload or {}).get("build"))
+        then_generate = build and bool((job.payload or {}).get("generate"))
         assets = [p.asset for p in photos]
         persona, _ = persona_for(s, product, st)
         person_hint = person_hint_of(persona.description, persona.style) if persona else ""
@@ -45,5 +47,10 @@ def handle(job_id):
             product.name = prof["summary_ru"][:300]
         write_usage(s, ids["org"], ids["project"], ids["product"], None, trace, f"profile:{p.id}")
         n = rebuild_frames(s, product, prof) if build else 0
+    queued = 0
+    if then_generate:        # запуск «Сгенерировать» ждал профиль — ставим недостающие кадры в очередь
+        from ..services import frames as frames_svc
+        if billing.has_funds(ids["project"]):
+            queued = frames_svc.enqueue_frames(ids["project"], frames_svc.missing_frames(ids["project"], [ids["product"]]))
     say("ok", f"🧠 {sku}: профиль готов — {prof['category_ru']}, {prof.get('summary_ru') or prof['object']} · {cost:.2f} ₽"
-        + (f" · промптов кадров: {n}" if build else ""), ids["project"])
+        + (f" · промптов кадров: {n}" if build else "") + (f" · в очередь кадров: {queued}" if queued else ""), ids["project"])

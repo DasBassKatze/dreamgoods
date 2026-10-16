@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { authApi } from "../../api/client";
 import type { Me } from "../../api/types";
+import { SiteFooter } from "../../layout/SiteFooter";
 
 /** Вход. Регистрации нет: учётные записи заводит администратор сервиса. */
 export function LoginPage({ onLogin }: { onLogin: (me: Me) => void }) {
@@ -51,6 +52,7 @@ export function LoginPage({ onLogin }: { onLogin: (me: Me) => void }) {
         {error && <div className="err-text">{error}</div>}
         <button className="primary big" disabled={busy || !email || !password}>{busy ? "Вхожу…" : "Войти"}</button>
         <p className="hint">Нет доступа? Учётные записи выдаёт администратор сервиса.</p>
+        <SiteFooter className="on-light" />
       </form>
     </div>
   );

@@ -26,7 +26,8 @@ import { StyleManager } from "./features/styles/StyleManager";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useProjectState } from "./hooks/useProjectState";
 import { useRoute, type Route } from "./hooks/useRoute";
-import { Sidebar } from "./layout/Sidebar";
+import { ProjectsSidebar } from "./layout/ProjectsSidebar";
+import { TopBar } from "./layout/TopBar";
 import { ProjectCtx, type ProjectScope } from "./ProjectContext";
 
 export interface Dialogs {
@@ -64,6 +65,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [projectId, setProjectId] = usePersistentState<number | null>(`project_${me.id}`, null);
   const { state, offline, reload } = useProjectState(projectId);
   const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
+  const [pickedByProject, setPickedByProject] = usePersistentState<Record<string, number[]>>("picked-frames", {});
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(0);
@@ -91,6 +93,11 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+  // картинки проектов в списке слева обновляются, когда появляются новые готовые кадры
+  const doneNow = state?.totals.done;
+  useEffect(() => {
+    if (doneNow != null) loadProjects();
+  }, [doneNow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const papi = useMemo(() => (projectId == null ? null : projectApi(projectId)), [projectId]);
 
@@ -98,6 +105,10 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     if (!state || projectId == null || !papi || state.project.id !== projectId) return null;
     const selected = new Set(selectedByProject[projectId] || []);
     const save = (ids: number[]) => setSelectedByProject((all) => ({ ...all, [projectId]: ids }));
+    // выделенные кадры: только те, что ещё есть в проекте (кадр могли удалить или пересобрать)
+    const frameIds = new Set(state.products.flatMap((p) => p.frames.map((f) => f.id)));
+    const pickedFrames = new Set((pickedByProject[projectId] || []).filter((id) => frameIds.has(id)));
+    const savePicked = (ids: number[]) => setPickedByProject((all) => ({ ...all, [projectId]: ids }));
     return {
       state,
       api: papi,
@@ -110,6 +121,15 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         save([...next]);
       },
       setSelected: save,
+      pickedFrames,
+      // через функцию обновления: плитки кадров запоминают обработчик, он не должен опираться на старый выбор
+      togglePicked: (id, on) => setPickedByProject((all) => {
+        const next = new Set(all[projectId] || []);
+        if (on) next.add(id);
+        else next.delete(id);
+        return { ...all, [projectId]: [...next] };
+      }),
+      setPicked: savePicked,
       product: (id) => state.products.find((p) => p.id === id),
       limit,
       setLimit,
@@ -121,7 +141,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         }
       },
     };
-  }, [state, projectId, papi, selectedByProject, setSelectedByProject, reload, ui, limit]);
+  }, [state, projectId, papi, selectedByProject, setSelectedByProject, pickedByProject, setPickedByProject, reload, ui, limit]);
 
   const dialogs: Dialogs = {
     openFrame: (productId, frameId) => setViewer({ productId, frameId }),
@@ -137,7 +157,8 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   const createProject = async () => {
     const fields = master
-      ? [{ key: "client", label: "Кабинет (клиент)", value: state?.project.client || "" }, { key: "name", label: "Название проекта", value: "" }]
+      ? [{ key: "name", label: "Название проекта", value: "" },
+         { key: "client", label: "Кабинет пользователя (пусто — ваш собственный)", value: "" }]
       : [{ key: "name", label: "Название проекта", value: "" }];
     const v = await ui.ask({ title: "Новый проект", ok: "Создать", fields });
     if (!v) return;
@@ -194,14 +215,20 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   })();
 
   const body = (
-    <div className="shell">
-      <Sidebar me={me} route={route} go={go} projects={projects} projectId={projectId} onProject={setProjectId}
-        onNewProject={createProject} balance={account} reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy}
-        onLogout={onLogout} open={menuOpen} onToggle={() => setMenuOpen((x) => !x)} />
-      <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
-        {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
-        {page}
-      </main>
+    <div className="app">
+      <TopBar me={me} route={route} go={go} balance={account}
+        polza={master && state ? { value: state.balance, error: state.balance_error } : null}
+        reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
+        onMenu={() => setMenuOpen((x) => !x)} />
+      <div className="app-body">
+        <ProjectsSidebar master={master} projects={projects} projectId={projectId}
+          onProject={(id) => { setProjectId(id); if (!NEEDS_PROJECT.includes(route)) go("products"); }}
+          onNewProject={createProject} open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
+          {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
+          {page}
+        </main>
+      </div>
     </div>
   );
 

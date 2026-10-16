@@ -5,6 +5,7 @@
 генерация могла быть уже оплачена.
 """
 import os
+import random
 import socket
 import threading
 import time
@@ -37,7 +38,11 @@ def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, p
         dup = s.scalar(select(Job.id).where(Job.product_id == product_id, Job.kind == "profile", Job.status.in_(ACTIVE)))
         if dup:
             return None
-    j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload or {},
+    from ..services.billing import by_master
+    payload = dict(payload or {})
+    if by_master.get():
+        payload["by_master"] = True          # запустил мастер — оплата напрямую с Polza
+    j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload,
             priority=priority)
     s.add(j)
     s.flush()
@@ -69,9 +74,22 @@ def register_instance():
     threading.Thread(target=_heartbeat, daemon=True, name="heartbeat").start()
 
 
+def _trim_memory():
+    """Linux: вернуть системе память, освобождённую после обработки картинок (glibc держит её у себя).
+    При сотнях потоков без этого процесс «раздувается» до гигабайт. На Windows не нужно."""
+    try:
+        import ctypes
+        import sys
+        if sys.platform.startswith("linux"):
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
 def _heartbeat():
     while True:
         time.sleep(15)
+        _trim_memory()
         try:
             with db.session() as s:
                 s.execute(update(Instance).where(Instance.id == INSTANCE_ID).values(heartbeat_at=utcnow()))
@@ -145,7 +163,7 @@ def _where(s, j):
     return j.kind
 
 
-MAX_WORKERS = 12
+MAX_WORKERS = 200          # потоки дешёвые: ожидание Polza — сон на событии, опрос статусов общий (ai/throttle.py)
 _par = {"t": 0.0, "n": None}
 
 
@@ -175,10 +193,12 @@ def set_parallel(n):
 
 
 def _funds_ok(job_id):
-    """Задание из очереди не запускается, если у клиента закончились деньги (поставлено, пока они были)."""
+    """Задание из очереди не запускается, если у клиента закончились деньги (поставлено, пока они были).
+    Заодно выставляет «запустил мастер» для обработчика задания."""
     from ..services import billing
     with db.session() as s:
-        pid = s.scalar(select(Job.project_id).where(Job.id == job_id))
+        pid, payload = s.execute(select(Job.project_id, Job.payload).where(Job.id == job_id)).one()
+    billing.by_master.set(bool((payload or {}).get("by_master")))
     return not pid or billing.has_funds(pid)
 
 
@@ -194,7 +214,7 @@ def _worker(name, idx=1):
             time.sleep(5)
             continue
         if not got:
-            _wake.wait(2)
+            _wake.wait(3 + random.uniform(0, 2))     # разброс — сотни простаивающих потоков не опрашивают базу строем
             _wake.clear()
             continue
         job_id, kind = got
@@ -214,7 +234,7 @@ def _worker(name, idx=1):
 
 
 def start_workers(n=None):
-    n = n or max(config.WORKERS, MAX_WORKERS)
+    n = n or MAX_WORKERS
     for i in range(1, n + 1):
         threading.Thread(target=_worker, args=(f"worker-{i}", i), daemon=True, name=f"worker-{i}").start()
     log.info("Очередь: одновременных заданий %d (можно до %d — меняется в админ-панели)", parallel(), n)

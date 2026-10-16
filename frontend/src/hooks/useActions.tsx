@@ -11,26 +11,35 @@ export function useActions() {
   const generate = (productIds: number[] | null, limit = 0) =>
     run(async () => {
       const p = await api.previewGenerate({ product_ids: productIds, limit });
-      if (!p.count) {
-        ui.toast("Всё уже сгенерировано");
+      const ps = p.preset;
+      if (!p.count && !ps?.need_profile) {
+        ui.toast("Все кадры уже готовы и соответствуют пресету");
         return;
       }
       const s = state.settings;
       const avg = state.totals.avg_cost;
-      const est = avg ? ` (≈ ${rub(p.count * avg)} по средней цене кадра ${rub(avg)})` : "";
+      const est = avg && p.count ? ` (≈ ${rub(p.count * avg)})` : "";
       const qc = !s.qc_enabled
         ? ""
         : s.qc_autoregen && s.qc_retries > 0
-          ? `ИИ-проверка и автоперегенерация включены: брак переделывается до ${s.qc_retries} раз(а), поэтому в худшем случае расход вырастет до ×${1 + s.qc_retries}.`
-          : "ИИ-проверка включена, автоперегенерация выключена: брак не переделывается, а сразу попадает в «На проверке».";
+          ? `Брак переделывается автоматически до ${s.qc_retries} раз(а) — в худшем случае расход до ×${1 + s.qc_retries}.`
+          : "Брак не переделывается автоматически, а попадает в «На проверке».";
+      const notes = [
+        ps?.products ? `Кадры ${ps.products} товар(ов) приведены к пресету` + (ps.reshoot
+          ? `: ${ps.reshoot} готовых кадр(ов) снимутся заново, прежние варианты останутся в истории.` : ".") : "",
+        ps?.need_profile ? `Для ${ps.need_profile} товар(ов) ИИ сначала составит профиль по фото — их кадры встанут в очередь сами.` : "",
+      ].filter(Boolean);
       const ok = await ui.confirm({
         title: "Запуск генерации",
-        text: <>Сгенерировать {p.count} кадр(ов){est}?{qc && <p className="hint">{qc}</p>}</>,
-        ok: "Запустить",
+        text: <>{p.count ? <>Сгенерировать {p.count} кадр(ов){est}?</> : "Запустить подготовку кадров?"}
+          {notes.map((n) => <p key={n}>{n}</p>)}{qc && <p className="hint">{qc}</p>}</>,
+        ok: "Сгенерировать",
       });
       if (!ok) return;
       const r = await api.generate({ product_ids: productIds, limit });
-      ui.toast(`В очередь добавлено: ${r.added}`);
+      ui.toast(r.added || r.preset?.queued_profiles
+        ? `В очереди кадров: ${r.added}${r.preset?.queued_profiles ? ` · профилей: ${r.preset.queued_profiles}` : ""}`
+        : "Нечего запускать");
       await reload();
     });
 
