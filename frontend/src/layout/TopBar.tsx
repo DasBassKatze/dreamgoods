@@ -15,6 +15,7 @@ const UNDER_GEN: Route[] = ["products", "import", "presets", "personas", "styles
 const MASTER: [Route, string][] = [
   ["m-users", "Пользователи"],
   ["m-finance", "Финансы"],
+  ["m-reports", "Отчёты"],
   ["m-keys", "Ключи Polza"],
   ["m-analytics", "Аналитика"],
   ["m-log", "Журнал сервера"],

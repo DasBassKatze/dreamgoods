@@ -15,6 +15,7 @@ import { GenerationPage } from "./features/generate/GenerationPage";
 import { HistoryPage } from "./features/history/HistoryPage";
 import { ImportWizard } from "./features/import/ImportWizard";
 import { FinancePage } from "./features/master/FinancePage";
+import { ReportsPage } from "./features/master/ReportsPage";
 import { KeysPage } from "./features/master/KeysPage";
 import { UsersPage } from "./features/master/UsersPage";
 import { PersonaManager } from "./features/personas/PersonaManager";
@@ -181,6 +182,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
       case "m-users": return <UsersPage />;
       case "m-keys": return <KeysPage />;
       case "m-finance": return <FinancePage />;
+      case "m-reports": return <ReportsPage />;
       case "balance": return <BalancePage />;
       case "account": return <AccountPage me={me} onLogout={onLogout} />;
     }

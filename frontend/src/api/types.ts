@@ -488,3 +488,21 @@ export interface FinanceView {
     balances: number; margin_month: number };
   entries: LedgerEntry[];
 }
+
+/** Отчёт сервиса за период (мастер). */
+export interface ServiceReport {
+  from: string;
+  to: string;
+  client_id: number | null;
+  summary: {
+    topups: number; adjust: number; charged: number; charged_cost: number; margin: number; markup: number | null;
+    polza: number; polza_unbilled: number; result: number; balances_end: number;
+    images: number; edits: number; checks: number; errors: number; clients_paying: number; usn_rate: number; usn_tax: number;
+  };
+  clients: { client_id: number | null; client: string; billing: boolean; topup: number; adjust: number; charged: number;
+    charged_cost: number; margin: number; polza: number; images: number; edits: number; balance_end: number | null }[];
+  by_kind: { kind: string; name: string; calls: number; cost: number }[];
+  by_model: { model: string; calls: number; cost: number; avg: number }[];
+  by_day: { day: string; topup: number; charge: number; cost: number; images: number }[];
+  client_list: { id: number; name: string }[];
+}

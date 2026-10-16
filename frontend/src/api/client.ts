@@ -22,6 +22,7 @@ import type {
   ProfileResponse,
   ProjectRef,
   ProjectState,
+  ServiceReport,
   Settings,
 } from "./types";
 
@@ -206,6 +207,9 @@ export const authApi = {
   storage: () => get<{ used: number; quota: number }>("/api/account/storage"),
 };
 
+const reportQuery = (q: { from: string; to: string; client?: number | null; rate: number }) =>
+  `date_from=${q.from}&date_to=${q.to}&usn_rate=${q.rate}${q.client ? `&client_id=${q.client}` : ""}`;
+
 export const adminApi = {
   users: () => get<UsersListing>("/api/admin/users"),
   createUser: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/users", body),
@@ -217,6 +221,9 @@ export const adminApi = {
   createKey: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/keys", body),
   updateKey: (id: number, body: Record<string, unknown>) => patch<{ ok: true }>(`/api/admin/keys/${id}`, body),
   deleteKey: (id: number) => request<{ ok: true }>("DELETE", `/api/admin/keys/${id}`),
+  report: (q: { from: string; to: string; client?: number | null; rate: number }) =>
+    get<ServiceReport>(`/api/admin/report?${reportQuery(q)}`),
+  reportCsvUrl: (q: { from: string; to: string; client?: number | null; rate: number }) => `/api/admin/report?${reportQuery(q)}&format=csv`,
   finance: (clientId?: number) => get<FinanceView>(`/api/admin/finance${clientId ? `?client_id=${clientId}` : ""}`),
   overview: (projectId: number) => get<AdminOverview>(`/api/admin/projects/${projectId}/overview`),
   log: (lines = 400, level = "") => get<{ lines: string[] }>(`/api/admin/log?lines=${lines}&level=${level}`),

@@ -875,3 +875,26 @@ button.big { padding: 11px 26px; font-size: 15px; font-weight: 600; border-radiu
 .ref-add { width: 96px; aspect-ratio: 3/4; border: 1px dashed var(--line-2); border-radius: 10px; background: #fff; color: var(--muted); display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
 .ref-add:hover { border-color: var(--accent); color: var(--accent); }
 .persona-photos.small .pphoto img { aspect-ratio: 3/4; height: auto; width: 100%; object-fit: cover; }
+
+/* отчёты мастера */
+.rep-filters { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.rep-row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.rep-row input[type=date] { font-size: 13px; padding: 5px 9px; }
+.reports .kpi .hint { font-size: 11.5px; }
+.kpi.strong b { color: var(--accent); }
+.rep-chart { padding: 14px 16px; margin: 6px 0 18px; }
+.rep-chart-h { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.legend { font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-left: 8px; }
+.lg-charge, .b-charge { background: var(--accent); }
+.lg-cost, .b-cost { background: #f59e0b; }
+.lg-topup, .b-topup { background: #10b981; }
+.rep-bars { display: flex; gap: 6px; align-items: flex-end; height: 180px; overflow-x: auto; padding-bottom: 4px; }
+.rep-bar { flex: 1 0 28px; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.rep-stack { flex: 1; width: 100%; display: flex; gap: 2px; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--line); }
+.rep-stack i { width: 30%; min-height: 1px; border-radius: 3px 3px 0 0; }
+.rep-bar small { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.rep-two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.rep-two > div { min-width: 0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+@media (max-width: 900px) { .rep-two { grid-template-columns: 1fr; } .rep-row .ps-field, .rep-row select, .rep-row input { width: 100%; } }

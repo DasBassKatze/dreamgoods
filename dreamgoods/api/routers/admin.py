@@ -2,11 +2,12 @@
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Request
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from ...core import auth
 from ...services import admin as svc
-from ...services import billing, users
+from ...services import billing, reports, users
 from ...workers import queue, resume
 from ..deps import project_id
 from ..schemas import ParallelUpdate
@@ -99,6 +100,18 @@ def keys_delete(key_id: int, request: Request):
 
 
 # ───────── финансы ─────────
+
+@router.get("/report")
+def report(request: Request, date_from: str = "", date_to: str = "", client_id: int | None = None, usn_rate: float = 0.06,
+           format: str = "json"):
+    """Отчёт за период: деньги клиентов, себестоимость Polza, наценка, объём работы. format=csv — файл для Excel."""
+    rep = reports.build(auth.user(request), date_from or None, date_to or None, client_id, max(0.0, min(usn_rate, 0.2)))
+    if format == "csv":
+        name = f"dreamgoods_report_{rep['from']}_{rep['to']}.csv"
+        return Response(reports.to_csv(rep), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return rep
+
 
 @router.get("/finance")
 def finance(request: Request, client_id: int | None = None):
