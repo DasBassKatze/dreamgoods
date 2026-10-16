@@ -21,10 +21,22 @@ from dreamgoods.core import config
 from dreamgoods.core.logs import log, setup_logging
 
 
+def _has(module):
+    import importlib.util
+    return importlib.util.find_spec(module) is not None
+
+
 def main():
     setup_logging()
     where = f"S3 {config.S3_ENDPOINT}/{config.S3_BUCKET}" if config.STORAGE == "s3" else f"папка {config.STORAGE_DIR}"
     log.info("DreamGoods %s · база %s · файлы: %s", __import__("dreamgoods").__version__, config.DATABASE_URL.split("@")[-1], where)
+    # 0. библиотеки Python — иначе ошибка выглядит как «нет базы»
+    missing = [m for m in ("sqlalchemy", "psycopg", "alembic", "fastapi", "uvicorn", "PIL", "requests", "boto3", "multipart")
+               if not _has(m)]
+    if missing:
+        log.error("Не установлены библиотеки Python: %s", ", ".join(missing))
+        log.error("Запустите «Установка.bat» (или: python -m pip install -r requirements.txt) и повторите запуск")
+        sys.exit(1)
     # 1. база данных
     try:
         from sqlalchemy import text
