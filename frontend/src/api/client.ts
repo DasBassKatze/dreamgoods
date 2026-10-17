@@ -21,7 +21,9 @@ import type {
   ProfileData,
   ProfileResponse,
   ProjectRef,
+  PriceList,
   ProjectState,
+  TopupRequest,
   ReportSelection,
   ServiceReport,
   Settings,
@@ -206,12 +208,20 @@ export const authApi = {
   password: (old: string, next: string) => post<{ ok: true }>("/api/auth/password", { old, new: next }),
   balance: () => get<AccountBalance>("/api/account/balance"),
   storage: () => get<{ used: number; quota: number }>("/api/account/storage"),
+  topups: () => get<{ items: TopupRequest[] }>("/api/account/topups"),
+  createTopup: (amount: number, method: string, note: string) => post<TopupRequest>("/api/account/topups", { amount, method, note }),
 };
 
 const reportQuery = (q: { from: string; to: string; client?: number | null; rate: number }) =>
   `date_from=${q.from}&date_to=${q.to}&usn_rate=${q.rate}${q.client ? `&client_id=${q.client}` : ""}`;
 
+export const publicApi = {
+  prices: () => get<PriceList>("/api/public/prices"),
+};
+
 export const adminApi = {
+  topups: (status = "") => get<{ items: TopupRequest[] }>(`/api/admin/topups${status ? `?status=${status}` : ""}`),
+  resolveTopup: (id: number, action: "paid" | "cancel") => post<{ ok: true }>(`/api/admin/topups/${id}/${action}`),
   users: () => get<UsersListing>("/api/admin/users"),
   createUser: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/users", body),
   updateUser: (id: number, body: Record<string, unknown>) => patch<{ ok: true }>(`/api/admin/users/${id}`, body),

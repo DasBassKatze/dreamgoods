@@ -1,8 +1,9 @@
 """Личный кабинет: баланс и история списаний."""
 from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 from ...core import auth
-from ...services import billing, projects
+from ...services import billing, projects, topups
 
 router = APIRouter(prefix="/api/account", tags=["личный кабинет"])
 
@@ -21,3 +22,29 @@ def balance(request: Request):
 def storage(request: Request):
     """Занятое место в хранилище и квота (мастер — по всему сервису)."""
     return projects.storage_usage(auth.user(request))
+
+
+class TopupCreate(BaseModel):
+    amount: float
+    method: str = "card"
+    note: str = ""
+
+
+@router.get("/topups")
+def my_topups(request: Request):
+    return {"items": topups.mine(auth.user(request))}
+
+
+@router.post("/topups")
+def create_topup(body: TopupCreate, request: Request):
+    """Заявка на пополнение баланса: мастер зачислит её после оплаты."""
+    return topups.create(auth.user(request), body.amount, body.method, body.note)
+
+
+public = APIRouter(prefix="/api/public", tags=["сайт"])
+
+
+@public.get("/prices")
+def prices(request: Request):
+    """Цены для страницы «Цены и оплата» (вошедшему — с его наценкой)."""
+    return topups.prices(getattr(request.state, "user", None))

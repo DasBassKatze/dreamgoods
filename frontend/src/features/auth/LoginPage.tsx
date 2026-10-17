@@ -39,6 +39,7 @@ export function LoginPage({ onLogin }: { onLogin: (me: Me) => void }) {
         <p>Фото для карточек маркетплейсов — от съёмки на белом фоне до образов на модели.</p>
       </div>
       <form className="login-form" onSubmit={submit}>
+        <a className="back-home" href="/">← На главную</a>
         <div className="logo">Dream<b>Goods</b></div>
         <h2>Вход в кабинет</h2>
         <label className="field">
@@ -51,7 +52,7 @@ export function LoginPage({ onLogin }: { onLogin: (me: Me) => void }) {
         </label>
         {error && <div className="err-text">{error}</div>}
         <button className="primary big" disabled={busy || !email || !password}>{busy ? "Вхожу…" : "Войти"}</button>
-        <p className="hint">Нет доступа? Учётные записи выдаёт администратор сервиса.</p>
+        <p className="hint">Нет доступа? Учётные записи выдаёт администратор сервиса. <a href="/pricing">Цены и оплата</a></p>
         <SiteFooter className="on-light" />
       </form>
     </div>

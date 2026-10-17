@@ -106,6 +106,9 @@ export function TopBar(p: Props) {
             <div className="menu-head"><b>{p.me.name}</b><small>{master ? "мастер-аккаунт" : p.me.email}</small></div>
             <button onClick={() => pick("account")}>Учётная запись</button>
             {!master && <button onClick={() => pick("balance")}>{p.balance?.billing ? "Баланс и история" : "Расходы"}</button>}
+            {!master && p.balance?.billing && <a className="menu-link" href="/pricing#packages">Пополнить баланс</a>}
+            <a className="menu-link" href="/">Сайт DreamGoods</a>
+            <a className="menu-link" href="/pricing">Цены и оплата</a>
             <button className="danger" onClick={p.onLogout}><Icon name="logout" size={16} />Выйти</button>
           </div>
         )}

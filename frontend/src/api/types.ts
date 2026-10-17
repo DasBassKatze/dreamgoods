@@ -518,3 +518,22 @@ export interface ReportCatalog {
 
 /** Что включить в настраиваемый отчёт. */
 export interface ReportSelection { metrics: string[]; sections: string[]; cols: string[] }
+
+/** Публичный прайс сайта. */
+export interface PriceList {
+  tiers: { key: string; name: string; model: string; resolution: string; qc: boolean; note: string; price: number }[];
+  ops: { key: string; name: string; note: string; resolution: string; price: number }[];
+  packages: { amount: number; bonus_rate: number; bonus: number; frames: number }[];
+  models: { key: string; name: string; note: string }[];
+  min_topup: number;
+  max_topup: number;
+  billing: boolean;
+  balance: number | null;
+  signed_in: boolean;
+}
+
+export interface TopupRequest {
+  id: number; client_id: number; client: string; user: string; amount: number; bonus: number;
+  method: "card" | "sbp" | "invoice"; method_name: string; status: "new" | "paid" | "cancelled"; note: string;
+  created: string | null; resolved: string | null;
+}

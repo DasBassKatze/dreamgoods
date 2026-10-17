@@ -91,6 +91,20 @@ class Client(TS, Base):
     __table_args__ = (UniqueConstraint("org_id", "name"),)
 
 
+class TopupRequest(TS, Base):
+    """Заявка пользователя на пополнение баланса (пока нет онлайн-оплаты: мастер зачисляет вручную после оплаты)."""
+    __tablename__ = "topup_requests"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    amount_rub: Mapped[float] = mapped_column(Float)
+    bonus_rub: Mapped[float] = mapped_column(Float, default=0.0)
+    method: Mapped[str] = mapped_column(String(20), default="card")       # card | sbp | invoice
+    status: Mapped[str] = mapped_column(String(20), default="new")        # new | paid | cancelled
+    note: Mapped[str] = mapped_column(Text, default="")                    # пожелания / реквизиты для счёта
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class BalanceEntry(TS, Base):
     """Журнал баланса клиента: пополнения мастером и списания за операции (с себестоимостью Polza)."""
     __tablename__ = "balance_ledger"

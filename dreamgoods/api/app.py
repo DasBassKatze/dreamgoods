@@ -66,6 +66,7 @@ def create_app() -> FastAPI:
 
     for r in (auth_routes, account, admin, projects, settings, generation, frames, products, personas, presets, styles, imports, media):
         app.include_router(r.router)
+    app.include_router(account.public)
 
     @app.get("/api/health", tags=["служебное"])
     def health():

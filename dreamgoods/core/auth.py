@@ -22,7 +22,7 @@ from .logs import log
 
 COOKIE = "dg_session"
 TTL = timedelta(days=30)
-PUBLIC = ("/api/auth/login", "/api/auth/logout", "/api/health")
+PUBLIC = ("/api/auth/login", "/api/auth/logout", "/api/health", "/api/public/")
 
 
 class Unauthorized(PermissionError):

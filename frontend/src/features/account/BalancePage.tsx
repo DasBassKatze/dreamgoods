@@ -14,7 +14,9 @@ export function BalancePage() {
   }, [ui]);
   return (
     <section className="page narrow">
-      <div className="page-head"><h1>Тарифы и баланс</h1></div>
+      <div className="page-head"><h1>Тарифы и баланс</h1><span className="spacer" />
+        <a className="btn" href="/pricing">Все цены</a>
+        {d?.billing && <a className="btn primary" href="/pricing#packages">Пополнить баланс</a>}</div>
       {!d ? <div className="empty">Загрузка…</div> : (
         <>
           <div className="balance-hero">
