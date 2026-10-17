@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { authApi, publicApi } from "../api/client";
-import type { PriceList, TopupRequest } from "../api/types";
+import type { PriceList, PricePlan, TopupRequest } from "../api/types";
 import { Calculator, useReveal } from "./Interactive";
 import { SiteLayout } from "./SiteLayout";
 
@@ -26,6 +26,7 @@ export function PricingPage() {
   const [mine, setMine] = useState<TopupRequest[]>([]);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [yearly, setYearly] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -50,6 +51,17 @@ export function PricingPage() {
     setAmount(a);
     document.getElementById("topup")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  /** «Подключить тариф»: заявка на пополнение на сумму тарифа с пометкой, какой тариф и за какой период. */
+  const choosePlan = (pl: PricePlan) => {
+    if (!pl.month) { window.location.href = "/studio"; return; }
+    setAmount(yearly ? pl.year : pl.month);
+    setMethod("sbp");
+    setNote(`Тариф «${pl.name}», ${yearly ? "оплата за год" : "помесячно"}`);
+    setSent(null);
+    document.getElementById("topup")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const base = (k: string) => p?.tiers.find((t) => t.key === k)?.price || 0;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +94,49 @@ export function PricingPage() {
           {p?.balance != null && <p className="balance-note">На вашем балансе: <b>{rub(p.balance)}</b></p>}
         </div>
       </section>
+
+      {!!p?.plans?.length && (
+        <section className="sec tight" id="plans">
+          <div className="site-wrap">
+            <div className="plans-head">
+              <div>
+                <h2>Тарифы</h2>
+                <p className="sec-lead">Подписка — это пополнение баланса раз в месяц с бонусом и скидкой на кадры.
+                  Деньги не сгорают, отменить можно в любой момент.</p>
+              </div>
+              <div className="period" role="tablist">
+                <button type="button" className={!yearly ? "on" : ""} onClick={() => setYearly(false)}>Помесячно</button>
+                <button type="button" className={yearly ? "on" : ""} onClick={() => setYearly(true)}>
+                  За год <em>{12 - p.year_months} мес. в подарок</em></button>
+              </div>
+            </div>
+            <div className="plan-grid">
+              {p.plans.map((pl) => (
+                <article key={pl.key} className={`plan ${pl.popular ? "featured" : ""}`} data-reveal>
+                  <header><h3>{pl.name}</h3>{pl.popular && <span className="pcard-tag">Выбор магазинов</span>}</header>
+                  <p className="muted plan-who">{pl.who}</p>
+                  <div className="plan-price" key={String(yearly)}>
+                    {pl.month ? <>{rub(yearly ? Math.round(pl.year / 12) : pl.month)}<small> / мес</small></> : <>0 ₽<small> / мес</small></>}
+                  </div>
+                  <p className="plan-sub">{!pl.month ? "платите только за кадры"
+                    : yearly ? `${rub(pl.year)} за год · на баланс ${rub(Math.round(pl.credit * 12))}`
+                    : `на баланс ${rub(pl.credit)} каждый месяц`}</p>
+                  <div className="plan-frame">
+                    <span>Стандарт <b>{rub(pl.standard)}</b>{pl.standard < base("standard") && <s>{rub(base("standard"))}</s>}</span>
+                    <span>Премиум <b>{rub(pl.premium)}</b>{pl.premium < base("premium") && <s>{rub(base("premium"))}</s>}</span>
+                    {pl.frames > 0 && <span className="muted">≈ {pl.frames.toLocaleString("ru-RU")} кадров «Стандарт» в месяц</span>}
+                  </div>
+                  <ul>{pl.features.map((f) => <li key={f}>{f}</li>)}</ul>
+                  <button type="button" className={`site-btn ${pl.popular ? "primary" : "ghost"}`} onClick={() => choosePlan(pl)}>
+                    {pl.month ? "Подключить" : "Начать бесплатно"}</button>
+                </article>
+              ))}
+            </div>
+            <p className="fine">Подключение тарифа — заявка на пополнение: мы пришлём реквизиты, после оплаты сумма с бонусом
+              поступит на баланс и включится скидка.</p>
+          </div>
+        </section>
+      )}
 
       <section className="sec tight">
         <div className="site-wrap">

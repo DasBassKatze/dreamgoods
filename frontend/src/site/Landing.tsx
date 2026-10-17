@@ -128,6 +128,13 @@ export function Landing() {
           </div>
           <h3 className="calc-title" data-reveal>Посчитайте свою коллекцию</h3>
           <div data-reveal><Calculator prices={prices} /></div>
+          {!!prices?.plans?.length && (
+            <a className="plans-band" href="/pricing#plans" data-reveal>
+              <span><b>Снимаете регулярно?</b> Тарифы с подпиской: бонус до +{Math.round(Math.max(...prices.plans.map((x) => x.bonus_rate)) * 100)}%
+                к платежу и до −{Math.round(Math.max(...prices.plans.map((x) => x.discount)) * 100)}% на кадры.</span>
+              <span className="plans-band-go">Тарифы →</span>
+            </a>
+          )}
           <div className="center"><a className="site-btn ghost" href="/pricing">Все цены и пополнение баланса →</a></div>
         </div>
       </section>

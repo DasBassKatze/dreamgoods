@@ -520,6 +520,11 @@ export interface ReportCatalog {
 export interface ReportSelection { metrics: string[]; sections: string[]; cols: string[] }
 
 /** Публичный прайс сайта. */
+export interface PricePlan {
+  key: string; name: string; month: number; year: number; bonus_rate: number; discount: number; credit: number;
+  who: string; features: string[]; popular: boolean; standard: number; premium: number; frames: number;
+}
+
 export interface PriceList {
   tiers: { key: string; name: string; model: string; resolution: string; side: number; qc: boolean; retries: number; note: string; price: number; from: boolean }[];
   markets: { key: string; name: string; aspect: string; min_side: number; hint: string }[];
@@ -527,6 +532,8 @@ export interface PriceList {
   ops: { key: string; name: string; note: string; resolution: string; price: number }[];
   packages: { amount: number; bonus_rate: number; bonus: number; frames: number }[];
   models: { key: string; name: string; note: string }[];
+  plans: PricePlan[];
+  year_months: number;
   min_topup: number;
   max_topup: number;
   billing: boolean;
