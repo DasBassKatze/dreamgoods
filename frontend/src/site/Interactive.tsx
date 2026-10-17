@@ -13,7 +13,9 @@ export function useReveal() {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (e.isIntersecting) {
-          e.target.classList.add("in");
+          // отметка — отдельным атрибутом, а не классом: React перезаписывает className при перерисовке
+          // (например, у выбранного пакета), и класс пропадал вместе с блоком
+          e.target.setAttribute("data-shown", "");
           io.unobserve(e.target);
         }
       }
