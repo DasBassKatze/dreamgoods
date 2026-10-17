@@ -28,8 +28,8 @@ REJECT_RATE = 0.25
 TIER_NOTES = {
     "draft": "прикинуть идеи и позы",
     "standard": "для карточек WB, Ozon, Маркета и Авито",
-    "premium": "максимум качества, отдельная проверка рук, ног и товара",
-    "custom": "своя модель, разрешение и перегенерации; цена — для Nano Banana Pro",
+    "premium": "сложные материалы и кадры с моделью, отдельная проверка рук, ног и товара",
+    "custom": "своя модель, разрешение и число перегенераций — цена по выбранной модели",
 }
 MARKET_KEYS = ("wb", "ozon", "ymarket", "avito")
 
@@ -99,9 +99,10 @@ def price_list(org_settings, markup, presets=None):
         tiers.append({"key": key, "name": q["name"], "model": MODELS[model]["name"], "resolution": res,
                       "side": P.RESOLUTION_SIDE.get(res, 0), "qc": qc, "retries": retries, "note": TIER_NOTES[key],
                       "price": _round(cost * markup)})
-    pro, *_ = quality_cost(org_settings, {**st0, **P.QUALITY["standard"]["settings"], "model": "nano-banana-pro"})
-    tiers.append({"key": "custom", "name": P.QUALITY["custom"]["name"], "model": MODELS["nbpro"]["name"], "resolution": "2K",
-                  "side": P.RESOLUTION_SIDE["2K"], "qc": True, "retries": 2, "note": TIER_NOTES["custom"], "price": _round(pro * markup)})
+    for t in tiers:
+        t["from"] = False
+    tiers.append({"key": "custom", "name": P.QUALITY["custom"]["name"], "model": "модель на выбор", "resolution": "1K–4K",
+                  "side": 0, "qc": True, "retries": 0, "note": TIER_NOTES["custom"], "price": tiers[0]["price"], "from": True})
     ops = [{"key": key, "name": name, "note": note, "resolution": res,
             "price": _round((base(org_settings, model, res) + QC) * (1 + RESERVE) * markup)}
            for key, name, model, res, note in OPS]

@@ -521,7 +521,7 @@ export interface ReportSelection { metrics: string[]; sections: string[]; cols: 
 
 /** Публичный прайс сайта. */
 export interface PriceList {
-  tiers: { key: string; name: string; model: string; resolution: string; side: number; qc: boolean; retries: number; note: string; price: number }[];
+  tiers: { key: string; name: string; model: string; resolution: string; side: number; qc: boolean; retries: number; note: string; price: number; from: boolean }[];
   markets: { key: string; name: string; aspect: string; min_side: number; hint: string }[];
   presets: { name: string; description: string; quality: string; quality_name: string; frames: number; frame_price: number; market: string; price: number }[];
   ops: { key: string; name: string; note: string; resolution: string; price: number }[];

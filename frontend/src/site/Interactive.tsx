@@ -237,13 +237,16 @@ export function Calculator({ prices, compact }: { prices: PriceList | null; comp
   const [perProduct, setPerProduct] = useState(6);
   const [tier, setTier] = useState("standard");
   const [preset, setPreset] = useState<string | null>(null);
-  const t = prices?.tiers.find((x) => x.key === tier);
+  const tiers = prices?.tiers.filter((x) => !x.from) || [];
+  const presets = prices?.presets || [];
+  const ps = presets.find((x) => x.name === preset);
+  const t = tiers.find((x) => x.key === tier);
+  // у пресета своя цена кадра: в нём может быть своя модель или уровень «Свой»
+  const framePrice = ps ? ps.frame_price : t?.price || 0;
   const frames = products * perProduct;
-  const total = t ? frames * t.price : 0;
+  const total = frames * framePrice;
   const pack = prices?.packages.find((p) => p.amount * (1 + p.bonus_rate) >= total) || prices?.packages[prices.packages.length - 1];
   const amount = pack && pack.amount * (1 + pack.bonus_rate) >= total ? pack.amount : Math.ceil(total / 100) * 100;
-  const tiers = prices?.tiers || [];
-  const presets = prices?.presets || [];
   const usePreset = (p: PriceList["presets"][number]) => { setPreset(p.name); setPerProduct(Math.min(30, p.frames)); setTier(p.quality); };
   return (
     <div className={`calc ${compact ? "compact" : ""}`}>
@@ -282,9 +285,9 @@ export function Calculator({ prices, compact }: { prices: PriceList | null; comp
         </div>
       </div>
       <div className="calc-out">
-        <span className="calc-label">{frames.toLocaleString("ru-RU")} кадров · {preset ? `${preset} · ` : ""}{t?.name || "…"}</span>
+        <span className="calc-label">{frames.toLocaleString("ru-RU")} кадров · {ps ? `${ps.name} · ${ps.quality_name}` : t?.name || "…"}</span>
         <span className="calc-total">≈ {rub(total)}</span>
-        <span className="calc-per">≈ {t ? rub(t.price * perProduct) : "—"} за товар</span>
+        <span className="calc-per">≈ {framePrice ? rub(framePrice * perProduct) : "—"} за товар</span>
         {pack && total > 0 && (
           <a className="site-btn light" href={`/pricing?amount=${amount}#packages`}>
             {pack.amount * (1 + pack.bonus_rate) >= total

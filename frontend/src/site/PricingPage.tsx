@@ -90,10 +90,10 @@ export function PricingPage() {
             {(p?.tiers || []).map((t) => (
               <article key={t.key} className={`tier ${t.key === "standard" ? "featured" : ""}`} data-reveal>
                 <header><h3>{t.name}</h3>{t.key === "standard" && <span className="pcard-tag">Популярный</span>}</header>
-                <div className="pcard-price">{rub(t.price)}<small> / кадр</small></div>
+                <div className="pcard-price">{t.from && <small>от </small>}{rub(t.price)}<small> / кадр</small></div>
                 <ul>
                   <li>{t.model} · {t.resolution}{t.side ? `, ${t.side} px` : ""}</li>
-                  <li>{!t.qc ? "без ИИ-проверки" : t.retries ? `ИИ-проверка и до ${t.retries} перегенераций брака` : "ИИ-проверка, без перегенераций"}</li>
+                  <li>{t.key === "custom" ? "ИИ-проверка и перегенерации — по вашим настройкам" : !t.qc ? "без ИИ-проверки" : t.retries ? `ИИ-проверка и до ${t.retries} перегенераций брака` : "ИИ-проверка, без перегенераций"}</li>
                   <li className="muted">{t.note}</li>
                 </ul>
               </article>

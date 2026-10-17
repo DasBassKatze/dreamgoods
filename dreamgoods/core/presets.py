@@ -14,6 +14,9 @@ BLOCKS = {
 }
 BLOCK_ORDER = tuple(BLOCKS)
 
+# Модель уровня «Премиум» — Nano Banana Pro (самая точная по деталям товара).
+PRO_MODEL = "google/gemini-3-pro-image-preview"
+
 # Уровни качества. Пока это набор настроек генерации и проверки; дальше — автоподбор модели по метрикам
 # (первая попытка, доля брака, цена принятого кадра) под нужный порог качества.
 QUALITY = {
@@ -21,8 +24,10 @@ QUALITY = {
               "settings": {"resolution": "1K", "qc_enabled": True, "qc_autoregen": False, "qc_retries": 0, "qc_count": False}},
     "standard": {"name": "Стандарт", "hint": "для карточек: 2K (1800 px по короткой стороне), проверка ИИ и до 2 перегенераций брака",
                  "settings": {"resolution": "2K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 2, "qc_count": False}},
-    "premium": {"name": "Премиум", "hint": "максимум качества: 4K (3600 px по короткой стороне), до 3 перегенераций, отдельный подсчёт ног/рук и товара",
-                "settings": {"resolution": "4K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 3, "qc_count": True}},
+    "premium": {"name": "Премиум", "hint": "максимум качества: Nano Banana Pro, 4K (3600 px по короткой стороне), до 3 перегенераций, "
+                                          "отдельный подсчёт ног/рук и товара",
+                "settings": {"model": PRO_MODEL, "resolution": "4K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 3,
+                             "qc_count": True}},
     "custom": {"name": "Свой", "hint": "свои значения: модель, разрешение (в том числе своё в px), число перегенераций",
                "settings": {}},
 }
@@ -212,6 +217,8 @@ def apply(st, preset):
     q = QUALITY.get(preset.quality) or QUALITY["standard"]
     out = dict(st)
     out.update(q["settings"])
+    if q["settings"].get("model") and q["settings"]["model"] != st.get("model"):
+        out["providers"] = ""           # провайдер из настроек может не поддерживать модель уровня — выберет Polza
     out.pop("out_side", None)           # своё разрешение из настроек проекта не переносим в уровень пресета
     custom = clean_custom(preset.custom) if preset.quality == "custom" else clean_main_model(preset.custom)
     if custom.get("model") and custom["model"] != st.get("model") and not custom.get("providers"):
