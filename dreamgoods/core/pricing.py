@@ -17,6 +17,7 @@ MODELS = {
     "gpt": {"name": "GPT Image", "note": "другая манера: мягкий свет, лайфстайл", "prices": {"1K": 4.0, "2K": 6.0, "4K": 9.0}},
 }
 QC = 0.055            # ИИ-проверка одной попытки (Gemini 2.5 Flash Lite)
+QC_PRO = 0.8          # ИИ-проверка на Gemini 2.5 Pro (уровень «Премиум»): дороже, с «размышлениями»
 PROMPT = 0.05         # промпт кадра
 PROFILE = 0.2         # разбор фото и профиль товара — на товар
 FRAMES_PER_PRODUCT = 6
@@ -28,7 +29,7 @@ REJECT_RATE = 0.25
 TIER_NOTES = {
     "draft": "прикинуть идеи и позы",
     "standard": "для карточек WB, Ozon, Маркета и Авито",
-    "premium": "сложные материалы и кадры с моделью, отдельная проверка рук, ног и товара",
+    "premium": "сложные материалы и кадры с моделью; брак ищет Gemini 2.5 Pro, отдельно проверяет руки, ноги и товар",
     "custom": "своя модель, разрешение и число перегенераций — цена по выбранной модели",
 }
 MARKET_KEYS = ("wb", "ozon", "ymarket", "avito")
@@ -52,7 +53,8 @@ def quality_cost(org_settings, st):
     retries = int(st.get("qc_retries") or 0) if qc and st.get("qc_autoregen", True) else 0
     attempts = sum(REJECT_RATE ** k for k in range(retries + 1))
     checks = (1 + (1 if st.get("qc_count") else 0)) if qc else 0
-    per_try = base(org_settings, model, res) + QC * checks
+    qc_one = QC_PRO if "pro" in (st.get("qc_model") or "").lower() else QC
+    per_try = base(org_settings, model, res) + qc_one * checks
     return (per_try * attempts + PROMPT + PROFILE / FRAMES_PER_PRODUCT) * (1 + RESERVE), model, res, retries, qc
 
 

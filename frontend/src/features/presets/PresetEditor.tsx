@@ -53,7 +53,9 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
   }, [api]);
   const manual = d.plan_mode === "manual";
   const total = manual ? d.manual.reduce((a, b) => a + (b.count || 0), 0) : Object.values(d.plan).reduce((a, b) => a + (b || 0), 0);
-  const baseModel = String(d.custom.model || state.settings.model);
+  // модель уровня (у «Премиума» — Nano Banana Pro) важнее модели проекта; своя модель пресета — важнее всех
+  const levelModel = d.quality === "custom" ? "" : listing.quality.find((x) => x.key === d.quality)?.settings.model;
+  const baseModel = String(d.custom.model || levelModel || state.settings.model);
   const resolution = String(d.quality === "custom" ? d.custom.resolution || state.settings.resolution
     : listing.quality.find((x) => x.key === d.quality)?.settings.resolution || state.settings.resolution);
   const stats = (b: BlockKey) => listing.model_stats.filter((x) => x.block === b);
