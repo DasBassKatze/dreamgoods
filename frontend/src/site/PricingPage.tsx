@@ -92,8 +92,8 @@ export function PricingPage() {
                 <header><h3>{t.name}</h3>{t.key === "standard" && <span className="pcard-tag">Популярный</span>}</header>
                 <div className="pcard-price">{rub(t.price)}<small> / кадр</small></div>
                 <ul>
-                  <li>{t.model}, {t.resolution}</li>
-                  <li>{t.qc ? "ИИ-проверка и переделка брака" : "без ИИ-проверки"}</li>
+                  <li>{t.model} · {t.resolution}{t.side ? `, ${t.side} px` : ""}</li>
+                  <li>{!t.qc ? "без ИИ-проверки" : t.retries ? `ИИ-проверка и до ${t.retries} перегенераций брака` : "ИИ-проверка, без перегенераций"}</li>
                   <li className="muted">{t.note}</li>
                 </ul>
               </article>
@@ -102,6 +102,21 @@ export function PricingPage() {
           </div>
           <p className="fine">Цена кадра — средняя: в неё уже входят переделки брака и ИИ-проверка. Списывается фактическая
             стоимость каждой операции, поэтому отдельный кадр может выйти чуть дешевле или дороже.</p>
+
+          {!!p?.presets.length && <>
+            <h2 className="mt" data-reveal>Пресеты студии</h2>
+            <p className="sec-lead" data-reveal>Те же готовые наборы кадров, что вы выбираете в студии при генерации.</p>
+            <div className="preset-grid">
+              {p.presets.map((x) => (
+                <article key={x.name} className="preset-card" data-reveal>
+                  <h3>{x.name}</h3>
+                  {x.description && <p className="muted">{x.description}</p>}
+                  <div className="preset-meta"><span>{x.frames} кадров</span><span>{x.quality_name}</span>{x.market && <span>{x.market}</span>}</div>
+                  <div className="preset-price">≈ {rub(x.price)}<small> за товар</small></div>
+                </article>
+              ))}
+            </div>
+          </>}
 
           <h2 className="mt" data-reveal>Сколько выйдет ваша коллекция</h2>
           <div data-reveal><Calculator prices={p} compact /></div>

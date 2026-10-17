@@ -2,6 +2,8 @@
 
 Клиент платит фактическую себестоимость Polza × наценку (списание после каждой операции). Здесь — ориентир для
 страницы «Цены»: средняя себестоимость готового кадра (с переделками брака и ИИ-проверкой) × наценка.
+Уровни качества, площадки и пресеты берутся из студии (core/presets и общие пресеты организации), поэтому сайт
+всегда показывает то же, что пользователь выберет при генерации.
 Базовые цены Polza можно переопределить в настройках организации: settings["price_base"] = {"nb21": {"2K": 4.5}, …}.
 """
 import math
@@ -20,14 +22,40 @@ PROFILE = 0.2         # разбор фото и профиль товара —
 FRAMES_PER_PRODUCT = 6
 RESERVE = 0.03        # оплаченные, но потерянные задачи
 
-# (ключ, название, модель, разрешение, попыток в среднем, ИИ-проверка)
-TIERS = [
-    ("draft", "Черновик", "nb21", "1K", 1.0, False, "проверить идею: без ИИ-проверки и переделок"),
-    ("standard", "Стандарт", "nb21", "2K", 1.3, True, "для карточек WB, Ozon, Маркета и Авито"),
-    ("standard4k", "Стандарт 4K", "nb21", "4K", 1.3, True, "крупные детали, печать, баннеры"),
-    ("premium", "Премиум", "nbpro", "2K", 1.3, True, "сложные материалы, кадры с моделью"),
-    ("premium4k", "Премиум 4K", "nbpro", "4K", 1.3, True, "максимум качества"),
-]
+# Уровни качества — те же, что в пресетах студии (core/presets.QUALITY): разрешение, ИИ-проверка, перегенерации.
+# Доля брака на попытку — для оценки среднего числа попыток: 1 + p + p² + … (до числа перегенераций).
+REJECT_RATE = 0.25
+TIER_NOTES = {
+    "draft": "прикинуть идеи и позы",
+    "standard": "для карточек WB, Ozon, Маркета и Авито",
+    "premium": "максимум качества, отдельная проверка рук, ног и товара",
+    "custom": "своя модель, разрешение и перегенерации; цена — для Nano Banana Pro",
+}
+MARKET_KEYS = ("wb", "ozon", "ymarket", "avito")
+
+
+def model_key(model_id):
+    """Идентификатор модели Polza → ключ прайса."""
+    m = (model_id or "").lower()
+    if "gpt" in m or "openai" in m:
+        return "gpt"
+    if "pro" in m:
+        return "nbpro"
+    return "nb21"
+
+
+def quality_cost(org_settings, st):
+    """Средняя себестоимость готового кадра по действующим настройкам генерации (уровень качества пресета)."""
+    model = model_key(st.get("model"))
+    res = st.get("resolution") if st.get("resolution") in MODELS[model]["prices"] else "2K"
+    qc = bool(st.get("qc_enabled", True))
+    retries = int(st.get("qc_retries") or 0) if qc and st.get("qc_autoregen", True) else 0
+    attempts = sum(REJECT_RATE ** k for k in range(retries + 1))
+    checks = (1 + (1 if st.get("qc_count") else 0)) if qc else 0
+    per_try = base(org_settings, model, res) + QC * checks
+    return (per_try * attempts + PROMPT + PROFILE / FRAMES_PER_PRODUCT) * (1 + RESERVE), model, res, retries, qc
+
+
 # операции над готовым кадром: (ключ, название, модель, разрешение, описание)
 OPS = [
     ("edit", "Правка кадра по тексту", "nb21", "2K", "«сделай фон светлее», «убери складку»"),
@@ -50,12 +78,6 @@ def base(org_settings, model, res):
     return float(over.get(res) or MODELS[model]["prices"][res])
 
 
-def frame_cost(org_settings, model, res, attempts, qc):
-    """Средняя себестоимость готового кадра в Polza."""
-    per_try = base(org_settings, model, res) + (QC if qc else 0)
-    return (per_try * attempts + PROMPT + PROFILE / FRAMES_PER_PRODUCT) * (1 + RESERVE)
-
-
 def bonus_for(amount):
     rate = 0.0
     for limit, b in PACKAGES:
@@ -64,18 +86,48 @@ def bonus_for(amount):
     return round(amount * rate, 2), rate
 
 
-def price_list(org_settings, markup):
+def price_list(org_settings, markup, presets=None):
+    """Прайс для сайта. Уровни качества, площадки и пресеты — те же, что в студии."""
+    from . import presets as P
+    from .settings import DEFAULTS
     markup = max(1.0, float(markup or 1))
+    st0 = {**DEFAULTS, **(org_settings or {})}
     tiers = []
-    for key, name, model, res, attempts, qc, note in TIERS:
-        tiers.append({"key": key, "name": name, "model": MODELS[model]["name"], "resolution": res, "qc": qc, "note": note,
-                      "price": _round(frame_cost(org_settings, model, res, attempts, qc) * markup)})
+    for key in ("draft", "standard", "premium"):
+        q = P.QUALITY[key]
+        cost, model, res, retries, qc = quality_cost(org_settings, {**st0, **q["settings"]})
+        tiers.append({"key": key, "name": q["name"], "model": MODELS[model]["name"], "resolution": res,
+                      "side": P.RESOLUTION_SIDE.get(res, 0), "qc": qc, "retries": retries, "note": TIER_NOTES[key],
+                      "price": _round(cost * markup)})
+    pro, *_ = quality_cost(org_settings, {**st0, **P.QUALITY["standard"]["settings"], "model": "nano-banana-pro"})
+    tiers.append({"key": "custom", "name": P.QUALITY["custom"]["name"], "model": MODELS["nbpro"]["name"], "resolution": "2K",
+                  "side": P.RESOLUTION_SIDE["2K"], "qc": True, "retries": 2, "note": TIER_NOTES["custom"], "price": _round(pro * markup)})
     ops = [{"key": key, "name": name, "note": note, "resolution": res,
             "price": _round((base(org_settings, model, res) + QC) * (1 + RESERVE) * markup)}
            for key, name, model, res, note in OPS]
-    standard = next(t["price"] for t in tiers if t["key"] == "standard")
+    by_key = {t["key"]: t["price"] for t in tiers}
+    standard = by_key["standard"]
     packages = [{"amount": a, "bonus_rate": b, "bonus": round(a * b, 2), "frames": int((a * (1 + b)) // standard)}
                 for a, b in PACKAGES]
     models = [{"key": k, "name": m["name"], "note": m["note"]} for k, m in MODELS.items()]
-    return {"tiers": tiers, "ops": ops, "packages": packages, "models": models, "min_topup": MIN_TOPUP,
-            "max_topup": MAX_TOPUP}
+    markets = [{"key": k, "name": P.MARKETS[k]["name"], "aspect": P.MARKETS[k]["aspect"], "min_side": P.MARKETS[k]["min_side"],
+                "hint": P.MARKETS[k]["hint"]} for k in MARKET_KEYS]
+    out_presets = []
+    for p in (presets if presets is not None else P.DEFAULT_PRESETS):
+        quality = p.get("quality") if p.get("quality") in P.QUALITY else "standard"
+        if quality == "custom":
+            cost, *_ = quality_cost(org_settings, {**st0, **P.clean_custom(p.get("custom"))})
+            price = _round(cost * markup)
+        else:
+            main = P.clean_main_model(p.get("custom"))
+            cost, *_ = quality_cost(org_settings, {**st0, **P.QUALITY[quality]["settings"], **main})
+            price = _round(cost * markup)
+        frames = p["total"] if "total" in p else P.total(p.get("plan"))
+        if not frames:
+            continue
+        mk = P.clean_market(p.get("market"))["key"]
+        out_presets.append({"name": p["name"], "description": p.get("description") or "", "quality": quality,
+                            "quality_name": P.QUALITY[quality]["name"], "frames": frames, "frame_price": price,
+                            "market": P.MARKETS[mk]["name"] if mk != "none" else "", "price": round(price * frames, 2)})
+    return {"tiers": tiers, "ops": ops, "packages": packages, "models": models, "markets": markets, "presets": out_presets,
+            "min_topup": MIN_TOPUP, "max_topup": MAX_TOPUP}

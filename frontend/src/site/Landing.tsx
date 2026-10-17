@@ -71,7 +71,7 @@ export function Landing() {
       <section className="sec" id="how">
         <div className="site-wrap">
           <h2 data-reveal>Как это работает</h2>
-          <div data-reveal><StepsTabs /></div>
+          <div data-reveal><StepsTabs presets={prices?.presets} /></div>
         </div>
       </section>
 
@@ -96,7 +96,7 @@ export function Landing() {
         <div className="site-wrap">
           <h2 data-reveal>Под каждую площадку</h2>
           <p className="sec-lead" data-reveal>Выберите площадку — посмотрите, в каком формате и по каким правилам будет главное фото.</p>
-          <div data-reveal><MarketDemo /></div>
+          <div data-reveal><MarketDemo markets={prices?.markets} /></div>
         </div>
       </section>
 

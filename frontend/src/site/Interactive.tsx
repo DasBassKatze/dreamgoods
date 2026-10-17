@@ -132,7 +132,7 @@ const STEPS: [string, string, string][] = [
 ];
 
 /** «Как это работает»: шаги переключаются сами, а по клику — вручную; справа — что вы увидите на этом шаге. */
-export function StepsTabs() {
+export function StepsTabs({ presets }: { presets?: PriceList["presets"] }) {
   const [cur, setCur] = useState(0);
   const [auto, setAuto] = useState(!reduced());
   useEffect(() => {
@@ -167,8 +167,8 @@ export function StepsTabs() {
           <div className="stage stage-setup" key="s">
             <div className="fake-input"><span className="spark">✦</span>тёплый осенний свет, бежевый фон, акцент на замше<i className="caret" /></div>
             <div className="fake-row"><span className="fake-label">Площадка</span>{["WB", "Ozon", "Я.Маркет", "Авито"].map((m, i) => <span key={m} className={`fake-pill ${i === 0 ? "on" : ""}`}>{m}</span>)}</div>
-            <div className="fake-row"><span className="fake-label">Пресет</span>{["Черновик", "Стандарт", "Премиум"].map((m, i) => <span key={m} className={`fake-pill ${i === 1 ? "on" : ""}`}>{m}</span>)}</div>
-            <div className="fake-btn">✦ Сгенерировать 48 кадров</div>
+            <div className="fake-row"><span className="fake-label">Пресет</span>{(presets?.length ? presets.slice(0, 3).map((p) => p.name) : ["Черновик", "Стандарт", "Премиум"]).map((m, i) => <span key={m} className={`fake-pill ${i === 0 ? "on" : ""}`}>{m}</span>)}</div>
+            <div className="fake-btn">✦ Сгенерировать {(presets?.[0]?.frames || 8) * 6} кадров</div>
           </div>
         )}
         {STEPS[cur][2] === "result" && (
@@ -193,9 +193,20 @@ const MARKETS: Record<MarketKey, { name: string; aspect: string; size: string; r
 };
 
 /** Обложка под площадку: выберите площадку — кадр меняет формат, рядом — правила главного фото. */
-export function MarketDemo() {
+/** Правила площадки из студии: «3:4, от 700×900 px; главное фото — …; без …» → размер и пункты. */
+function fromStudio(x: PriceList["markets"][number]) {
+  const [head, ...rest] = x.hint.split(/;\s*/);
+  const size = head.split(/,\s*/).filter((t) => /px/.test(t)).join(", ") || `от ${x.min_side} px`;
+  const rules = rest.flatMap((r) => r.replace(/^главное фото\s*—\s*/, "").split(/,\s*(?=без )/)).filter(Boolean);
+  return { name: x.name, aspect: x.aspect, size, rules };
+}
+
+const wide = (a: string) => { const [w, h] = a.split(":").map(Number); return w > h; };
+
+export function MarketDemo({ markets }: { markets?: PriceList["markets"] }) {
   const [m, setM] = useState<MarketKey>("wb");
-  const info = MARKETS[m];
+  const studio = markets?.find((x) => x.key === m);
+  const info = studio ? fromStudio(studio) : MARKETS[m];
   return (
     <div className="market-demo">
       <div className="market-pills" role="tablist">
@@ -205,7 +216,7 @@ export function MarketDemo() {
       </div>
       <div className="market-body">
         <div className="market-frame-wrap">
-          <div className="market-frame" style={{ aspectRatio: info.aspect.replace(":", "/") }}>
+          <div className="market-frame" style={wide(info.aspect) ? { aspectRatio: info.aspect.replace(":", "/"), height: "auto", width: "min(320px, 100%)" } : { aspectRatio: info.aspect.replace(":", "/") }}>
             <Boot />
             <span className="market-size">{info.aspect} · {info.size}</span>
           </div>
@@ -225,12 +236,15 @@ export function Calculator({ prices, compact }: { prices: PriceList | null; comp
   const [products, setProducts] = useState(30);
   const [perProduct, setPerProduct] = useState(6);
   const [tier, setTier] = useState("standard");
+  const [preset, setPreset] = useState<string | null>(null);
   const t = prices?.tiers.find((x) => x.key === tier);
   const frames = products * perProduct;
   const total = t ? frames * t.price : 0;
   const pack = prices?.packages.find((p) => p.amount * (1 + p.bonus_rate) >= total) || prices?.packages[prices.packages.length - 1];
   const amount = pack && pack.amount * (1 + pack.bonus_rate) >= total ? pack.amount : Math.ceil(total / 100) * 100;
-  const tiers = prices?.tiers.filter((x) => ["draft", "standard", "premium", "standard4k"].includes(x.key)) || [];
+  const tiers = prices?.tiers || [];
+  const presets = prices?.presets || [];
+  const usePreset = (p: PriceList["presets"][number]) => { setPreset(p.name); setPerProduct(Math.min(30, p.frames)); setTier(p.quality); };
   return (
     <div className={`calc ${compact ? "compact" : ""}`}>
       <div className="calc-in">
@@ -241,14 +255,26 @@ export function Calculator({ prices, compact }: { prices: PriceList | null; comp
         </label>
         <label className="calc-field">
           <span>Кадров на товар <b>{perProduct}</b></span>
-          <input type="range" min={1} max={12} value={perProduct} onChange={(e) => setPerProduct(+e.target.value)}
-            style={{ "--p": `${((perProduct - 1) / 11) * 100}%` } as CSSProperties} />
+          <input type="range" min={1} max={30} value={perProduct} onChange={(e) => { setPerProduct(+e.target.value); setPreset(null); }}
+            style={{ "--p": `${((perProduct - 1) / 29) * 100}%` } as CSSProperties} />
         </label>
+        {presets.length > 0 && (
+          <div className="calc-field">
+            <span>Пресет студии</span>
+            <div className="calc-pills">
+              {presets.map((p) => (
+                <button key={p.name} type="button" className={preset === p.name ? "on" : ""} onClick={() => usePreset(p)} title={p.description}>
+                  {p.name}<small>{p.frames} кадров · {p.quality_name}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="calc-field">
           <span>Качество</span>
           <div className="calc-pills">
             {tiers.map((x) => (
-              <button key={x.key} type="button" className={tier === x.key ? "on" : ""} onClick={() => setTier(x.key)}>
+              <button key={x.key} type="button" className={tier === x.key ? "on" : ""} onClick={() => { setTier(x.key); setPreset(null); }}>
                 {x.name}<small>{x.price.toLocaleString("ru-RU")} ₽</small>
               </button>
             ))}
@@ -256,7 +282,7 @@ export function Calculator({ prices, compact }: { prices: PriceList | null; comp
         </div>
       </div>
       <div className="calc-out">
-        <span className="calc-label">{frames.toLocaleString("ru-RU")} кадров · {t?.name || "…"}</span>
+        <span className="calc-label">{frames.toLocaleString("ru-RU")} кадров · {preset ? `${preset} · ` : ""}{t?.name || "…"}</span>
         <span className="calc-total">≈ {rub(total)}</span>
         <span className="calc-per">≈ {t ? rub(t.price * perProduct) : "—"} за товар</span>
         {pack && total > 0 && (

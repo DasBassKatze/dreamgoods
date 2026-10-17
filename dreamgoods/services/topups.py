@@ -4,10 +4,10 @@
 from sqlalchemy import select
 
 from .. import db
-from ..core import pricing
+from ..core import presets as presets_core, pricing
 from ..core.events import utcnow
 from ..core.logs import log
-from ..db.models import Client, Organization, TopupRequest, User
+from ..db.models import Client, GenerationPreset, Organization, TopupRequest, User
 from . import billing
 
 METHODS = {"card": "банковская карта", "sbp": "СБП", "invoice": "счёт для юрлица / ИП"}
@@ -22,7 +22,15 @@ def prices(cu=None):
         client = s.get(Client, cu.client_id) if cu and cu.client_id else None
         if client is not None and client.markup is not None:
             markup = client.markup
-        out = pricing.price_list(settings, markup)
+        presets = None
+        if org:
+            rows = s.scalars(select(GenerationPreset).where(GenerationPreset.org_id == org.id, GenerationPreset.archived.is_(False),
+                                                            GenerationPreset.client_id.is_(None))
+                             .order_by(GenerationPreset.id)).all()
+            if rows:
+                presets = [{"name": p.name, "description": p.description, "quality": p.quality, "custom": p.custom or {},
+                            "market": p.market, "total": presets_core.preset_total(p)} for p in rows]
+        out = pricing.price_list(settings, markup, presets)
         out["billing"] = bool(client and client.billing)
         out["balance"] = round(client.balance_rub or 0, 2) if client and client.billing else None
         out["signed_in"] = cu is not None

@@ -1019,7 +1019,7 @@ a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .site-foot nav a:hover { color: var(--accent); }
 .site-foot small { color: var(--muted); width: 100%; }
 
-.tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.tier-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
 .tier header { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
 .tier ul { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #3b3b52; }
 .tier li::before { content: "✓"; color: var(--accent); font-weight: 700; margin-right: 8px; }
@@ -1263,3 +1263,14 @@ html:has(.site) { scroll-behavior: smooth; }
   .stage-upload .thumb:nth-child(n+4) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { html:has(.site) { scroll-behavior: auto; } }
+
+/* 0.8.0: пресеты студии на странице цен */
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+.preset-card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 10px; transition: transform .2s, box-shadow .2s; }
+.preset-card:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(23,23,42,.08); }
+.preset-card h3 { margin: 0; font-size: 17px; }
+.preset-card p { margin: 0; font-size: 14px; line-height: 1.45; }
+.preset-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+.preset-meta span { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--chip); color: #4b4b63; }
+.preset-price { font-size: 22px; font-weight: 700; }
+.preset-price small { font-size: 13px; font-weight: 500; color: var(--muted); }
