@@ -1243,3 +1243,23 @@ button.small { padding: 4px 10px; font-size: 12.5px; }
   .sheet, .feat, .pcard, .tier, .pack, .site-btn, .market-frame { transition: none; }
   .shot.st-gen::after, .gen-bar b, .live-dot, .caret, .step-progress, .stage, .thumb, .mini, .market-rules li { animation: none; }
 }
+
+/* 0.7.2: плавные якоря и стабильная высота блока «Как это работает» */
+html:has(.site) { scroll-behavior: smooth; }
+.site section[id] { scroll-margin-top: 68px; }
+.step-stage { height: 440px; min-height: 0; overflow: hidden; }
+.stage { min-height: 0; }
+.stage-result .mini { aspect-ratio: 1; }
+.step-stage .stage { animation-name: stagefade; }
+@keyframes stagefade { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 1000px) {
+  /* шаги друг под другом: описания всегда раскрыты, чтобы список не менял высоту */
+  .step-text span { max-height: none; opacity: 1; }
+  .step-stage { height: 400px; }
+}
+@media (max-width: 760px) {
+  .step-stage { height: 380px; }
+  .stage-upload .thumb { aspect-ratio: 1; }
+  .stage-upload .thumb:nth-child(n+4) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { html:has(.site) { scroll-behavior: auto; } }
