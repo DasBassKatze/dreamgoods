@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { publicApi } from "../api/client";
 import type { PriceList } from "../api/types";
-import { BOOT, SiteLayout } from "./SiteLayout";
+import { Calculator, CountUp, HeroDemo, MarketDemo, StepsTabs, useReveal } from "./Interactive";
+import { SiteLayout } from "./SiteLayout";
 
 const rub = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ₽`;
 
@@ -27,12 +28,6 @@ const ICONS: Record<string, string> = {
   zip: "M10 3v10M6 9l4 4 4-4M3.5 16.5h13",
 };
 
-const STEPS: [string, string][] = [
-  ["Загрузите фото товара", "3–5 снимков на телефон с разных сторон. Можно сразу папку или архив всей коллекции — сервис сам разложит фото по артикулам и прочитает этикетки."],
-  ["Выберите площадку и стиль", "Пресет задаёт качество и набор кадров: белый фон, детали, на модели, в полный рост, интерьер. Добавьте пожелания словами — «тёплый осенний свет»."],
-  ["Получите готовую серию", "Кадры появляются по мере готовности. ИИ проверяет каждый, вы правите словами то, что хочется изменить, и скачиваете ZIP по артикулам."],
-];
-
 const FAQ: [string, string][] = [
   ["Нужна ли профессиональная съёмка?", "Нет. Достаточно чётких фото на телефон при хорошем свете: спереди, сзади, сбоку и деталь. Чем лучше видны детали, тем точнее кадры."],
   ["Товар на кадрах будет совпадать с настоящим?", "Каждый кадр сверяется с вашими фото: форма, цвет, материал, фурнитура. Если ИИ находит расхождение, кадр переснимается или попадает к вам «на проверку» — решение за вами."],
@@ -45,6 +40,7 @@ const FAQ: [string, string][] = [
 /** Главная страница сайта: что умеет DreamGoods, как это работает, цены вкратце и вопросы. */
 export function Landing() {
   const [prices, setPrices] = useState<PriceList | null>(null);
+  useReveal();
   useEffect(() => { publicApi.prices().then(setPrices).catch(() => setPrices(null)); }, []);
   const tier = (k: string) => prices?.tiers.find((t) => t.key === k);
   const from = tier("draft")?.price;
@@ -63,41 +59,29 @@ export function Landing() {
               <a className="site-btn ghost big" href="/pricing">Цены и оплата</a>
             </div>
             <ul className="hero-facts">
-              <li><b>{from ? `от ${rub(from)}` : "₽"}</b><span>за кадр, без подписки</span></li>
-              <li><b>4 площадки</b><span>форматы и правила обложки</span></li>
+              <li><b>{from ? <>от <CountUp to={from} decimals={from % 1 ? 1 : 0} suffix=" ₽" /></> : "₽"}</b><span>за кадр, без подписки</span></li>
+              <li><b><CountUp to={4} /> площадки</b><span>форматы и правила обложки</span></li>
               <li><b>1K–4K</b><span>разрешение на выбор</span></li>
             </ul>
           </div>
-          <div className="hero-visual" aria-hidden="true">
-            <div className="sheet">
-              <figure className="shot s-white"><Boot /><figcaption>Белый фон · обложка</figcaption><i className="ok">ИИ ✓</i></figure>
-              <figure className="shot s-warm"><Boot /><figcaption>Студия · тёплый свет</figcaption><i className="ok">ИИ ✓</i></figure>
-              <figure className="shot s-detail"><Boot zoom /><figcaption>Деталь крупно</figcaption><i className="ok">ИИ ✓</i></figure>
-              <figure className="shot s-room"><Boot /><figcaption>Интерьер</figcaption><i className="ok">ИИ ✓</i></figure>
-            </div>
-            <div className="hero-chip">Серия из 8 кадров · WB 3:4</div>
-          </div>
+          <HeroDemo />
         </div>
       </section>
 
       <section className="sec" id="how">
         <div className="site-wrap">
-          <h2>Как это работает</h2>
-          <ol className="steps">
-            {STEPS.map(([t, d], i) => (
-              <li key={t}><span className="step-n">{i + 1}</span><h3>{t}</h3><p>{d}</p></li>
-            ))}
-          </ol>
+          <h2 data-reveal>Как это работает</h2>
+          <div data-reveal><StepsTabs /></div>
         </div>
       </section>
 
       <section className="sec alt" id="features">
         <div className="site-wrap">
-          <h2>Что умеет DreamGoods</h2>
-          <p className="sec-lead">Всё, что нужно для визуала карточки, — в одной студии.</p>
+          <h2 data-reveal>Что умеет DreamGoods</h2>
+          <p className="sec-lead" data-reveal>Всё, что нужно для визуала карточки, — в одной студии.</p>
           <div className="feat-grid">
             {FEATURES.map(([k, t, d]) => (
-              <article key={k} className="feat">
+              <article key={k} className="feat" data-reveal onMouseMove={spot}>
                 <span className="feat-ico"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"
                   strokeLinecap="round" strokeLinejoin="round"><path d={ICONS[k]} /></svg></span>
                 <h3>{t}</h3>
@@ -108,23 +92,31 @@ export function Landing() {
         </div>
       </section>
 
-      <section className="sec" id="who">
-        <div className="site-wrap who">
-          <div><h3>Селлерам</h3><p>Карточки новых товаров в день поступления, без фотографа и дизайнера. Обновляйте визуал под сезон за минуты.</p></div>
-          <div><h3>Агентствам и дизайнерам</h3><p>Кабинеты для клиентов, общие модели и оформление, отчёты по расходам — ведите десятки брендов в одном месте.</p></div>
-          <div><h3>Брендам</h3><p>Единый стиль во всех карточках: свои модели, свой свет и гамма, одинаковая подача на всех площадках.</p></div>
+      <section className="sec" id="markets">
+        <div className="site-wrap">
+          <h2 data-reveal>Под каждую площадку</h2>
+          <p className="sec-lead" data-reveal>Выберите площадку — посмотрите, в каком формате и по каким правилам будет главное фото.</p>
+          <div data-reveal><MarketDemo /></div>
         </div>
       </section>
 
-      <section className="sec alt" id="prices">
+      <section className="sec alt" id="who">
+        <div className="site-wrap who">
+          <div data-reveal><h3>Селлерам</h3><p>Карточки новых товаров в день поступления, без фотографа и дизайнера. Обновляйте визуал под сезон за минуты.</p></div>
+          <div data-reveal><h3>Агентствам и дизайнерам</h3><p>Кабинеты для клиентов, общие модели и оформление, отчёты по расходам — ведите десятки брендов в одном месте.</p></div>
+          <div data-reveal><h3>Брендам</h3><p>Единый стиль во всех карточках: свои модели, свой свет и гамма, одинаковая подача на всех площадках.</p></div>
+        </div>
+      </section>
+
+      <section className="sec" id="prices">
         <div className="site-wrap">
-          <h2>Цены</h2>
-          <p className="sec-lead">Платите за готовые кадры. Переделки брака уже учтены в средней цене.</p>
+          <h2 data-reveal>Цены</h2>
+          <p className="sec-lead" data-reveal>Платите за готовые кадры. Переделки брака уже учтены в средней цене.</p>
           <div className="price-cards">
             {(["draft", "standard", "premium"] as const).map((k) => {
               const t = tier(k);
               return (
-                <article key={k} className={`pcard ${k === "standard" ? "featured" : ""}`}>
+                <article key={k} className={`pcard ${k === "standard" ? "featured" : ""}`} data-reveal>
                   {k === "standard" && <span className="pcard-tag">Для карточек</span>}
                   <h3>{t?.name || "…"}</h3>
                   <div className="pcard-price">{t ? rub(t.price) : "—"}<small> / кадр</small></div>
@@ -134,13 +126,15 @@ export function Landing() {
               );
             })}
           </div>
+          <h3 className="calc-title" data-reveal>Посчитайте свою коллекцию</h3>
+          <div data-reveal><Calculator prices={prices} /></div>
           <div className="center"><a className="site-btn ghost" href="/pricing">Все цены и пополнение баланса →</a></div>
         </div>
       </section>
 
       <section className="sec" id="faq">
         <div className="site-wrap narrow">
-          <h2>Вопросы</h2>
+          <h2 data-reveal>Вопросы</h2>
           <div className="faq">
             {FAQ.map(([q, a]) => (
               <details key={q}><summary>{q}</summary><p>{a}</p></details>
@@ -150,7 +144,7 @@ export function Landing() {
       </section>
 
       <section className="sec cta-band">
-        <div className="site-wrap cta-in">
+        <div className="site-wrap cta-in" data-reveal>
           <h2>Снимите первую серию сегодня</h2>
           <p>Загрузите фото товара — первые кадры будут готовы через пару минут.</p>
           <a className="site-btn light big" href="/studio">Открыть студию</a>
@@ -160,12 +154,9 @@ export function Landing() {
   );
 }
 
-function Boot({ zoom }: { zoom?: boolean }) {
-  return (
-    <svg className={`boot ${zoom ? "zoom" : ""}`} viewBox="0 0 200 200">
-      <ellipse cx="108" cy="178" rx="70" ry="7" className="boot-shadow" />
-      <path d={BOOT} className="boot-body" />
-      <path d="M115 60h-20M115 74h-20M115 88h-20" className="boot-lace" />
-    </svg>
-  );
+/** Подсветка под курсором на карточках возможностей. */
+function spot(e: React.MouseEvent<HTMLElement>) {
+  const r = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
 }

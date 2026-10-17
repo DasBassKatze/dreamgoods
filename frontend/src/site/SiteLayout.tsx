@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { authApi } from "../api/client";
+import { useScrollState } from "./Interactive";
 
 export const BOOT = "M62 18h46c4 0 7 3 7 7v78c0 8 5 14 13 17l30 11c12 4 20 14 20 26v8c0 4-3 7-7 7H48c-5 0-9-4-9-9v-18c0-10 3-19 9-27 6-9 8-19 8-30V25c0-4 3-7 6-7z";
 
@@ -27,16 +28,18 @@ export function SiteLayout({ page, children }: { page: "home" | "pricing"; child
   const signedIn = useSignedIn();
   const [open, setOpen] = useState(false);
   const home = page === "home" ? "" : "/";
+  const { scrolled, active } = useScrollState(page === "home" ? ["how", "features", "markets", "who", "prices", "faq"] : []);
+  const on = (id: string) => (page === "home" && active === id ? "on" : "");
   return (
     <div className="site">
-      <header className="site-head">
+      <header className={`site-head ${scrolled ? "scrolled" : ""}`}>
         <div className="site-wrap site-head-in">
           <Logo />
           <nav className={`site-nav ${open ? "open" : ""}`} aria-label="Разделы сайта" onClick={() => setOpen(false)}>
-            <a href={`${home}#features`}>Возможности</a>
-            <a href={`${home}#how`}>Как это работает</a>
-            <a href="/pricing" className={page === "pricing" ? "on" : ""}>Цены и оплата</a>
-            <a href={`${home}#faq`}>Вопросы</a>
+            <a href={`${home}#how`} className={on("how")}>Как это работает</a>
+            <a href={`${home}#features`} className={on("features") || on("markets") || on("who")}>Возможности</a>
+            <a href="/pricing" className={page === "pricing" || on("prices") ? "on" : ""}>Цены и оплата</a>
+            <a href={`${home}#faq`} className={on("faq")}>Вопросы</a>
           </nav>
           <span className="site-spacer" />
           {signedIn ? (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { authApi, publicApi } from "../api/client";
 import type { PriceList, TopupRequest } from "../api/types";
+import { Calculator, useReveal } from "./Interactive";
 import { SiteLayout } from "./SiteLayout";
 
 const rub = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
@@ -14,7 +15,11 @@ const STATUS: Record<TopupRequest["status"], string> = { new: "ждёт опла
 /** Страница «Цены и оплата»: стоимость кадров и операций, пакеты пополнения и заявка на пополнение. */
 export function PricingPage() {
   const [p, setP] = useState<PriceList | null>(null);
-  const [amount, setAmount] = useState<number>(1500);
+  const [amount, setAmount] = useState<number>(() => {
+    const a = Number(new URLSearchParams(window.location.search).get("amount"));
+    return a > 0 ? a : 1500;
+  });
+  useReveal();
   const [method, setMethod] = useState<TopupRequest["method"]>("sbp");
   const [note, setNote] = useState("");
   const [sent, setSent] = useState<TopupRequest | null>(null);
@@ -32,6 +37,10 @@ export function PricingPage() {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+  // переход по ссылке «/pricing#packages» — прокрутить к пакетам, когда цены загрузились
+  useEffect(() => {
+    if (p && window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
+  }, [!!p]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const bonusRate = p ? p.packages.reduce((r, k) => (amount >= k.amount ? k.bonus_rate : r), 0) : 0;
   const standard = p?.tiers.find((t) => t.key === "standard")?.price || 0;
@@ -79,7 +88,7 @@ export function PricingPage() {
           <h2>Стоимость кадра</h2>
           <div className="tier-grid">
             {(p?.tiers || []).map((t) => (
-              <article key={t.key} className={`tier ${t.key === "standard" ? "featured" : ""}`}>
+              <article key={t.key} className={`tier ${t.key === "standard" ? "featured" : ""}`} data-reveal>
                 <header><h3>{t.name}</h3>{t.key === "standard" && <span className="pcard-tag">Популярный</span>}</header>
                 <div className="pcard-price">{rub(t.price)}<small> / кадр</small></div>
                 <ul>
@@ -94,7 +103,10 @@ export function PricingPage() {
           <p className="fine">Цена кадра — средняя: в неё уже входят переделки брака и ИИ-проверка. Списывается фактическая
             стоимость каждой операции, поэтому отдельный кадр может выйти чуть дешевле или дороже.</p>
 
-          <h2 className="mt">Операции с готовыми кадрами</h2>
+          <h2 className="mt" data-reveal>Сколько выйдет ваша коллекция</h2>
+          <div data-reveal><Calculator prices={p} compact /></div>
+
+          <h2 className="mt" data-reveal>Операции с готовыми кадрами</h2>
           <div className="ops">
             {(p?.ops || []).map((o) => (
               <div key={o.key} className="op"><div><b>{o.name}</b><span className="muted">{o.note}</span></div><span className="op-price">{rub(o.price)}</span></div>
@@ -109,7 +121,7 @@ export function PricingPage() {
           <p className="sec-lead">Чем больше пакет, тем больше бонус к сумме.</p>
           <div className="pack-grid">
             {(p?.packages || []).map((k) => (
-              <button key={k.amount} type="button" className={`pack ${amount === k.amount ? "on" : ""}`} onClick={() => pick(k.amount)}>
+              <button key={k.amount} type="button" className={`pack ${amount === k.amount ? "on" : ""}`} onClick={() => pick(k.amount)} data-reveal>
                 <span className="pack-sum">{rub(k.amount)}</span>
                 <span className="pack-bonus">{k.bonus_rate ? `+${Math.round(k.bonus_rate * 100)}% бонус` : "без бонуса"}</span>
                 <span className="muted">≈ {k.frames.toLocaleString("ru-RU")} кадров «Стандарт»</span>
