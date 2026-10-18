@@ -5,9 +5,11 @@ from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from ... import db
 from ...core import auth
+from ...db.models import Organization
 from ...services import admin as svc
-from ...services import billing, reports, topups, users
+from ...services import billing, plans, reports, topups, users
 from ...workers import queue, resume
 from ..deps import project_id
 from ..schemas import ParallelUpdate
@@ -125,6 +127,21 @@ def topup_requests(request: Request, status: str = ""):
 def topup_resolve(request_id: int, action: str, request: Request):
     """action: paid — зачислить сумму с бонусом пакета, cancel — отклонить."""
     return topups.resolve(auth.user(request), request_id, action)
+
+
+@router.get("/plans")
+def plans_get(request: Request):
+    with db.session() as s:
+        org = s.get(Organization, auth.user(request).org_id)
+        st = dict(org.settings or {})
+    return plans.public_plans(st) | {"defaults": plans.P.DEFAULTS, "overrides": st.get("plans") or {}}
+
+
+@router.put("/plans")
+def plans_put(request: Request, body: dict[str, Any] = Body(...)):
+    """Условия тарифов: {seller: {price, projects, …}, …}; хранятся только отличия от значений по умолчанию."""
+    plans.save_overrides(auth.user(request).org_id, body.get("plans") or {})
+    return plans_get(request)
 
 
 @router.get("/finance")

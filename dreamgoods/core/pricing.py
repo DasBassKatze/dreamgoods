@@ -69,30 +69,6 @@ OPS = [
 PACKAGES = [(500, 0.0), (1500, 0.05), (5000, 0.10), (15000, 0.15)]
 MIN_TOPUP, MAX_TOPUP = 300, 1_000_000
 
-# Тарифные планы (подписка): ежемесячный платёж зачисляется на баланс с бонусом, кадры — со скидкой.
-# Расчёт по финмодели (наценка ×2, эквайринг 2,7%, налог 6%, возвраты 1%): действующая наценка с учётом бонуса
-# и скидки — от ×1,49 («Агентство», Стандарт), маржа после налогов и комиссий — от 23%. Оплата за год — 11 месяцев
-# (1 в подарок). Цена кадра по тарифу не ниже себестоимости × PLAN_MIN_MARKUP.
-# (ключ, название, ₽ в месяц, бонус к платежу, скидка на кадры, для кого, возможности)
-PLANS = [
-    ("start", "Старт", 0, 0.0, 0.0, "попробовать и снимать время от времени",
-     ["оплата только за готовые кадры", "все уровни качества и площадки", "пресеты студии и правка словами",
-      "баланс не сгорает"]),
-    ("seller", "Селлер", 1990, 0.05, 0.10, "регулярные новинки одного магазина",
-     ["+5% к ежемесячному платежу", "−10% на все кадры и операции", "свои модели и оформление по примеру",
-      "ZIP по артикулам с отчётом"]),
-    ("business", "Бизнес", 4990, 0.05, 0.15, "бренды и магазины с большим ассортиментом",
-     ["+5% к ежемесячному платежу", "−15% на все кадры и операции", "свои пресеты под категории товаров",
-      "отчёты по расходам за любой период", "помощь с настройкой пресетов"]),
-    ("agency", "Агентство", 14990, 0.10, 0.20, "агентства и дизайнеры, которые ведут клиентов",
-     ["+10% к ежемесячному платежу", "−20% на все кадры и операции", "отдельные кабинеты клиентов со своим балансом",
-      "общие модели и оформление для всех клиентов", "сводные отчёты по клиентам"]),
-]
-POPULAR_PLAN = "business"
-PLAN_MIN_MARKUP = 1.2
-YEAR_MONTHS = 11
-
-
 def _round(v):
     """Цена для витрины — с шагом 0,5 ₽ вверх."""
     return math.ceil(v * 2 - 1e-9) / 2
@@ -155,17 +131,5 @@ def price_list(org_settings, markup, presets=None):
         out_presets.append({"name": p["name"], "description": p.get("description") or "", "quality": quality,
                             "quality_name": P.QUALITY[quality]["name"], "frames": frames, "frame_price": price,
                             "market": P.MARKETS[mk]["name"] if mk != "none" else "", "price": round(price * frames, 2)})
-    plans = []
-    for key, name, month, bonus, discount, who, features in PLANS:
-        frame = {}
-        for k in ("standard", "premium"):
-            cost, *_ = quality_cost(org_settings, {**st0, **P.QUALITY[k]["settings"]})
-            frame[k] = min(by_key[k], max(_round(cost * PLAN_MIN_MARKUP), _round(by_key[k] * (1 - discount))))
-        credit = round(month * (1 + bonus), 2)
-        plans.append({"key": key, "name": name, "month": month, "year": month * YEAR_MONTHS, "bonus_rate": bonus,
-                      "discount": discount, "credit": credit, "who": who, "features": features, "popular": key == POPULAR_PLAN,
-                      "standard": frame["standard"], "premium": frame["premium"],
-                      "frames": int(credit // frame["standard"]) if month else 0})
     return {"tiers": tiers, "ops": ops, "packages": packages, "models": models, "markets": markets, "presets": out_presets,
-            "plans": plans, "year_months": YEAR_MONTHS,
             "min_topup": MIN_TOPUP, "max_topup": MAX_TOPUP}

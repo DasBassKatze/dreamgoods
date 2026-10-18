@@ -130,8 +130,8 @@ export function Landing() {
           <div data-reveal><Calculator prices={prices} /></div>
           {!!prices?.plans?.length && (
             <a className="plans-band" href="/pricing#plans" data-reveal>
-              <span><b>Снимаете регулярно?</b> Тарифы с подпиской: бонус до +{Math.round(Math.max(...prices.plans.map((x) => x.bonus_rate)) * 100)}%
-                к платежу и до −{Math.round(Math.max(...prices.plans.map((x) => x.discount)) * 100)}% на кадры.</span>
+              <span><b>Снимаете регулярно?</b> Тарифы от {Math.min(...prices.plans.filter((x) => x.price).map((x) => x.price)).toLocaleString("ru-RU")} ₽
+                в месяц: больше генераций одновременно, свои пресеты и модели — и вся сумма идёт на баланс.</span>
               <span className="plans-band-go">Тарифы →</span>
             </a>
           )}

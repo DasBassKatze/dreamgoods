@@ -104,6 +104,9 @@ def storage_usage(user):
             used = s.scalar(select(func.coalesce(func.sum(Asset.bytes), 0)).where(Asset.id.in_(select(parts.c.a)))) or 0
             c = s.get(Client, cid)
             quota_gb = float(getattr(c, "storage_quota_gb", None) or default_gb) if c else default_gb
+            if c is not None and c.billing:          # кабинет с оплатой через баланс — хранилище по тарифу
+                from ..core import plans as P
+                quota_gb = float(P.all_plans(org.settings or {})[P.effective_key(c)]["storage_gb"])
     out = {"used": int(used), "quota": int(quota_gb * 1024 ** 3)}
     _storage_cache[key] = (time.time() + 60, out)
     return out
@@ -161,6 +164,9 @@ def create_project(client_name, name, user=None):
             s.add(c)
             s.flush()
         pname = name.strip() or "Новый проект"
+        if user is not None and not user.master:
+            from .plans import check_new_project
+            check_new_project(s, c)
         if s.scalar(select(Project.id).where(Project.client_id == c.id, Project.name == pname)):
             raise ValueError(f"У клиента «{c.name}» уже есть проект «{pname}» — выберите другое название")
         p = Project(client_id=c.id, name=pname, settings={})

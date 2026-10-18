@@ -4,7 +4,7 @@
 from sqlalchemy import select
 
 from .. import db
-from ..core import presets as presets_core, pricing
+from ..core import plans as plans_core, presets as presets_core, pricing
 from ..core.events import utcnow
 from ..core.logs import log
 from ..db.models import Client, GenerationPreset, Organization, TopupRequest, User
@@ -31,6 +31,9 @@ def prices(cu=None):
                 presets = [{"name": p.name, "description": p.description, "quality": p.quality, "custom": p.custom or {},
                             "market": p.market, "total": presets_core.preset_total(p)} for p in rows]
         out = pricing.price_list(settings, markup, presets)
+        from .plans import public_plans, view as plan_view
+        out.update(public_plans(settings))
+        out["my_plan"] = plan_view(client, settings) if client is not None and client.billing else None
         out["billing"] = bool(client and client.billing)
         out["balance"] = round(client.balance_rub or 0, 2) if client and client.billing else None
         out["signed_in"] = cu is not None
@@ -41,21 +44,32 @@ def _view(r, client_name="", user_email=""):
     return {"id": r.id, "client_id": r.client_id, "client": client_name, "user": user_email, "amount": round(r.amount_rub, 2),
             "bonus": round(r.bonus_rub or 0, 2), "method": r.method, "method_name": METHODS.get(r.method, r.method),
             "status": r.status, "note": r.note, "created": r.created_at.isoformat() if r.created_at else None,
-            "resolved": r.resolved_at.isoformat() if r.resolved_at else None}
+            "resolved": r.resolved_at.isoformat() if r.resolved_at else None, "plan": r.plan or "", "months": r.months or 0,
+            "plan_name": plans_core.DEFAULTS[r.plan]["name"] if r.plan in plans_core.DEFAULTS else ""}
 
 
-def create(cu, amount, method, note=""):
+def create(cu, amount, method, note="", plan="", months=0):
     if not cu.client_id:
         raise ValueError("у мастер-аккаунта нет своего баланса — генерации оплачиваются напрямую с Polza")
     try:
         amount = round(float(amount), 2)
     except (TypeError, ValueError):
         raise ValueError("укажите сумму")
+    plan = plan if plan in plans_core.ORDER and plan != "start" else ""
+    months = 12 if plan and int(months or 0) >= 12 else (1 if plan else 0)
+    if plan:                                  # оплата тарифа: сумма = цена × оплачиваемые месяцы, без бонуса пакета
+        with db.session() as s:
+            c0 = s.get(Client, cu.client_id)
+            org = s.get(Organization, c0.org_id) if c0 else None
+            price = plans_core.all_plans(org.settings if org else {})[plan]["price"]
+        amount = float(price * (plans_core.YEAR_PAY_MONTHS if months == 12 else 1))
     if not pricing.MIN_TOPUP <= amount <= pricing.MAX_TOPUP:
         raise ValueError(f"сумма — от {pricing.MIN_TOPUP} до {pricing.MAX_TOPUP:,} ₽".replace(",", " "))
     if method not in METHODS:
         raise ValueError("выберите способ оплаты")
     bonus, _ = pricing.bonus_for(amount)
+    if plan:
+        bonus = 0.0
     with db.session() as s:
         c = s.get(Client, cu.client_id)
         if not c or not c.billing:
@@ -64,7 +78,7 @@ def create(cu, amount, method, note=""):
                     .limit(1).offset(4)):
             raise ValueError("у вас уже 5 необработанных заявок — дождитесь зачисления")
         r = TopupRequest(client_id=c.id, user_id=cu.id, amount_rub=amount, bonus_rub=bonus, method=method,
-                         note=(note or "").strip()[:2000])
+                         note=(note or "").strip()[:2000], plan=plan, months=months)
         s.add(r)
         s.flush()
         out = _view(r, c.name)
@@ -106,6 +120,10 @@ def resolve(cu, request_id, action):
         r.status, r.resolved_at = ("paid" if action == "paid" else "cancelled"), utcnow()
         amount, bonus, rid = r.amount_rub, r.bonus_rub or 0, r.id
         client_id = c.id
+        if action == "paid" and r.plan:
+            from .plans import activate_from_topup
+            activate_from_topup(s, c, r.plan, r.months)
+            log.info("Тариф «%s» для «%s» подключён по заявке №%s до %s", r.plan, c.name, rid, c.plan_until)
     if action == "paid":
         billing.topup(client_id, amount, cu.id, f"пополнение по заявке №{rid}")
         if bonus > 0:

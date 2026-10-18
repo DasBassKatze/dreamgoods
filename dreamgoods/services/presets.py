@@ -112,6 +112,9 @@ def save(project_id, preset_id, data, master=False):
     мастер создаёт общие пресеты (видны всем)."""
     quality = data.get("quality") if data.get("quality") in P.QUALITY else "standard"
     with db.session() as s:
+        if not master:                       # свой пресет клиента — в пределах тарифа
+            from .plans import check_preset, client_of_project
+            check_preset(s, client_of_project(s, project_id), data, new=not preset_id)
         if preset_id:
             p = _get(s, project_id, preset_id, edit=True, master=master)
         else:
@@ -194,6 +197,12 @@ def apply(project_id, preset_id, product_ids=None, categories=None, everything=F
     """Назначает пресет товарам и пересобирает их кадры. dry_run — только посчитать, что произойдёт."""
     with db.session() as s:
         preset = _get(s, project_id, preset_id) if preset_id else None
+        from .plans import check_flag, check_quality, client_of_project
+        client = client_of_project(s, project_id)
+        if categories:
+            check_flag(s, client, "category_apply", "применение пресета по категориям")
+        if preset is not None and not dry_run:
+            check_quality(s, client, preset.quality)
         manual = preset is not None and preset.plan_mode == "manual"
         plan = (P.manual_plan(P.clean_manual(preset.manual)) if manual else P.clean_plan(preset.plan)) if preset else None
         targets = _targets(s, project_id, product_ids, categories, everything)

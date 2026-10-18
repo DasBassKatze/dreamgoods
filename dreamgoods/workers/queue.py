@@ -125,12 +125,37 @@ def _claim(worker):
     busy = (select(func.count(other.id)).where(other.project_id == Job.project_id, other.status.in_(("running", "cancelling")))
             .correlate(Job).scalar_subquery())
     with db.session() as s:
-        j = s.scalars(select(Job).where(Job.status == "queued").order_by(Job.priority, busy, Job.id)
-                      .with_for_update(skip_locked=True).limit(1)).first()
+        cands = s.scalars(select(Job).where(Job.status == "queued").order_by(Job.priority, busy, Job.id)
+                          .with_for_update(skip_locked=True).limit(30)).all()
+        j = _within_plan(s, cands)
         if not j:
             return None
         j.status, j.started_at, j.worker = "running", utcnow(), f"{INSTANCE_ID}/{worker}"
         return j.id, j.kind
+
+
+def _within_plan(s, cands):
+    """Первое задание, у клиента которого не превышен лимит одновременных заданий по тарифу."""
+    if not cands:
+        return None
+    from ..db.models import Project
+    from ..services.plans import parallel_for
+    pids = {j.project_id for j in cands if j.project_id}
+    client_of = dict(s.execute(select(Project.id, Project.client_id).where(Project.id.in_(pids))).all()) if pids else {}
+    running = dict(s.execute(select(Project.client_id, func.count(Job.id)).join(Project, Project.id == Job.project_id)
+                             .where(Job.status.in_(("running", "cancelling")),
+                                    Project.client_id.in_(set(client_of.values()) or {0}))
+                             .group_by(Project.client_id)).all()) if client_of else {}
+    limit = {}
+    for j in cands:
+        cid = client_of.get(j.project_id)
+        if cid is None:
+            return j
+        if cid not in limit:
+            limit[cid] = parallel_for(s, cid)
+        if limit[cid] is None or running.get(cid, 0) < limit[cid]:
+            return j
+    return None
 
 
 def _finish(job_id, status, error=""):

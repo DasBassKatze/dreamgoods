@@ -88,6 +88,8 @@ class Client(TS, Base):
     billing: Mapped[bool] = mapped_column(Boolean, default=False)     # True — генерации списываются с баланса
     markup: Mapped[float | None] = mapped_column(Float, nullable=True)  # наценка; None — общая из настроек мастера
     key_id: Mapped[int | None] = mapped_column(ForeignKey("polza_keys.id", ondelete="SET NULL"), nullable=True)
+    plan: Mapped[str] = mapped_column(String(20), default="start")      # тариф (core/plans.py)
+    plan_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # до какого дня действует
     __table_args__ = (UniqueConstraint("org_id", "name"),)
 
 
@@ -102,6 +104,8 @@ class TopupRequest(TS, Base):
     method: Mapped[str] = mapped_column(String(20), default="card")       # card | sbp | invoice
     status: Mapped[str] = mapped_column(String(20), default="new")        # new | paid | cancelled
     note: Mapped[str] = mapped_column(Text, default="")                    # пожелания / реквизиты для счёта
+    plan: Mapped[str] = mapped_column(String(20), default="")              # заявка на тариф: какой
+    months: Mapped[int] = mapped_column(Integer, default=0)                # и на сколько месяцев
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

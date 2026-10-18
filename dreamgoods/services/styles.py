@@ -63,6 +63,8 @@ def listing(project_id):
 def create(project_id, name, note, blocks):
     with db.session() as s:
         project = _project(s, project_id)
+        from .plans import check_new_style
+        check_new_style(s, project.client)
         r = StyleRef(client_id=project.client_id, name=(name or "").strip()[:120] or "Новое оформление",
                      note=(note or "").strip(), blocks=_blocks(blocks), status="draft")
         s.add(r)

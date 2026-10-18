@@ -97,6 +97,8 @@ def listing(project_id):
 def create(project_id, name, brief, source):
     with db.session() as s:
         project = _project(s, project_id)
+        from .plans import check_new_persona
+        check_new_persona(s, project.client)
         p = Persona(client_id=project.client_id, name=(name or "").strip()[:120] or "Новая модель", brief=(brief or "").strip(),
                     source="upload" if source == "upload" else "generated", status="draft")
         s.add(p)

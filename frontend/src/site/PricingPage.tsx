@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { authApi, publicApi } from "../api/client";
 import type { PriceList, PricePlan, TopupRequest } from "../api/types";
 import { Calculator, useReveal } from "./Interactive";
+import { planCell, planHighlights, rubInt } from "./plans";
 import { SiteLayout } from "./SiteLayout";
 
 const rub = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
@@ -27,6 +28,8 @@ export function PricingPage() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [yearly, setYearly] = useState(false);
+  const [planPick, setPlanPick] = useState<{ key: string; name: string; months: number } | null>(null);
+  const [compare, setCompare] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -43,25 +46,26 @@ export function PricingPage() {
     if (p && window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
   }, [!!p]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bonusRate = p ? p.packages.reduce((r, k) => (amount >= k.amount ? k.bonus_rate : r), 0) : 0;
+  const bonusRate = p && !planPick ? p.packages.reduce((r, k) => (amount >= k.amount ? k.bonus_rate : r), 0) : 0;
   const standard = p?.tiers.find((t) => t.key === "standard")?.price || 0;
   const valid = !!p && amount >= p.min_topup && amount <= p.max_topup;
 
   const pick = (a: number) => {
     setAmount(a);
+    setPlanPick(null);
     document.getElementById("topup")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  /** «Подключить тариф»: заявка на пополнение на сумму тарифа с пометкой, какой тариф и за какой период. */
+  /** «Подключить тариф»: заявка на оплату тарифа — сумма считается сервером (цена × месяцы), без бонуса пакета. */
   const choosePlan = (pl: PricePlan) => {
-    if (!pl.month) { window.location.href = "/studio"; return; }
-    setAmount(yearly ? pl.year : pl.month);
-    setMethod("sbp");
-    setNote(`Тариф «${pl.name}», ${yearly ? "оплата за год" : "помесячно"}`);
+    if (!pl.price) { window.location.href = "/studio"; return; }
+    const months = yearly ? 12 : 1;
+    setPlanPick({ key: pl.key, name: pl.name, months });
+    setAmount(pl.price * (yearly ? (p?.year_pay_months || 11) : 1));
     setSent(null);
     document.getElementById("topup")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-  const base = (k: string) => p?.tiers.find((t) => t.key === k)?.price || 0;
+  const cur = p?.my_plan?.effective;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,9 +76,10 @@ export function PricingPage() {
     setBusy(true);
     setErr("");
     try {
-      const r = await authApi.createTopup(amount, method, note);
+      const r = await authApi.createTopup(amount, method, note, planPick?.key || "", planPick?.months || 0);
       setSent(r);
       setNote("");
+      setPlanPick(null);
       setMine((await authApi.topups()).items);
     } catch (e2) {
       setErr((e2 as Error).message);
@@ -101,39 +106,59 @@ export function PricingPage() {
             <div className="plans-head">
               <div>
                 <h2>Тарифы</h2>
-                <p className="sec-lead">Подписка — это пополнение баланса раз в месяц с бонусом и скидкой на кадры.
-                  Деньги не сгорают, отменить можно в любой момент.</p>
+                <p className="sec-lead">Цена кадра на всех тарифах одна. Тарифы открывают больше возможностей, а платёж за тариф
+                  целиком поступает на ваш баланс — его тратите на кадры как обычно.</p>
               </div>
               <div className="period" role="tablist">
                 <button type="button" className={!yearly ? "on" : ""} onClick={() => setYearly(false)}>Помесячно</button>
                 <button type="button" className={yearly ? "on" : ""} onClick={() => setYearly(true)}>
-                  За год <em>{12 - p.year_months} мес. в подарок</em></button>
+                  За год <em>{12 - p.year_pay_months} мес. в подарок</em></button>
               </div>
             </div>
+            {p.my_plan && (
+              <p className="my-plan">Ваш тариф: <b>{p.my_plan.name}</b>
+                {p.my_plan.until && p.my_plan.effective !== "start" ? ` до ${new Date(p.my_plan.until).toLocaleDateString("ru-RU")}` : ""}</p>
+            )}
             <div className="plan-grid">
               {p.plans.map((pl) => (
-                <article key={pl.key} className={`plan ${pl.popular ? "featured" : ""}`} data-reveal>
-                  <header><h3>{pl.name}</h3>{pl.popular && <span className="pcard-tag">Выбор магазинов</span>}</header>
+                <article key={pl.key} className={`plan ${pl.popular ? "featured" : ""} ${cur === pl.key ? "current" : ""}`} data-reveal>
+                  <header><h3>{pl.name}</h3>{cur === pl.key ? <span className="pcard-tag cur">Ваш тариф</span>
+                    : pl.popular && <span className="pcard-tag">Выбор магазинов</span>}</header>
                   <p className="muted plan-who">{pl.who}</p>
                   <div className="plan-price" key={String(yearly)}>
-                    {pl.month ? <>{rub(yearly ? Math.round(pl.year / 12) : pl.month)}<small> / мес</small></> : <>0 ₽<small> / мес</small></>}
+                    {rubInt(pl.price && yearly ? (pl.price * p.year_pay_months) / 12 : pl.price)}<small> / мес</small>
                   </div>
-                  <p className="plan-sub">{!pl.month ? "платите только за кадры"
-                    : yearly ? `${rub(pl.year)} за год · на баланс ${rub(Math.round(pl.credit * 12))}`
-                    : `на баланс ${rub(pl.credit)} каждый месяц`}</p>
-                  <div className="plan-frame">
-                    <span>Стандарт <b>{rub(pl.standard)}</b>{pl.standard < base("standard") && <s>{rub(base("standard"))}</s>}</span>
-                    <span>Премиум <b>{rub(pl.premium)}</b>{pl.premium < base("premium") && <s>{rub(base("premium"))}</s>}</span>
-                    {pl.frames > 0 && <span className="muted">≈ {pl.frames.toLocaleString("ru-RU")} кадров «Стандарт» в месяц</span>}
-                  </div>
-                  <ul>{pl.features.map((f) => <li key={f}>{f}</li>)}</ul>
-                  <button type="button" className={`site-btn ${pl.popular ? "primary" : "ghost"}`} onClick={() => choosePlan(pl)}>
-                    {pl.month ? "Подключить" : "Начать бесплатно"}</button>
+                  <p className="plan-sub">{!pl.price ? "платите только за кадры"
+                    : yearly ? `${rubInt(pl.price * p.year_pay_months)} за год — всё на баланс`
+                    : "вся сумма — на ваш баланс"}</p>
+                  <ul>{planHighlights(pl, p.quality_names).map((f) => <li key={f}>{f}</li>)}</ul>
+                  <button type="button" className={`site-btn ${pl.popular ? "primary" : "ghost"}`} onClick={() => choosePlan(pl)}
+                    disabled={!!pl.price && p.signed_in && !p.billing}>
+                    {!pl.price ? "Начать бесплатно" : cur === pl.key ? "Продлить" : "Подключить"}</button>
                 </article>
               ))}
             </div>
-            <p className="fine">Подключение тарифа — заявка на пополнение: мы пришлём реквизиты, после оплаты сумма с бонусом
-              поступит на баланс и включится скидка.</p>
+            <button type="button" className="compare-toggle" onClick={() => setCompare((v) => !v)} aria-expanded={compare}>
+              {compare ? "Скрыть сравнение" : "Сравнить все возможности"} <span className={compare ? "up" : ""}>⌄</span>
+            </button>
+            {compare && (
+              <div className="compare-wrap">
+                <table className="compare">
+                  <thead><tr><th />{p.plans.map((pl) => <th key={pl.key} className={pl.popular ? "pop" : ""}>{pl.name}</th>)}</tr></thead>
+                  <tbody>
+                    {p.features.map(([k, label]) => (
+                      <tr key={k}><td>{label}</td>{p.plans.map((pl) => {
+                        const v = planCell(pl, k, p.quality_names);
+                        return <td key={pl.key} className={`${pl.popular ? "pop" : ""} ${v === "—" ? "no" : ""}`}>{v}</td>;
+                      })}</tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="fine">На всех тарифах: {p.common.join(" · ")}.</p>
+              </div>
+            )}
+            <p className="fine">Подключение — заявка на оплату: мы пришлём реквизиты, после оплаты сумма поступит на баланс и тариф
+              включится. По окончании срока кабинет переходит на «Старт»: кадры и проекты сохраняются.</p>
           </div>
         </section>
       )}
@@ -200,9 +225,14 @@ export function PricingPage() {
           </div>
 
           <form className="topup" id="topup" onSubmit={submit}>
+            {planPick && (
+              <div className="plan-pick">Оплата тарифа <b>«{planPick.name}»</b> {planPick.months === 12 ? "на год" : "на месяц"} —
+                вся сумма поступит на баланс.
+                <button type="button" className="linkish" onClick={() => setPlanPick(null)}>Обычное пополнение</button></div>
+            )}
             <div className="topup-row">
               <label className="tf"><span>Сумма, ₽</span>
-                <input type="number" min={p?.min_topup} max={p?.max_topup} step={100} value={amount}
+                <input type="number" min={p?.min_topup} max={p?.max_topup} step={100} value={amount} readOnly={!!planPick}
                   onChange={(e) => setAmount(Math.max(0, +e.target.value || 0))} /></label>
               <div className="topup-sum">
                 {bonusRate > 0 && <span>Бонус +{Math.round(bonusRate * 100)}%: <b>{rub(Math.round(amount * bonusRate * 100) / 100)}</b></span>}
@@ -229,11 +259,13 @@ export function PricingPage() {
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Как с вами удобнее связаться" /></label>
             )}
             {err && <div className="err">{err}</div>}
-            {sent && <div className="okmsg">Заявка №{sent.id} принята: {rub(sent.amount)}{sent.bonus ? ` + бонус ${rub(sent.bonus)}` : ""}.
+            {sent && <div className="okmsg">Заявка №{sent.id} принята: {rub(sent.amount)}{sent.bonus ? ` + бонус ${rub(sent.bonus)}` : ""}
+              {sent.plan_name ? ` — тариф «${sent.plan_name}» включится после оплаты` : ""}.
               Мы пришлём реквизиты для оплаты, и сразу после оплаты деньги поступят на баланс.</div>}
             <div className="topup-foot">
               <button className="site-btn primary big" disabled={busy || !valid || (p?.signed_in && !p.billing)}>
-                {!p?.signed_in ? "Войти и пополнить" : busy ? "Отправляю…" : "Пополнить баланс"}
+                {!p?.signed_in ? (planPick ? "Войти и оплатить" : "Войти и пополнить") : busy ? "Отправляю…"
+                  : planPick ? "Оплатить тариф" : "Пополнить баланс"}
               </button>
               <span className="muted">
                 {!valid && p ? `Сумма — от ${rub(p.min_topup)} до ${rub(p.max_topup)}.` :
@@ -250,7 +282,7 @@ export function PricingPage() {
                 <thead><tr><th>№</th><th>Дата</th><th>Сумма</th><th>Бонус</th><th>Способ</th><th>Статус</th></tr></thead>
                 <tbody>{mine.map((r) => (
                   <tr key={r.id}><td>{r.id}</td><td>{r.created ? new Date(r.created).toLocaleDateString("ru-RU") : ""}</td>
-                    <td>{rub(r.amount)}</td><td>{r.bonus ? rub(r.bonus) : "—"}</td><td>{r.method_name}</td>
+                    <td>{rub(r.amount)}{r.plan_name ? <span className="muted"> · тариф «{r.plan_name}»{r.months === 12 ? " на год" : ""}</span> : null}</td><td>{r.bonus ? rub(r.bonus) : "—"}</td><td>{r.method_name}</td>
                     <td><span className={`st st-${r.status}`}>{STATUS[r.status]}</span></td></tr>))}
                 </tbody>
               </table>

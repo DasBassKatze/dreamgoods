@@ -1,7 +1,7 @@
 """Импорт фото: загрузка кучей/архивом → ИИ раскладывает по товарам → подтверждение."""
 from fastapi import APIRouter, Depends, Request
 
-from ...services import importer
+from ...services import importer, plans
 from ..deps import need_key, project_id
 from ..schemas import ImportAnalyze, ImportApply
 
@@ -15,6 +15,7 @@ def session_id(import_id: int, pid: int = Depends(project_id)) -> int:
 
 @router.post("")
 def new_import(pid: int = Depends(project_id)):
+    plans.check_storage_project(pid)
     return {"id": importer.new_session(pid)}
 
 

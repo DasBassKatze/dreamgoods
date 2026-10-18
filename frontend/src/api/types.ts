@@ -420,7 +420,7 @@ export interface Me {
   email: string;
   name: string;
   role: "master" | "user";
-  client: { id: number; name: string; balance: number; billing: boolean } | null;
+  client: { id: number; name: string; balance: number; billing: boolean; plan: MyPlan | null } | null;
 }
 
 export interface LedgerEntry {
@@ -456,6 +456,7 @@ export interface SiteUser {
   client: {
     id: number; name: string; balance: number; billing: boolean; markup: number | null; markup_effective: number;
     key_id: number | null; key_name: string; projects: number; charged_month: number; cost_month: number;
+    plan: PlanKey; plan_until: string | null; plan_effective: PlanKey;
   } | null;
 }
 
@@ -520,9 +521,19 @@ export interface ReportCatalog {
 export interface ReportSelection { metrics: string[]; sections: string[]; cols: string[] }
 
 /** Публичный прайс сайта. */
+export type PlanKey = "start" | "seller" | "business" | "agency";
+export type QualityLevel = "draft" | "standard" | "premium" | "custom";
+
+/** Тариф: цена в месяц (зачисляется на баланс) и лимиты; null в числовых лимитах — без ограничений. */
 export interface PricePlan {
-  key: string; name: string; month: number; year: number; bonus_rate: number; discount: number; credit: number;
-  who: string; features: string[]; popular: boolean; standard: number; premium: number; frames: number;
+  key: PlanKey; name: string; price: number; who: string; qualities: QualityLevel[];
+  block_models: boolean; manual_plan: boolean; custom_market: boolean; strictness: boolean; category_apply: boolean;
+  presets: number | null; personas: number | null; styles: number | null; projects: number | null; users: number | null;
+  storage_gb: number; parallel: number; support: string; popular?: boolean;
+}
+
+export interface MyPlan {
+  key: PlanKey; effective: PlanKey; name: string; until: string | null; limited: boolean; limits: PricePlan;
 }
 
 export interface PriceList {
@@ -533,7 +544,11 @@ export interface PriceList {
   packages: { amount: number; bonus_rate: number; bonus: number; frames: number }[];
   models: { key: string; name: string; note: string }[];
   plans: PricePlan[];
-  year_months: number;
+  features: [keyof PricePlan, string][];
+  common: string[];
+  year_pay_months: number;
+  quality_names: Record<QualityLevel, string>;
+  my_plan: MyPlan | null;
   min_topup: number;
   max_topup: number;
   billing: boolean;
@@ -544,5 +559,13 @@ export interface PriceList {
 export interface TopupRequest {
   id: number; client_id: number; client: string; user: string; amount: number; bonus: number;
   method: "card" | "sbp" | "invoice"; method_name: string; status: "new" | "paid" | "cancelled"; note: string;
-  created: string | null; resolved: string | null;
+  created: string | null; resolved: string | null; plan: PlanKey | ""; months: number; plan_name: string;
+}
+
+export interface PlansAdmin {
+  plans: PricePlan[];
+  features: [keyof PricePlan, string][];
+  quality_names: Record<QualityLevel, string>;
+  defaults: Record<PlanKey, PricePlan>;
+  overrides: Partial<Record<PlanKey, Partial<PricePlan>>>;
 }

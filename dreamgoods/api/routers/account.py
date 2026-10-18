@@ -28,6 +28,8 @@ class TopupCreate(BaseModel):
     amount: float
     method: str = "card"
     note: str = ""
+    plan: str = ""
+    months: int = 0
 
 
 @router.get("/topups")
@@ -38,7 +40,7 @@ def my_topups(request: Request):
 @router.post("/topups")
 def create_topup(body: TopupCreate, request: Request):
     """Заявка на пополнение баланса: мастер зачислит её после оплаты."""
-    return topups.create(auth.user(request), body.amount, body.method, body.note)
+    return topups.create(auth.user(request), body.amount, body.method, body.note, body.plan, body.months)
 
 
 public = APIRouter(prefix="/api/public", tags=["сайт"])

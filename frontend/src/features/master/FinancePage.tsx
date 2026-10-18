@@ -3,6 +3,7 @@ import { adminApi } from "../../api/client";
 import type { FinanceView, LedgerEntry, TopupRequest } from "../../api/types";
 import { useUI } from "../../components/ui";
 import { rub } from "../../lib/format";
+import { PlansEditor } from "./PlansEditor";
 
 /** Мастер: деньги сервиса — выручка (списания с балансов), себестоимость Polza, пополнения, журнал операций. */
 export function FinancePage() {
@@ -11,6 +12,7 @@ export function FinancePage() {
   const [kind, setKind] = useState<"" | "charge" | "topup">("");
   const [client, setClient] = useState("");
   const [requests, setRequests] = useState<TopupRequest[]>([]);
+  const [plansOpen, setPlansOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -32,7 +34,8 @@ export function FinancePage() {
   const resolve = async (r: TopupRequest, action: "paid" | "cancel") => {
     const total = r.amount + r.bonus;
     const ok = await ui.confirm(action === "paid"
-      ? { title: `Зачислить заявку №${r.id}?`, text: `«${r.client}» оплатил ${rub(r.amount)} (${r.method_name}). На баланс поступит ${rub(total)}${r.bonus ? `, из них бонус ${rub(r.bonus)}` : ""}.`, ok: "Зачислить" }
+      ? { title: `Зачислить заявку №${r.id}?`, text: `«${r.client}» оплатил ${rub(r.amount)} (${r.method_name}). На баланс поступит ${rub(total)}${r.bonus ? `, из них бонус ${rub(r.bonus)}` : ""}.`
+          + (r.plan_name ? ` Тариф «${r.plan_name}» включится или продлится на ${r.months === 12 ? "12 месяцев" : "1 месяц"}.` : ""), ok: "Зачислить" }
       : { title: `Отклонить заявку №${r.id}?`, text: `«${r.client}», ${rub(r.amount)}. Баланс не изменится.`, ok: "Отклонить" });
     if (!ok) return;
     try {
@@ -46,7 +49,9 @@ export function FinancePage() {
 
   return (
     <section className="page">
-      <div className="page-head"><h1>Финансы</h1><span className="spacer" /><button onClick={load}>Обновить</button></div>
+      <div className="page-head"><h1>Финансы</h1><span className="spacer" />
+        <button onClick={() => setPlansOpen(true)}>Условия тарифов</button><button onClick={load}>Обновить</button></div>
+      {plansOpen && <PlansEditor onClose={() => setPlansOpen(false)} />}
       {s && (
         <div className="kpis">
           <Kpi label="Списано с пользователей за месяц" value={rub(s.revenue_month)} />
@@ -68,7 +73,8 @@ export function FinancePage() {
                 <td className="hint nowrap">{r.created ? new Date(r.created).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</td>
                 <td>{r.client}<div className="hint">{r.user}</div></td>
                 <td className="num"><b>{rub(r.amount)}</b></td><td className="num hint">{r.bonus ? rub(r.bonus) : "—"}</td>
-                <td>{r.method_name}</td><td className="hint">{r.note}</td>
+                <td>{r.method_name}</td>
+                <td className="hint">{r.plan_name && <b className="plan-chip">Тариф «{r.plan_name}» · {r.months === 12 ? "год" : "месяц"}</b>} {r.note}</td>
                 <td className="nowrap"><button className="primary small" onClick={() => resolve(r, "paid")}>Зачислить</button>{" "}
                   <button className="small" onClick={() => resolve(r, "cancel")}>Отклонить</button></td>
               </tr>))}

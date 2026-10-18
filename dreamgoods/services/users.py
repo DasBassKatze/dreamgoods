@@ -1,12 +1,14 @@
 """Пользователи сайта (для мастер-аккаунта): заведение, личные кабинеты, ключи Polza, балансы."""
+from datetime import datetime
+
 from sqlalchemy import func, select
 
 from .. import db
 from ..ai import polza
-from ..core import auth, keys
+from ..core import auth, keys, plans as plans_core
 from ..core.logs import log
 from ..db.models import (BalanceEntry, Client, Organization, PolzaKey, Project, UsageEntry, User)
-from . import billing
+from . import billing, plans
 
 
 def _org(s, u):
@@ -17,8 +19,10 @@ def me(cu):
     with db.session() as s:
         u = s.get(User, cu.id)
         c = s.get(Client, u.client_id) if u.client_id else None
+        org = s.get(Organization, u.org_id)
         out = {"id": u.id, "email": u.email, "name": u.name or u.email, "role": u.role,
-               "client": {"id": c.id, "name": c.name, "balance": round(c.balance_rub or 0, 2), "billing": c.billing}
+               "client": {"id": c.id, "name": c.name, "balance": round(c.balance_rub or 0, 2), "billing": c.billing,
+                          "plan": plans.view(c, org.settings if org else {}) if c.billing else None}
                if c else None}
         return out
 
@@ -61,7 +65,9 @@ def listing(cu):
                             "markup": c.markup, "markup_effective": billing.markup_of(c, org), "key_id": c.key_id,
                             "key_name": key_names.get(c.key_id, ""), "projects": nproj.get(c.id, 0),
                             "charged_month": abs(round(float(month.get(c.id) or 0), 2)),
-                            "cost_month": round(float(cost_month.get(c.id) or 0), 2)}})
+                            "cost_month": round(float(cost_month.get(c.id) or 0), 2),
+                            "plan": c.plan or "start", "plan_until": c.plan_until.isoformat() if c.plan_until else None,
+                            "plan_effective": plans_core.effective_key(c)}})
         free = [{"id": c.id, "name": c.name, "projects": nproj.get(c.id, 0)} for c in clients.values()
                 if not any(u.client_id == c.id for u in users)]
         return {"users": out, "unassigned_clients": free, "markup": billing.default_markup(org)}
@@ -84,6 +90,8 @@ def create(cu, data):
                 c = s.get(Client, int(data["client_id"]))
                 if not c or c.org_id != cu.org_id:
                     raise LookupError("клиент не найден")
+                from .plans import check_new_user
+                check_new_user(s, c)
             else:
                 cname = name
                 n = 1
@@ -143,6 +151,13 @@ def update(cu, user_id, data):
                 c.key_id = kid or None
             if data.get("client_name"):
                 c.name = str(data["client_name"]).strip()[:200]
+            if data.get("plan"):                 # тариф: на N месяцев (продление) или до даты
+                until = None
+                if data.get("plan_until"):
+                    until = datetime.fromisoformat(str(data["plan_until"])[:10])
+                if data["plan"] not in plans_core.ORDER:
+                    raise ValueError("неизвестный тариф")
+                plans._apply(c, str(data["plan"]), data.get("plan_months"), until)
         dropped = data.get("password") or data.get("active") is False
     if dropped:
         auth.drop_user_sessions(int(user_id))

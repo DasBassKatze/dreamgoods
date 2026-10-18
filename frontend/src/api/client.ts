@@ -27,6 +27,7 @@ import type {
   ReportSelection,
   ServiceReport,
   Settings,
+  PlansAdmin,
 } from "./types";
 
 export class ApiError extends Error {
@@ -209,7 +210,8 @@ export const authApi = {
   balance: () => get<AccountBalance>("/api/account/balance"),
   storage: () => get<{ used: number; quota: number }>("/api/account/storage"),
   topups: () => get<{ items: TopupRequest[] }>("/api/account/topups"),
-  createTopup: (amount: number, method: string, note: string) => post<TopupRequest>("/api/account/topups", { amount, method, note }),
+  createTopup: (amount: number, method: string, note: string, plan = "", months = 0) =>
+    post<TopupRequest>("/api/account/topups", { amount, method, note, plan, months }),
 };
 
 const reportQuery = (q: { from: string; to: string; client?: number | null; rate: number }) =>
@@ -223,6 +225,8 @@ export const adminApi = {
   topups: (status = "") => get<{ items: TopupRequest[] }>(`/api/admin/topups${status ? `?status=${status}` : ""}`),
   resolveTopup: (id: number, action: "paid" | "cancel") => post<{ ok: true }>(`/api/admin/topups/${id}/${action}`),
   users: () => get<UsersListing>("/api/admin/users"),
+  plans: () => get<PlansAdmin>("/api/admin/plans"),
+  savePlans: (plans: Record<string, Record<string, unknown>>) => put<PlansAdmin>("/api/admin/plans", { plans }),
   createUser: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/users", body),
   updateUser: (id: number, body: Record<string, unknown>) => patch<{ ok: true }>(`/api/admin/users/${id}`, body),
   topup: (clientId: number, amount: number, note: string) =>
