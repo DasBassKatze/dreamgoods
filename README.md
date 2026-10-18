@@ -11,6 +11,17 @@
 Интерфейс в архиве уже собран (папка `dreamgoods/web`), Node.js для работы **не нужен**.
 Он нужен, только если вы меняете код интерфейса (`frontend/`) — тогда `Сборка интерфейса.bat`.
 
+## Запуск на сервере (Linux + Docker)
+База и сервис работают в контейнерах, Python и Node.js на сервере не нужны.
+```
+git clone https://github.com/DasBassKatze/dreamgoods.git && cd dreamgoods && git switch dev-ui
+cp .env.example .env && nano .env      # ключ Polza, пароль мастера, POSTGRES_PASSWORD, адрес и порт
+docker compose --profile server up -d --build
+```
+Сайт: `http://<адрес сервера>:8090` (порт — `DREAMGOODS_PUBLIC_PORT`). Обновление: `git pull && docker compose
+--profile server up -d --build`. Журнал: `docker compose logs -f app` (и папка `logs`). Файлы — в папке `data`,
+база — в томе `studio_pgdata`. Сброс пароля мастера: `docker compose exec app python run_dreamgoods.py --reset-master` (сообщение «порт занят» в конце — нормально: работающий сервис не трогается).
+
 ## Структура проекта
 ```
 run_dreamgoods.py      запуск: проверка базы → миграции → хранилище → очередь → веб-сервер
