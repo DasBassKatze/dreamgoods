@@ -13,17 +13,14 @@ export function Composer() {
 
   return (
     <section className="runbar">
-      <label className="cmp-batch">
-        <span className="cmp-label">Что снимать</span>
+      <label className="run-what">
+        <small>Что снимать · {n ? <>{n} {plural(n, "выбранный товар", "выбранных товара", "выбранных товаров")}</> : <>все товары</>}
+          {preset ? <> · формат {preset.aspect || "3:4"}</> : null}</small>
         <select value={limit} onChange={(e) => setLimit(+e.target.value)}>
           {BATCH.some(([k]) => k === limit) ? null : <option value={limit}>До {limit} кадров</option>}
           {BATCH.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
         </select>
       </label>
-      <span className="cmp-scope">
-        {n ? <>{n} {plural(n, "выбранный товар", "выбранных товара", "выбранных товаров")}</> : <>все товары проекта</>}
-        {preset ? <> · пресет «{preset.name}» · формат {preset.aspect || "3:4"}</> : null}
-      </span>
       <button className="primary big" onClick={() => generate(n ? [...selected] : null, limit, {})}>
         <Icon name="spark" size={18} /> Сгенерировать
       </button>

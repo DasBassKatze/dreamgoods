@@ -1371,3 +1371,23 @@ html:has(.site) { scroll-behavior: smooth; }
 .manual-plan { min-width: 0; width: 100%; max-width: 820px; }
 .manual-item > .row.nowrap { flex-wrap: wrap; row-gap: 6px; }
 .manual-item .row.nowrap .mi-title { flex: 1 1 200px; min-width: 0; }
+/* шапка генерации: карточки проекта растягиваются, справа — запуск в той же строке */
+.gen-setup { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: stretch; }
+.gen-setup .projectbar { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
+.gen-setup .pb-card { max-width: none; min-width: 0; }
+.gen-setup .runbar { flex-wrap: nowrap; padding: 6px 8px 6px 14px; gap: 12px; }
+.run-what { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.run-what small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.run-what select { min-width: 210px; }
+.gen-setup .runbar button.big { align-self: stretch; padding: 0 22px; }
+.gen-top { container-type: inline-size; }
+@container (max-width: 1320px) {
+  .gen-setup { grid-template-columns: 1fr; }
+  .gen-setup .runbar { justify-content: space-between; }
+}
+@media (max-width: 700px) {
+  .gen-setup .projectbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gen-setup .runbar { flex-wrap: wrap; }
+  .run-what, .run-what select, .gen-setup .runbar button.big { width: 100%; }
+  .gen-setup .runbar button.big { padding: 12px; }
+}
