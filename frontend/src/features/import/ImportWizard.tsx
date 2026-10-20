@@ -17,7 +17,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const [step, setStep] = useState<Step>("upload");
   const [total, setTotal] = useState(0);
   const [uploading, setUploading] = useState(0);
-  const [opts, setOpts] = useState<ImportOptions>({ ai_sort: true, read_labels: true, auto_profile: true });
+  const [opts, setOpts] = useState<ImportOptions>({ ai_sort: true, read_labels: true, auto_profile: true, sort_rule: "" });
   const modes = importModes(opts);
   const [view, setView] = useState<ImportView | null>(null);
   const [groups, setGroups] = useState<ImportGroup[]>([]);
@@ -92,7 +92,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const analyze = async () => {
     if (sid == null) return;
     try {
-      await api.analyzeImport(sid, modes.group_mode, modes.label_mode);
+      await api.analyzeImport(sid, modes.group_mode, modes.label_mode, opts.ai_sort ? opts.sort_rule.trim() : "");
       setStep("analyzing");
       setView(null);
       watch(sid);

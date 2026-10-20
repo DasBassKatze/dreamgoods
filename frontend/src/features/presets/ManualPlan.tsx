@@ -65,8 +65,8 @@ export function ManualPlan({ listing, items, onChange, models, baseModel, blockM
           </div>
           <textarea className="short" value={it.prompt} placeholder="как снимать: сцена, ракурс, свет, поза…"
             onChange={(e) => set(i, { prompt: e.target.value })} />
-          <div className="row nowrap">
-            <span className="hint">Модель:</span>
+          <div className="mi-model">
+            <span className="form-label">Модель для генерации</span>
             <ModelSelect value={it.model} onChange={(m) => set(i, { model: m })} models={models}
               emptyLabel={`как у блока «${TYPE_RU[it.block]}»`} baseModel={baseModel}
               fallback={blockModels?.[it.block] || baseModel} resolution={resolution} />

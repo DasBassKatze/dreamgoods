@@ -57,7 +57,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
   }, [api]);
   const manual = d.plan_mode === "manual";
   const total = manual ? d.manual.reduce((a, b) => a + (b.count || 0), 0) : Object.values(d.plan).reduce((a, b) => a + (b || 0), 0);
-  // модель уровня (у «Премиума» — Nano Banana Pro) важнее модели проекта; своя модель пресета — важнее всех
+  // модель уровня (у «Премиума» — своя) важнее модели проекта; своя модель пресета — важнее всех
   const levelModel = d.quality === "custom" ? "" : listing.quality.find((x) => x.key === d.quality)?.settings.model;
   const baseModel = String(d.custom.model || levelModel || state.settings.model);
   const resolution = String(d.quality === "custom" ? d.custom.resolution || state.settings.resolution
@@ -121,8 +121,8 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
                 </select>
                 <label className="check"><input type="checkbox" checked={!!d.custom.qc_count} onChange={(e) => setCustom("qc_count", e.target.checked)} /> подсчёт</label>
               </div>
-              <div className="hint mt6">разрешение — короткая сторона готового кадра. Если модель вернёт меньше (например, Nano Banana
-                умеет только 1K), кадр увеличивается до него без перегенерации. Своё значение в px главнее уровня.</div>
+              <div className="hint mt6">разрешение — короткая сторона готового кадра. Если модель вернёт меньше (некоторые модели
+                умеют только 1K), кадр увеличивается до него без перегенерации. Своё значение в px главнее уровня.</div>
             </div>
             <label className="form-label">Модель проверки</label>
             <input type="text" value={String(d.custom.qc_model ?? "")} placeholder={`пусто — ${state.settings.qc_model}`}
@@ -131,7 +131,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         )}
 
         {/* список моделей позже будет ограничиваться тарифом кабинета */}
-        <h4>Нейросеть генерации</h4>
+        <h4>Модель для генерации</h4>
         <label className="form-label">Основная модель</label>
         <div className="fld">
           <ModelSelect value={String(d.custom.model ?? "")} onChange={(m) => setCustom("model", m)} models={models}

@@ -87,9 +87,13 @@ def save_upload(session_id, rel, data):
     return n, total
 
 
-def _sort_chunk(st, model, items, trace):
-    """items: [(id, bytes, time_str)] → {id: {...}}"""
-    content = [{"type": "text", "text": "Photos in shooting order:"}]
+def _sort_chunk(st, model, items, trace, rule=""):
+    """items: [(id, bytes, time_str)] → {id: {...}}; rule — правило раскладки от продавца (его словами)."""
+    content = []
+    if rule:
+        content.append({"type": "text", "text": "The seller's own sorting rule (may be in Russian). Follow it — it overrides "
+                        "the default assumptions about how products were photographed, but keep the reply format:\n" + rule})
+    content.append({"type": "text", "text": "Photos in shooting order:"})
     for pid, data, ts in items:
         content.append({"type": "text", "text": f"Photo {pid} (shot at {ts}):"})
         content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(data, 512)}})
@@ -116,6 +120,7 @@ def analyze(session_id, job_id=None):
             st = effective(org, project)
             group_mode = sess.options.get("group_mode", "auto")
             label_mode = sess.options.get("label_mode", "read")
+            rule = str(sess.options.get("sort_rule") or "").strip()[:1000]
             files = s.scalars(select(ImportFile).where(ImportFile.session_id == session_id)).all()
             rows = []
             for f in files:
@@ -140,7 +145,7 @@ def analyze(session_id, job_id=None):
         srcs = {k: sum(1 for r in rows if r["src"] == k) for k in ("exif", "name", "upload")}
         log.info("%s анализ: %d фото · время съёмки: EXIF %d, из имени %d, по времени загрузки %d · модель %s · группы: %s",
                  tag, len(rows), srcs["exif"], srcs["name"], srcs["upload"], model,
-                 "по папкам архива" if group_mode == "folders" else "автоматически")
+                 "по папкам" if group_mode == "folders" else "автоматически" + (" + правило продавца" if rule else ""))
         step = SORT_CHUNK - SORT_OVERLAP
         starts = [] if no_ai else (list(range(0, max(len(rows) - SORT_OVERLAP, 1), step)) or [0])
         _update(session_id, status="analyzing", progress=[0, len(starts)])
@@ -155,7 +160,7 @@ def analyze(session_id, job_id=None):
                 prev = r["time"]
             if job_id:
                 set_note(job_id, f"лист {c + 1}/{len(starts)}")
-            got, cost, secs = _sort_chunk(st, model, items, trace)
+            got, cost, secs = _sort_chunk(st, model, items, trace, rule if group_mode == "auto" else "")
             total_cost += cost
             answers.append((c, got))
             _update(session_id, progress=[c + 1, len(starts)], cost_rub=total_cost)
@@ -295,10 +300,10 @@ def _update(session_id, **kw):
             setattr(sess, k, v)
 
 
-def start_analysis(session_id, group_mode, label_mode):
+def start_analysis(session_id, group_mode, label_mode, sort_rule=""):
     with db.session() as s:
         sess = s.get(ImportSession, session_id)
-        sess.options = {"group_mode": group_mode, "label_mode": label_mode}
+        sess.options = {"group_mode": group_mode, "label_mode": label_mode, "sort_rule": (sort_rule or "").strip()[:1000]}
         sess.status, sess.error, sess.cost_rub, sess.progress = "analyzing", "", 0.0, [0, 0]
         enqueue(s, "import", sess.project_id, payload={"session": session_id}, priority=10)
 
@@ -408,7 +413,7 @@ def upload(session_id, path, data):
     return save_upload(session_id, path, data)
 
 
-def analyze_request(session_id, group_mode, label_mode):
+def analyze_request(session_id, group_mode, label_mode, sort_rule=""):
     with db.session() as s:
         sess = s.get(ImportSession, int(session_id))
         if not sess:
@@ -417,7 +422,7 @@ def analyze_request(session_id, group_mode, label_mode):
             raise ValueError("анализ уже идёт")
         if not s.scalar(select(func.count(ImportFile.id)).where(ImportFile.session_id == sess.id)):
             raise ValueError("сначала загрузите фото")
-    start_analysis(session_id, group_mode, label_mode)
+    start_analysis(session_id, group_mode, label_mode, sort_rule)
 
 
 def apply_request(session_id, groups, label_mode, auto_profile):

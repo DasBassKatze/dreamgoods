@@ -67,6 +67,7 @@ class ProfileGenerate(BaseModel):
 class ImportAnalyze(BaseModel):
     group_mode: Literal["auto", "folders", "none"] = "auto"     # none — без ИИ: по папкам, всё — фото товара
     label_mode: Literal["read", "skip", "keep"] = "read"
+    sort_rule: str = Field("", max_length=1000)                 # своё правило раскладки словами (для ИИ)
 
 
 class ImportGroup(BaseModel):

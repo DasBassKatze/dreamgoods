@@ -5,6 +5,7 @@ export interface ImportOptions {
   ai_sort: boolean;        // ИИ раскладывает фото по товарам (иначе — одна папка = один товар)
   read_labels: boolean;    // ИИ читает бирки и этикетки: артикул, состав, цвет
   auto_profile: boolean;   // сразу составить профиль и промпты для новых товаров
+  sort_rule: string;       // своё правило раскладки словами (необязательно) — подсказка ИИ
 }
 
 /** Режим раскладки и бирок для сервиса из галочек. */
@@ -56,6 +57,11 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
             {" "}разложить по товарам с помощью ИИ</label>
           <div className="hint">{o.ai_sort ? "ИИ смотрит порядок съёмки и сами фото, где один и тот же товар; артикул — с бирок"
             : "без ИИ: одна папка = один товар, фото без папки — один товар. Группы можно поправить на следующем шаге"}</div>
+          {o.ai_sort && (
+            <textarea className="short mt6" maxLength={1000} value={o.sort_rule}
+              placeholder="Необязательно: своё правило раскладки. Например: «каждый товар снят на двух фото подряд, бирки нет» или «разные цвета одной модели — это разные товары»"
+              onChange={(e) => onOptions({ ...o, sort_rule: e.target.value })} />
+          )}
         </div>
         <label className="form-label">Бирки и этикетки</label>
         <div className="ch">
