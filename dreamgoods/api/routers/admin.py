@@ -9,7 +9,7 @@ from ... import db
 from ...core import auth
 from ...db.models import Organization
 from ...services import admin as svc
-from ...services import billing, plans, reports, topups, users
+from ...services import billing, plans, qc_export, reports, topups, users
 from ...workers import queue, resume
 from ..deps import project_id
 from ..schemas import ParallelUpdate
@@ -142,6 +142,16 @@ def plans_put(request: Request, body: dict[str, Any] = Body(...)):
     """Условия тарифов: {seller: {price, projects, …}, …}; хранятся только отличия от значений по умолчанию."""
     plans.save_overrides(auth.user(request).org_id, body.get("plans") or {})
     return plans_get(request)
+
+
+@router.get("/qc-export")
+def qc_export_zip(request: Request, project_id: int | None = None, days: int | None = None, images: str = "disputed"):
+    """ZIP с данными ИИ-проверки для разбора: CSV проверок, ручных решений, профилей товаров и картинки спорных кадров."""
+    data, _ = qc_export.build(auth.user(request).org_id, project_id, days, images if images in ("none", "disputed", "all")
+                              else "disputed")
+    from datetime import date
+    name = f"dreamgoods_qc_{date.today().isoformat()}.zip"
+    return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.get("/finance")

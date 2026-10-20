@@ -226,6 +226,8 @@ export const adminApi = {
   resolveTopup: (id: number, action: "paid" | "cancel") => post<{ ok: true }>(`/api/admin/topups/${id}/${action}`),
   users: () => get<UsersListing>("/api/admin/users"),
   plans: () => get<PlansAdmin>("/api/admin/plans"),
+  qcExportUrl: (o: { project?: number | null; days?: number | null; images: "none" | "disputed" | "all" }) =>
+    `/api/admin/qc-export?images=${o.images}${o.project ? `&project_id=${o.project}` : ""}${o.days ? `&days=${o.days}` : ""}`,
   savePlans: (plans: Record<string, Record<string, unknown>>) => put<PlansAdmin>("/api/admin/plans", { plans }),
   createUser: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/users", body),
   updateUser: (id: number, body: Record<string, unknown>) => patch<{ ok: true }>(`/api/admin/users/${id}`, body),

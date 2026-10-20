@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "../../api/client";
 import type { AdminOverview } from "../../api/types";
+import { Icon } from "../../layout/Icon";
+import { Modal } from "../../components/Modal";
 import { MetricsPanel } from "../../components/MetricsPanel";
 import { useUI } from "../../components/ui";
 import { rub } from "../../lib/format";
@@ -18,6 +20,7 @@ export function AdminPanel({ onCatalog, logOnly }: { onCatalog: () => void; logO
   const ui = useUI();
   const [tab, setTab] = useState<Tab>(logOnly ? "log" : "overview");
   const [o, setO] = useState<AdminOverview | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -38,7 +41,10 @@ export function AdminPanel({ onCatalog, logOnly }: { onCatalog: () => void; logO
       <div className="page-head">
         <h1>{logOnly ? "Журнал сервера" : "Аналитика проекта"}</h1>
         {!logOnly && <span className="hint">проект «{state.project.name}» · {state.project.client}</span>}
+        {!logOnly && <><span className="spacer" />
+          <button onClick={() => setExportOpen(true)}><Icon name="download" size={16} /> Выгрузить данные проверки</button></>}
       </div>
+      {exportOpen && <QcExport projectId={state.project.id} projectName={state.project.name} onClose={() => setExportOpen(false)} />}
       {!logOnly && (
         <div className="tabs">
           {TABS.map(([k, name]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{name}</button>)}
@@ -232,5 +238,65 @@ function ServerLog() {
         ))}
       </div>
     </>
+  );
+}
+
+/** Выгрузка данных ИИ-проверки (ZIP): проверки, ручные решения, профили товаров, картинки спорных кадров. */
+function QcExport({ projectId, projectName, onClose }: { projectId: number; projectName: string; onClose: () => void }) {
+  const [scope, setScope] = useState<"project" | "all">("project");
+  const [days, setDays] = useState(0);
+  const [images, setImages] = useState<"none" | "disputed" | "all">("disputed");
+  const url = adminApi.qcExportUrl({ project: scope === "project" ? projectId : null, days: days || null, images });
+  const ui = useUI();
+  const [busy, setBusy] = useState(false);
+  // архив с картинками собирается до минуты — качаем через fetch, чтобы показать, что идёт работа
+  const download = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(url, { credentials: "same-origin" });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || `ошибка ${r.status}`);
+      const name = /filename="([^"]+)"/.exec(r.headers.get("content-disposition") || "")?.[1] || "dreamgoods_qc.zip";
+      const href = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = name;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(href), 5000);
+      onClose();
+    } catch (e) {
+      ui.toast((e as Error).message, 5000);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Выгрузка данных проверки" width={560} onClose={onClose}
+      footer={<><span className="spacer" /><button onClick={onClose}>Закрыть</button>
+        <button className="primary" onClick={download} disabled={busy}>
+          <Icon name="download" size={16} /> {busy ? "Собираю архив…" : "Скачать ZIP"}</button></>}>
+      <div className="form grid">
+        <label className="form-label" htmlFor="qe-scope">Что выгрузить</label>
+        <select id="qe-scope" value={scope} onChange={(e) => setScope(e.target.value as "project" | "all")}>
+          <option value="project">Проект «{projectName}»</option>
+          <option value="all">Все проекты сервиса</option>
+        </select>
+        <label className="form-label" htmlFor="qe-days">Период</label>
+        <select id="qe-days" value={days} onChange={(e) => setDays(+e.target.value)}>
+          <option value={0}>За всё время</option>
+          <option value={7}>Последние 7 дней</option>
+          <option value={30}>Последние 30 дней</option>
+          <option value={90}>Последние 90 дней</option>
+        </select>
+        <label className="form-label" htmlFor="qe-img">Картинки</label>
+        <select id="qe-img" value={images} onChange={(e) => setImages(e.target.value as "none" | "disputed" | "all")}>
+          <option value="disputed">Брак и кадры, где вы не согласились с ИИ</option>
+          <option value="all">Все проверенные кадры (до 400)</option>
+          <option value="none">Без картинок — только таблицы</option>
+        </select>
+      </div>
+      <p className="hint mt12">В архиве: таблица всех проверок с причинами брака и промптами, ваши ручные решения, профили товаров
+        и описание фото товаров. Ключей, паролей и балансов в выгрузке нет. Таблицы открываются в Excel.
+        С картинками архив собирается до минуты.</p>
+    </Modal>
   );
 }
