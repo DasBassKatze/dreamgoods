@@ -562,6 +562,12 @@ export interface TopupRequest {
   created: string | null; resolved: string | null; plan: PlanKey | ""; months: number; plan_name: string;
 }
 
+export interface ModerationEvent {
+  id: number; created: string | null; client: string; project: string; user: string; source: "text" | "frame" | "photo";
+  where: string; category: string; category_name: string; excerpt: string; action: "blocked" | "rejected" | "hidden";
+  frame_id: number | null; product_id: number | null;
+}
+
 export interface PlansAdmin {
   plans: PricePlan[];
   features: [keyof PricePlan, string][];

@@ -1,8 +1,9 @@
 """Товар: референсы и профиль."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from ...core.events import say
-from ...services import products
+from ...core import auth
+from ...services import moderation, products
 from ..deps import need_key, project_id
 from ..schemas import ProfileGenerate, ProfileUpdate, RefsUpdate
 
@@ -20,7 +21,9 @@ def get_profile(product_id: int, pid: int = Depends(project_id)):
 
 
 @router.put("/products/{product_id}/profile")
-def save_profile(product_id: int, body: ProfileUpdate, pid: int = Depends(project_id)):
+def save_profile(product_id: int, body: ProfileUpdate, request: Request, pid: int = Depends(project_id)):
+    moderation.guard("профиль товара", {k: v for k, v in (body.profile or {}).items() if k != "prohibited"},
+                     project_id=pid, product_id=product_id, user=auth.user(request))
     return {"ok": True, "prompts": products.save_profile(pid, product_id, body.profile, body.build)}
 
 

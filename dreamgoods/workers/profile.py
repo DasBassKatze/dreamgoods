@@ -7,7 +7,7 @@ from ..core import storage
 from ..core.events import say
 from ..core.logs import Trace
 from ..db.models import Job, Product, ProductProfile
-from ..services import billing
+from ..services import billing, moderation
 from ..services.common import context, library, rebuild_frames, write_usage
 from .queue import set_note
 from ..ai.persona import person_hint as person_hint_of
@@ -48,6 +48,11 @@ def handle(job_id):
         write_usage(s, ids["org"], ids["project"], ids["product"], None, trace, f"profile:{p.id}")
         n = rebuild_frames(s, product, prof) if build else 0
     queued = 0
+    if prof.get("prohibited"):           # на фото товара запрещённое содержание — генерацию не запускаем
+        moderation.record("photo", "фото товара", "photo", prof["prohibited"], "blocked", ids["project"], ids["product"])
+        say("err", f"⛔ {sku}: на фото товара запрещённое содержание ({prof['prohibited'][:140]}) — кадры этого товара "
+                   "не снимаются. Загрузите другие фото или исправьте профиль", ids["project"])
+        then_generate = False
     if then_generate:        # запуск «Сгенерировать» ждал профиль — ставим недостающие кадры в очередь
         from ..services import frames as frames_svc
         if billing.has_funds(ids["project"]):

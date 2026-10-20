@@ -49,6 +49,8 @@ def _tech_check(img, st, tag=""):
     return issues, {"w": w, "h": h, "sharp": round(sharp, 1)}
 
 
+from ..core.moderation import PROHIBITED_FIELD, PROHIBITED_RULE
+
 QC_SYSTEM = """You are a quality-control inspector for marketplace product photos of ANY product category.
 Compare the GENERATED image with the REFERENCE photos of the real product and the TASK given to the image generator.
 
@@ -60,6 +62,7 @@ List ONLY defects that make the photo unusable for a product card. Check, in thi
    visible hand; no extra, merged, disconnected or floating limbs; the product is worn or held naturally.
 4. Text and logos: not distorted, not invented, no garbled letters.
 5. Task: shot type, background and framing as in the TASK; no watermarks, captions, collages or grids; no obvious generation artifacts.
+6. Prohibited content — see the rule below; it is always a defect.
 
 MISSING DETAILS — the most common false alarm, follow strictly:
 - The references show the product from several sides; the generated image shows only ONE side. Details that are on the other side
@@ -76,9 +79,11 @@ Do NOT report:
 - price stickers, tags and labels visible in the references;
 - background, scene, person and pose choices allowed by the TASK.
 
+""" + PROHIBITED_RULE + """
+
 Reply with ONLY this JSON, nothing else:
-{"defects": ["короткая причина брака по-русски", "..."]}
-An empty list means the photo is good."""
+{"defects": ["короткая причина брака по-русски", "..."], """ + PROHIBITED_FIELD + """}
+An empty defects list and an empty prohibited string mean the photo is good."""
 
 STRICTNESS_RULES = {
     "strict": """
@@ -142,8 +147,13 @@ def vlm_check(st, task, refs, img, trace):
         t = (x.get("text") or x.get("reason") or "") if isinstance(x, dict) else str(x)
         if t.strip():
             reasons.append(t.strip())
+    prohibited = str(res.get("prohibited") or "").strip()
+    if prohibited.lower() in ("none", "нет", "-", "—", "no", "null"):
+        prohibited = ""
+    if prohibited:
+        reasons.insert(0, f"запрещённое содержание: {prohibited}")
     log.info("%s сверка: %s", tag, ("БРАК — " + "; ".join(reasons)) if reasons else "без замечаний")
-    return {"reasons": reasons, "cost": cost}
+    return {"reasons": reasons, "cost": cost, "prohibited": prohibited}
 
 
 SPEC_PROMPT = """You read a task for an AI image generator (a product photo for a marketplace, any category) and write down
@@ -309,12 +319,14 @@ def run_qc(st, task, refs, img, trace):
         img = prepare(img, st, tag)
     issues, info = img["issues"], img["info"]
     img = img["url"]
+    prohibited = ""
     if issues and st.get("qc_cascade", True):
         log.info("%s каскад: техпроверка провалена — модель не вызываю", tag)
         reasons, cost, counts = list(issues), 0.0, None
     else:
         res = vlm_check(st, task, refs, img, trace)
         reasons, cost, counts = issues + res["reasons"], res["cost"], None
+        prohibited = res.get("prohibited") or ""
         if st.get("qc_count") and not (reasons and st.get("qc_cascade", True)):
             c = count_check(st, task, img, trace)
             cost += c["cost"]
@@ -325,7 +337,8 @@ def run_qc(st, task, refs, img, trace):
     log.info("%s итог проверки: %s%s · %.2f ₽", tag, "ПРИНЯТ" if ok else "БРАК",
              "" if ok else " — " + "; ".join(reasons), cost)
     return {"pass": ok, "scores": {}, "min": score, "defects": "; ".join(reasons), "fix": "; ".join(reasons),
-            "tech": issues, "info": info, "cost": cost, "qc_model": st.get("qc_model"), "counts": counts}
+            "tech": issues, "info": info, "cost": cost, "qc_model": st.get("qc_model"), "counts": counts,
+            "prohibited": prohibited}
 
 
 def correction(prompt, fix):

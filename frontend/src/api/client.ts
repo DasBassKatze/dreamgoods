@@ -28,6 +28,7 @@ import type {
   ServiceReport,
   Settings,
   PlansAdmin,
+  ModerationEvent,
 } from "./types";
 
 export class ApiError extends Error {
@@ -226,6 +227,7 @@ export const adminApi = {
   resolveTopup: (id: number, action: "paid" | "cancel") => post<{ ok: true }>(`/api/admin/topups/${id}/${action}`),
   users: () => get<UsersListing>("/api/admin/users"),
   plans: () => get<PlansAdmin>("/api/admin/plans"),
+  moderation: () => get<{ items: ModerationEvent[] }>("/api/admin/moderation"),
   qcExportUrl: (o: { project?: number | null; days?: number | null; images: "none" | "disputed" | "all" }) =>
     `/api/admin/qc-export?images=${o.images}${o.project ? `&project_id=${o.project}` : ""}${o.days ? `&days=${o.days}` : ""}`,
   savePlans: (plans: Record<string, Record<string, unknown>>) => put<PlansAdmin>("/api/admin/plans", { plans }),

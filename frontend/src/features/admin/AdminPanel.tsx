@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "../../api/client";
-import type { AdminOverview } from "../../api/types";
+import type { AdminOverview, ModerationEvent } from "../../api/types";
 import { Icon } from "../../layout/Icon";
 import { Modal } from "../../components/Modal";
 import { MetricsPanel } from "../../components/MetricsPanel";
@@ -8,9 +8,10 @@ import { useUI } from "../../components/ui";
 import { rub } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
 
-type Tab = "overview" | "spend" | "quality" | "models" | "log";
+type Tab = "overview" | "spend" | "quality" | "models" | "moderation" | "log";
 const TABS: [Tab, string][] = [
   ["overview", "Обзор"], ["spend", "Расходы проекта"], ["quality", "Качество"], ["models", "Модели по блокам"],
+  ["moderation", "Модерация"],
 ];
 const BLOCK_RU: Record<string, string> = { studio: "Товар на фоне", detail: "Детали", worn: "На человеке", full: "В полный рост", lifestyle: "Лайфстайл" };
 
@@ -60,6 +61,7 @@ export function AdminPanel({ onCatalog, logOnly }: { onCatalog: () => void; logO
           {tab === "quality" && <MetricsPanel m={o.metrics} />}
           {tab === "models" && <ModelStats o={o} />}
           {tab === "log" && <ServerLog />}
+          {tab === "moderation" && <ModerationLog />}
         </>
       )}
     </section>
@@ -298,5 +300,38 @@ function QcExport({ projectId, projectName, onClose }: { projectId: number; proj
         и описание фото товаров. Ключей, паролей и балансов в выгрузке нет. Таблицы открываются в Excel.
         С картинками архив собирается до минуты.</p>
     </Modal>
+  );
+}
+
+const SOURCE_RU: Record<ModerationEvent["source"], string> = { text: "запрос", frame: "готовый кадр", photo: "загруженное фото" };
+const ACTION_RU: Record<ModerationEvent["action"], string> = { blocked: "не выполнено", rejected: "отклонено", hidden: "скрыто" };
+
+/** Журнал модерации (весь сервис): что остановлено — запросы, готовые кадры, загруженные фото. */
+function ModerationLog() {
+  const ui = useUI();
+  const [items, setItems] = useState<ModerationEvent[] | null>(null);
+  useEffect(() => {
+    adminApi.moderation().then((r) => setItems(r.items)).catch((e) => ui.toast((e as Error).message));
+  }, [ui]);
+  if (!items) return <div className="empty">Загрузка…</div>;
+  return (
+    <div className="panel">
+      <p className="hint">Сервис не выполняет запросы и не показывает кадры с содержанием, запрещённым в РФ: символика ЛГБТ
+        и экстремистских организаций, нацистская символика, наркотики, обнажёнка, сексуализация несовершеннолетних,
+        дискредитация армии. Здесь — все такие случаи по всем кабинетам (последние 300).</p>
+      {!items.length ? <div className="empty">Пока ничего не останавливалось.</div> : (
+        <div className="table-wrap"><table className="tbl">
+          <thead><tr><th>Когда</th><th>Кабинет · проект</th><th>Где</th><th>Что найдено</th><th>Итог</th></tr></thead>
+          <tbody>{items.map((e) => (
+            <tr key={e.id}>
+              <td className="hint nowrap">{e.created ? new Date(e.created).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</td>
+              <td>{e.client || "—"}<div className="hint">{e.project}{e.user ? ` · ${e.user}` : ""}</div></td>
+              <td>{SOURCE_RU[e.source] || e.source}<div className="hint">{e.where}</div></td>
+              <td><b>{e.category_name}</b><div className="hint">{e.excerpt}</div></td>
+              <td className="nowrap">{ACTION_RU[e.action] || e.action}</td>
+            </tr>))}
+          </tbody></table></div>
+      )}
+    </div>
   );
 }

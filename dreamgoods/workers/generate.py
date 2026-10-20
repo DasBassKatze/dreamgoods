@@ -15,7 +15,7 @@ from ..core import storage
 from ..core.events import say
 from ..core.logs import Trace, log
 from ..db.models import Frame, Generation, Job, Product, QCCheck
-from ..services import billing
+from ..services import billing, moderation
 from ..services.common import checklist_for, context, frame_status, write_usage
 from .queue import cancelled, set_note
 from .refs import persona_for, qc_refs, ref_photos, style_for
@@ -229,7 +229,16 @@ def handle(job_id):
                 write_usage(s, ids["org"], ids["project"], ids["product"], ids["frame"], trace, f"generation:{gen_id}")
             if res["pass"]:
                 break
-            say("info", f"🔍 {sku} · кадр {pos:02d} · попытка {a}: брак — {res['defects'][:160]}", ids["project"])
+            if res.get("prohibited"):
+                # запрещённое содержание: попытку прячем (в истории и галерее её не будет), в журнал модерации
+                with db.session() as s:
+                    s.get(Generation, gen_id).status = "blocked"
+                moderation.record("frame", "готовый кадр", "image", res["prohibited"], "hidden", ids["project"],
+                                  ids["product"], ids["frame"])
+                say("err", f"⛔ {sku} · кадр {pos:02d} · попытка {a}: запрещённое содержание — кадр скрыт и переснимается",
+                    ids["project"])
+            else:
+                say("info", f"🔍 {sku} · кадр {pos:02d} · попытка {a}: брак — {res['defects'][:160]}", ids["project"])
             prompt = qc.correction(first_prompt, res["fix"] or res["defects"])
     finally:
         post.release()
@@ -239,6 +248,16 @@ def handle(job_id):
             return      # задача Polza принята; кадр показывает «ждём результат», картинку заберёт workers/resume.py
         raise error or RuntimeError("генерация остановлена")
     best = _best(attempts)
+    if best is None:            # все попытки — с запрещённым содержанием: кадр не сохраняется
+        with db.session() as s:
+            for x in attempts:
+                s.get(Generation, x["gen"]).outcome = "rejected"
+            f = s.get(Frame, ids["frame"])
+            if not f.current_generation_id:
+                f.status = "missing"
+        say("err", f"⛔ {sku} · кадр {pos:02d} · не сохранён: во всех попытках запрещённое содержание. Проверьте фото товара "
+                   f"и пожелания · {total:.2f} ₽", ids["project"])
+        return
     with db.session() as s:
         for x in attempts:
             s.get(Generation, x["gen"]).outcome = "current" if x is best else "rejected"
@@ -279,7 +298,11 @@ def _wait_anchor(anchor_id, job_id, trace):
 
 
 def _best(attempts):
-    """Первая прошедшая проверку попытка; иначе — с наименьшим числом дефектов; иначе — последняя."""
+    """Первая прошедшая проверку попытка; иначе — с наименьшим числом дефектов; иначе — последняя.
+    Попытки с запрещённым содержанием не выбираются никогда (None — если других нет)."""
+    attempts = [x for x in attempts if not (x["qc"] and x["qc"].get("prohibited"))]
+    if not attempts:
+        return None
     passed = [x for x in attempts if x["qc"] and x["qc"]["pass"]]
     if passed:
         return passed[0]

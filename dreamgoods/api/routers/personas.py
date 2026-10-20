@@ -1,8 +1,8 @@
 """Модели клиента (люди на кадрах): свои фото или образ, сгенерированный «для примерки»."""
 from fastapi import APIRouter, Depends, Request
 
-from ...core import admin
-from ...services import personas
+from ...core import admin, auth
+from ...services import moderation, personas
 from ..deps import need_key, project_id
 from ..schemas import PersonaCandidates, PersonaChoice, PersonaCreate, PersonaEdit, PersonaUpdate
 
@@ -23,13 +23,16 @@ def listing(request: Request, pid: int = Depends(project_id)):
 
 
 @router.post("/personas")
-def create(body: PersonaCreate, pid: int = Depends(project_id)):
+def create(body: PersonaCreate, request: Request, pid: int = Depends(project_id)):
+    moderation.guard("описание модели", body.name, body.brief, project_id=pid, user=auth.user(request))
     return {"id": personas.create(pid, body.name, body.brief, body.source)}
 
 
 @router.patch("/personas/{persona_id}")
 def update(persona_id: int, body: PersonaUpdate, request: Request, pid: int = Depends(project_id)):
     values = body.model_dump()
+    moderation.guard("описание модели", values.get("name"), values.get("brief"), values.get("description"),
+                     values.get("style"), project_id=pid, user=auth.user(request))
     if not admin.is_admin(request):          # паспорт меняет только мастер
         values.pop("description", None)
         values.pop("style", None)
@@ -70,7 +73,8 @@ def describe(persona_id: int, pid: int = Depends(project_id)):
 
 
 @router.post("/personas/{persona_id}/candidates")
-def candidates(persona_id: int, body: PersonaCandidates, pid: int = Depends(project_id)):
+def candidates(persona_id: int, body: PersonaCandidates, request: Request, pid: int = Depends(project_id)):
+    moderation.guard("образ модели", body.brief, project_id=pid, user=auth.user(request))
     """Сгенерировать варианты образа по пожеланиям (1–4 картинки, каждая — одна генерация)."""
     need_key(pid)
     personas.generate_candidates(pid, persona_id, body.count, body.brief)
@@ -78,7 +82,8 @@ def candidates(persona_id: int, body: PersonaCandidates, pid: int = Depends(proj
 
 
 @router.post("/personas/{persona_id}/edit")
-def edit(persona_id: int, body: PersonaEdit, pid: int = Depends(project_id)):
+def edit(persona_id: int, body: PersonaEdit, request: Request, pid: int = Depends(project_id)):
+    moderation.guard("правка модели", body.request, project_id=pid, user=auth.user(request))
     """Изменить внешность выбранной модели: ИИ правит паспорт образа, генератор меняет основное фото (1–4 варианта)."""
     need_key(pid)
     personas.edit(pid, persona_id, body.request, body.count)

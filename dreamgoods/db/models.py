@@ -358,6 +358,24 @@ class Review(TS, Base):
     note_kind: Mapped[str] = mapped_column(String(20), default="")    # false_alarm | missed | note
 
 
+class ModerationEvent(TS, Base):
+    """Запрещённое содержание, которое сервис остановил: запрос пользователя, готовый кадр или загруженное фото.
+    Журнал для мастера — показывает, что сервис фильтрует запрещённое."""
+    __tablename__ = "moderation_events"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    org_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    frame_id: Mapped[int | None] = mapped_column(ForeignKey("frames.id", ondelete="SET NULL"), nullable=True)
+    source: Mapped[str] = mapped_column(String(20))                   # text | frame | photo
+    where: Mapped[str] = mapped_column(String(60), default="")        # пожелания к запуску, правка кадра, профиль товара…
+    category: Mapped[str] = mapped_column(String(30), default="")     # lgbt | nazi | drugs | nudity | minors | army | …
+    excerpt: Mapped[str] = mapped_column(Text, default="")            # что именно найдено
+    action: Mapped[str] = mapped_column(String(20), default="blocked")  # blocked | rejected | hidden
+
+
 class SpecCache(TS, Base):
     """Ожидания по тексту задания (сколько людей/товара) — кэш, чтобы не платить повторно."""
     __tablename__ = "spec_cache"

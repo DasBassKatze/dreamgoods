@@ -9,7 +9,7 @@ from ... import db
 from ...core import auth
 from ...db.models import Organization
 from ...services import admin as svc
-from ...services import billing, plans, qc_export, reports, topups, users
+from ...services import billing, moderation, plans, qc_export, reports, topups, users
 from ...workers import queue, resume
 from ..deps import project_id
 from ..schemas import ParallelUpdate
@@ -142,6 +142,12 @@ def plans_put(request: Request, body: dict[str, Any] = Body(...)):
     """Условия тарифов: {seller: {price, projects, …}, …}; хранятся только отличия от значений по умолчанию."""
     plans.save_overrides(auth.user(request).org_id, body.get("plans") or {})
     return plans_get(request)
+
+
+@router.get("/moderation")
+def moderation_log(request: Request):
+    """Журнал модерации: что сервис остановил (запросы, готовые кадры, загруженные фото)."""
+    return {"items": moderation.listing(auth.user(request).org_id)}
 
 
 @router.get("/qc-export")

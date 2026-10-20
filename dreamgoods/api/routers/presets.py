@@ -1,9 +1,9 @@
 """Пресеты генерации: уровень качества + план кадров по блокам; применение к товарам и категориям."""
 from fastapi import APIRouter, Depends, Request
 
-from ...core import admin
+from ...core import admin, auth
 
-from ...services import presets
+from ...services import moderation, presets
 from ..deps import need_key, project_id
 from ..schemas import PresetApply, PresetSave
 
@@ -28,13 +28,21 @@ def subcategories(pid: int = Depends(project_id)):
     return {"ok": True}
 
 
+def _guard(body, request, pid):
+    d = body.model_dump()
+    moderation.guard("пресет", d.get("name"), d.get("description"), d.get("manual"), (d.get("market") or {}).get("cover_extra"),
+                     (d.get("market") or {}).get("cover_bg"), project_id=pid, user=auth.user(request))
+
+
 @router.post("")
 def create(body: PresetSave, request: Request, pid: int = Depends(project_id)):
+    _guard(body, request, pid)
     return {"id": presets.save(pid, None, body.model_dump(), admin.is_admin(request))}
 
 
 @router.put("/{preset_id}")
 def update(preset_id: int, body: PresetSave, request: Request, pid: int = Depends(project_id)):
+    _guard(body, request, pid)
     presets.save(pid, preset_id, body.model_dump(), admin.is_admin(request))
     return {"ok": True}
 

@@ -1,10 +1,10 @@
 """Очередь: генерация, проверка, остановка, ошибки."""
 from fastapi import APIRouter, Depends, Request
 
-from ...core import admin
+from ...core import admin, auth
 
 from ...core.events import say
-from ...services import frames, plans, presets
+from ...services import frames, moderation, plans, presets
 from ...workers import queue
 from ..deps import need_key, project_id
 from ..schemas import CheckRequest, Selection
@@ -41,8 +41,11 @@ def preview_generate(body: Selection, pid: int = Depends(project_id)):
 
 
 @router.post("/generate")
-def generate(body: Selection, pid: int = Depends(project_id)):
+def generate(body: Selection, request: Request, pid: int = Depends(project_id)):
     """frame_ids — конкретные кадры (перегенерация); иначе — недостающие кадры выбранных товаров."""
+    moderation.guard("пожелания к запуску", body.brief, project_id=pid, user=auth.user(request))
+    if body.frame_ids is None:
+        moderation.guard_products(pid, body.product_ids)
     need_key(pid)
     plans.check_generation_project(pid, body.product_ids if body.frame_ids is None else None)
     sync = presets.sync_for_generation(pid, body.product_ids, limit=body.limit) if body.frame_ids is None else None

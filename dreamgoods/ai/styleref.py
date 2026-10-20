@@ -18,7 +18,9 @@ Describe ONLY the style, not the objects: lighting (direction, softness, color t
 grading, background and setting type, composition and framing, depth of field and camera feel, mood, post-processing look.
 Follow the client's note: focus on what they want to take; if they say to ignore something (e.g. the background), leave it out.
 Do not mention specific products, people, brands or text from the photos.
-Reply with ONLY JSON: {"description": "<English, 50-90 words>", "name_ru": "<short Russian name, 1-3 words>"}"""
+If the photos clearly show content prohibited by Russian law (LGBT rainbow pride flag or LGBT symbols, Nazi symbols, terrorist
+symbols, drug symbols, nudity), describe it in Russian in "prohibited"; otherwise leave it empty. Never invent it.
+Reply with ONLY JSON: {"description": "<English, 50-90 words>", "name_ru": "<short Russian name, 1-3 words>", "prohibited": ""}"""
 
 
 def describe(st, images, note, trace):
@@ -28,7 +30,8 @@ def describe(st, images, note, trace):
         content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(data, 1024)}})
     res, cost, _ = chat(st, st.get("profile_model") or st.get("qc_model"), DESCRIBE_PROMPT, content, trace,
                         "оформление", 800, "none")
-    return str(res.get("description") or "").strip(), str(res.get("name_ru") or "").strip(), cost
+    return (str(res.get("description") or "").strip(), str(res.get("name_ru") or "").strip(), cost,
+            str(res.get("prohibited") or "").strip())
 
 
 def applies(block, blocks, is_cover):
