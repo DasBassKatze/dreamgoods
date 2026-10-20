@@ -18,8 +18,11 @@ git clone https://github.com/DasBassKatze/dreamgoods.git && cd dreamgoods && git
 cp .env.example .env && nano .env      # ключ Polza, пароль мастера, POSTGRES_PASSWORD, адрес и порт
 docker compose --profile server up -d --build
 ```
-Сайт: `http://<адрес сервера>:8090` (порт — `DREAMGOODS_PUBLIC_PORT`). Обновление: `git pull && docker compose
---profile server up -d --build`. Журнал: `docker compose logs -f app` (и папка `logs`). Файлы — в папке `data`,
+Сайт: `http://<адрес сервера>:8090` (порт — `DREAMGOODS_PUBLIC_PORT`). Обновление: `./server-update.sh` (забирает код
+и пересобирает контейнеры); запуск/остановка/журнал: `./server-start.sh [start|stop|restart|logs]`.
+Чтобы git не спрашивал логин при каждом обновлении, один раз: `git config credential.helper store`, затем `git pull`
+и ввести логин и токен GitHub (только чтение репозитория) — они сохранятся в `~/.git-credentials`. Токен не кладите
+в файлы проекта. Журнал: `docker compose logs -f app` (и папка `logs`). Файлы — в папке `data`,
 база — в томе `studio_pgdata`. Сброс пароля мастера: `docker compose exec app python run_dreamgoods.py --reset-master` (сообщение «порт занят» в конце — нормально: работающий сервис не трогается).
 
 ## Структура проекта
