@@ -121,7 +121,9 @@ class PresetSave(BaseModel):
     plan_mode: Literal["auto", "manual"] = "auto"     # auto — кадры придумывает ИИ по блокам; manual — свои методы съёмки
     manual: list[dict] = []                           # [{title, prompt, block, count, model}]
     block_models: dict = {}                           # {studio|detail|worn|full|lifestyle: модель генерации}
-    shared: bool = True                               # только для мастера: общий пресет (виден всем кабинетам)
+    # только для мастера: пресет студии — виден всем кабинетам и на сайте («Цены и оплата»). По умолчанию — нет:
+    # новый пресет мастера хранится в кабинете открытого проекта, как у любого пользователя
+    shared: bool | None = None
 
 
 class PresetApply(BaseModel):

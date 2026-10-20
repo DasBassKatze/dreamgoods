@@ -108,19 +108,30 @@ def model_stats(s, org_id):
 
 
 def save(project_id, preset_id, data, master=False):
-    """Создать (preset_id=None) или изменить пресет. Пресет пользователя — свой у его клиента;
-    мастер создаёт общие пресеты (видны всем)."""
+    """Создать (preset_id=None) или изменить пресет. Пресет хранится в кабинете проекта (данные пользователя отдельно
+    от данных сервиса). Пресетом студии — общим для всех кабинетов и видимым на сайте — его делает только мастер,
+    явной отметкой shared=True."""
     quality = data.get("quality") if data.get("quality") in P.QUALITY else "standard"
     with db.session() as s:
         if not master:                       # свой пресет клиента — в пределах тарифа
             from .plans import check_preset, client_of_project
             check_preset(s, client_of_project(s, project_id), data, new=not preset_id)
+        own = s.get(Project, project_id).client_id
         if preset_id:
             p = _get(s, project_id, preset_id, edit=True, master=master)
+            if master and data.get("shared") is not None and (data["shared"] is True) != (p.client_id is None):
+                if data["shared"]:
+                    p.client_id = None
+                else:                        # пресет студии → в кабинет; нельзя, если им снимают другие кабинеты
+                    other = s.scalar(select(func.count(Product.id)).join(Project, Project.id == Product.project_id)
+                                     .where(Product.preset_id == p.id, Project.client_id != own))
+                    if other:
+                        raise ValueError(f"этим пресетом снимают товары других кабинетов ({other}) — сначала смените им "
+                                         "пресет или оставьте его пресетом студии")
+                    p.client_id = own
         else:
-            shared = master and data.get("shared", True) is not False
             p = GenerationPreset(org_id=org_of_project(s, project_id).id,
-                                 client_id=None if shared else s.get(Project, project_id).client_id)
+                                 client_id=None if (master and data.get("shared") is True) else own)
             s.add(p)
         p.name = (str(data.get("name") or "").strip() or "Новый пресет")[:120]
         p.description = str(data.get("description") or "").strip()

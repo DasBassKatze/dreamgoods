@@ -16,6 +16,8 @@ export interface Draft {
   plan_mode: "auto" | "manual";
   manual: ManualItem[];
   block_models: Partial<Record<BlockKey, string>>;
+  /** только мастер: пресет студии — виден всем кабинетам и на сайте */
+  shared?: boolean;
 }
 
 // подсказка «не стрелять из пушки по воробьям»: где обычно хватает модели попроще
@@ -77,6 +79,17 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         <input type="text" value={d.name} placeholder="например, Обувь — маркетплейс" onChange={(e) => setD({ ...d, name: e.target.value })} />
         <label className="form-label">Описание</label>
         <input type="text" value={d.description} placeholder="для кого и зачем этот пресет" onChange={(e) => setD({ ...d, description: e.target.value })} />
+        {state.admin && (
+          <>
+            <label className="form-label">Где хранится</label>
+            <div>
+              <label className="check"><input type="checkbox" checked={!!d.shared} onChange={(e) => setD({ ...d, shared: e.target.checked })} />
+                {" "}пресет студии — виден всем кабинетам и на сайте в «Цены и оплата»</label>
+              <div className="hint">{d.shared ? "Пользователи могут применять его и делать свои копии."
+                : `Хранится только в кабинете «${state.project.client}» — другие пользователи и сайт его не видят.`}</div>
+            </div>
+          </>
+        )}
 
         <h4>Качество</h4>
         <label className="form-label">Уровень</label>
