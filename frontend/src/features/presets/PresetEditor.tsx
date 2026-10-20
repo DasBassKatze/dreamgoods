@@ -18,6 +18,8 @@ export interface Draft {
   block_models: Partial<Record<BlockKey, string>>;
   /** только мастер: пресет студии — виден всем кабинетам и на сайте */
   shared?: boolean;
+  /** пожелания к генерации (режим «Авто») */
+  brief?: string;
 }
 
 // подсказка «не стрелять из пушки по воробьям»: где обычно хватает модели попроще
@@ -128,16 +130,17 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
           </>
         )}
 
+        {/* список моделей позже будет ограничиваться тарифом кабинета */}
         <h4>Нейросеть генерации</h4>
         <label className="form-label">Основная модель</label>
-        <div>
+        <div className="fld">
           <ModelSelect value={String(d.custom.model ?? "")} onChange={(m) => setCustom("model", m)} models={models}
             emptyLabel="по умолчанию" fallback={state.settings.model} baseModel={baseModel} resolution={resolution} />
-          <div className="hint mt4">Делает все кадры, если ниже для блока не выбрана своя модель.</div>
+          <div className="hint mt4">Снимает все кадры, для которых ниже не выбрана своя модель.</div>
         </div>
-        <label className="form-label">По блокам</label>
-        <div className="hint pt6">Простые кадры (белый фон, детали) можно делать дешёвой быстрой моделью, а сильную оставить для
-          кадров с человеком. Пусто — основная модель. {manual ? "У ручного метода можно выбрать свою модель — она главнее." : ""}</div>
+        <label className="form-label">Модель по видам кадров</label>
+        <div className="fld hint pt6">Необязательно. Простые кадры можно снимать быстрой недорогой моделью, а сильную оставить
+          для кадров с человеком.{manual ? " Модель, выбранная у метода съёмки, главнее." : ""}</div>
         {listing.blocks.map((b) => (
           <BlockModel key={b.key} label={b.name} tip={MODEL_TIP[b.key]} value={d.block_models[b.key] || ""} models={models} baseModel={baseModel}
             resolution={resolution} stats={stats(b.key)} onChange={(m) => setD({ ...d, block_models: { ...d.block_models, [b.key]: m } })} />
@@ -152,7 +155,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
                 onClick={() => setD({ ...d, market: { key: m.key, cover: m.key !== "none" } })}>{m.name}</button>
             ))}
           </div>
-          <div className="hint mt6">{market.hint}</div>
+          <div className="fld hint mt6">{market.hint}</div>
         </div>
         {d.market.key !== "none" && (
           <>
@@ -167,9 +170,8 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
               </div>
             ) : <div className="hint pt6">{market.aspect} · кадр меньше {market.min_side} px по короткой стороне считается браком техпроверки</div>}
             <label className="form-label">Обложка</label>
-            <div>
-              <label className="check"><input type="checkbox" checked={d.market.cover} onChange={(e) => setMarket({ cover: e.target.checked })} /> первый
-                кадр «на белом фоне» делать главным фото карточки по правилам площадки</label>
+            <div className="fld">
+              <div className="hint pt6">Первый кадр «на белом фоне» станет главным фото карточки по правилам площадки.</div>
               {coverOn && d.market.key === "custom" && (
                 <div className="ch-col mt6">
                   <input type="text" value={d.market.cover_bg ?? market.cover_bg} placeholder="фон обложки (англ.), например a pure white background"
@@ -214,9 +216,19 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
             <ManualPlan listing={listing} items={d.manual} onChange={(m) => setD({ ...d, manual: m })} models={models} baseModel={baseModel}
               blockModels={d.block_models} resolution={resolution} />
           </>
-        ) : listing.blocks.map((b) => (
-          <PlanRow key={b.key} label={b.name} hint={BLOCK_HINT[b.key]} max={b.max} value={d.plan[b.key] || 0} onChange={(v) => setPlan(b.key, v)} />
-        ))}
+        ) : (
+          <>
+            {listing.blocks.map((b) => (
+              <PlanRow key={b.key} label={b.name} hint={BLOCK_HINT[b.key]} max={b.max} value={d.plan[b.key] || 0} onChange={(v) => setPlan(b.key, v)} />
+            ))}
+            <label className="form-label">Пожелания к съёмке</label>
+            <div className="fld">
+              <textarea rows={3} maxLength={1500} value={d.brief || ""} onChange={(e) => setD({ ...d, brief: e.target.value })}
+                placeholder="Например: тёплый осенний свет, бежевый фон, акцент на замше. Пусто — ИИ подберёт стиль сам" />
+              <div className="hint mt4">Учитываются во всех кадрах этого пресета. Товар при этом остаётся точно таким, как на фото.</div>
+            </div>
+          </>
+        )}
 
         <label className="form-label">Итого</label>
         <div>
@@ -245,13 +257,18 @@ function BlockModel({ label, tip, value, models, baseModel, resolution, stats, o
   return (
     <>
       <label className="form-label">{label}</label>
-      <div>
+      <div className="fld">
         <ModelSelect value={value} onChange={onChange} models={models} emptyLabel="основная" fallback={baseModel} baseModel={baseModel}
           resolution={resolution} />
-        <div className="hint mt4">{tip}
-          {stats.length > 0 && <> · по вашим кадрам: {stats.map((x) => `${x.model.split("/").pop()} — ${x.n} кадр., `
-            + `${x.first_pass == null ? "без проверки" : x.first_pass + "% с 1-й попытки"}, ${x.avg_cost} ₽`).join("; ")}</>}
-        </div>
+        <div className="hint mt4">{tip}</div>
+        {stats.length > 0 && (
+          <ul className="model-stats">
+            {stats.slice(0, 3).map((x) => (
+              <li key={x.model}>{models?.find((m) => m.id === x.model)?.name || x.model.split("/").pop()}: {x.n} кадр.,{" "}
+                {x.first_pass == null ? "без проверки" : `${x.first_pass}% с 1-й попытки`}, ≈ {x.avg_cost} ₽</li>
+            ))}
+          </ul>
+        )}
       </div>
     </>
   );

@@ -200,6 +200,8 @@ export interface ImportGroup {
   photos: string[];
   exists: boolean;
   junk?: boolean;
+  /** описание товара словами от пользователя (необязательно) */
+  description?: string;
 }
 
 export interface ImportView {
@@ -328,6 +330,7 @@ export interface Preset {
   total: number;
   is_default: boolean;
   products: number;
+  brief?: string;
 }
 
 export interface PresetListing {

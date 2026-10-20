@@ -1,9 +1,7 @@
-"""Импорт: клиент загружает кучу фото (файлы, папку, ZIP) → фото в S3 → vision-модель по листам из 20 фото
+"""Импорт: клиент загружает кучу фото (файлы или папку; архивы не принимаются) → фото в S3 → vision-модель по листам из 20 фото
 (с перекрытием 4) определяет роль каждого фото и группы товаров, читает артикул с этикеток →
 клиент подтверждает группы → товары и их фото в базе (файлы не копируются: товар ссылается на загруженные)."""
-import io
 import re
-import zipfile
 from datetime import datetime
 from pathlib import PurePosixPath
 
@@ -68,23 +66,10 @@ def save_upload(session_id, rel, data):
     if not parts:
         raise ValueError("пустое имя файла")
     files = []
-    if PurePosixPath(parts[-1]).suffix.lower() == ".zip":
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
-            for info in z.infolist():
-                if info.is_dir():
-                    continue
-                name = info.filename
-                if not info.flag_bits & 0x800:     # имена из русского Windows-архива
-                    try:
-                        name = name.encode("cp437").decode("cp866")
-                    except Exception:
-                        pass
-                sub = [_safe_name(x) for x in name.replace("\\", "/").split("/") if x not in ("", ".", "..")]
-                if not sub or PurePosixPath(sub[-1]).suffix.lower() not in IMG_EXT or "__MACOSX" in sub:
-                    continue
-                path = "/".join([PurePosixPath(parts[-1]).stem] + sub if len(sub) == 1 else sub)
-                files.append((path, z.read(info)))
-    elif PurePosixPath(parts[-1]).suffix.lower() in IMG_EXT:
+    if PurePosixPath(parts[-1]).suffix.lower() in (".zip", ".rar", ".7z"):
+        # архивы не принимаем: содержимое не видно до распаковки и его нельзя проверить — нужна папка или фото
+        raise ValueError("архивы не поддерживаются — распакуйте архив и загрузите папку или фото")
+    if PurePosixPath(parts[-1]).suffix.lower() in IMG_EXT:
         files.append(("/".join(parts), data))
     with db.session() as s:
         sess = s.get(ImportSession, session_id)
@@ -143,6 +128,9 @@ def analyze(session_id, job_id=None):
         if not rows:
             raise RuntimeError("нет загруженных фото")
         model = (st.get("profile_model") or "").strip() or st.get("qc_model")
+        no_ai = group_mode == "none"          # «просто загрузить»: без ИИ — по папкам, все фото — фото товара
+        if no_ai:
+            group_mode = "folders"
         if group_mode == "folders":
             rows.sort(key=lambda r: (r["dir"], r["time"], r["name"]))
         else:
@@ -154,7 +142,7 @@ def analyze(session_id, job_id=None):
                  tag, len(rows), srcs["exif"], srcs["name"], srcs["upload"], model,
                  "по папкам архива" if group_mode == "folders" else "автоматически")
         step = SORT_CHUNK - SORT_OVERLAP
-        starts = list(range(0, max(len(rows) - SORT_OVERLAP, 1), step)) or [0]
+        starts = [] if no_ai else (list(range(0, max(len(rows) - SORT_OVERLAP, 1), step)) or [0])
         _update(session_id, status="analyzing", progress=[0, len(starts)])
         answers, total_cost = [], 0.0
         for c, a in enumerate(starts):
@@ -173,8 +161,9 @@ def analyze(session_id, job_id=None):
             _update(session_id, progress=[c + 1, len(starts)], cost_rub=total_cost)
             log.info("%s лист %d/%d (фото %d–%d) за %.1f с, %.2f ₽", tag, c + 1, len(starts),
                      part[0]["id"], part[-1]["id"], secs, cost)
-        with db.session() as s:
-            write_usage(s, ids["org"], ids["project"], None, None, trace, f"import:{session_id}")
+        if starts:
+            with db.session() as s:
+                write_usage(s, ids["org"], ids["project"], None, None, trace, f"import:{session_id}")
         # объединение групп между листами через перекрывающиеся фото (union-find)
         parent = {}
 
@@ -258,7 +247,7 @@ def analyze(session_id, job_id=None):
             texts = [r["text"] for r in g if r["role"] == "label" and r["text"]]
             prods = [r["product"] for r in g if r["role"] == "product" and r["product"]]
             if isinstance(k, tuple) and k[0] == "dir":
-                name = k[1]
+                name = k[1] if k[1] != "без_папки" else "товар_01"
             elif arts:
                 name = max(set(arts), key=arts.count)
             else:
@@ -362,6 +351,9 @@ def apply(session_id, groups, label_mode, auto_profile):
                     if an.get("text") and an["text"] not in texts:
                         texts.append(an["text"])
                 p.label_data = {"articles": sorted(arts), "texts": texts}
+            desc = str(g.get("description") or "").strip()[:2000]
+            if desc:                     # описание товара словами — в профиль (подсказка ИИ вместе с текстом бирки)
+                p.label_data = {**(p.label_data or {}), "user_text": desc}
             made.append(sku)
             log.info("%s → товар %s: фото товара %d, этикеток %d%s", tag, sku, len(prods), len(labs) if label_mode != "skip" else 0,
                      " (товар уже был — фото добавлены)" if sku in merged else "")

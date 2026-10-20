@@ -30,7 +30,7 @@ def subcategories(pid: int = Depends(project_id)):
 
 def _guard(body, request, pid):
     d = body.model_dump()
-    moderation.guard("пресет", d.get("name"), d.get("description"), d.get("manual"), (d.get("market") or {}).get("cover_extra"),
+    moderation.guard("пресет", d.get("name"), d.get("description"), d.get("brief"), d.get("manual"), (d.get("market") or {}).get("cover_extra"),
                      (d.get("market") or {}).get("cover_bg"), project_id=pid, user=auth.user(request))
 
 

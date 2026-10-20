@@ -39,7 +39,8 @@ def handle(job_id):
         # модель генерации: своя у ручного метода → модель блока пресета → общая (не стреляем из пушки по воробьям)
         st = presets_core.model_for(st, presets_core.BLOCK_OF_PROMPT.get(P.block_of(base_prompt), ""), frame.model)
         run = job.payload or {}
-        brief = (run.get("brief") or "").strip()            # пожелания к запуску (строка над кадрами)
+        # пожелания: к запуску (если переданы) или из пресета (режим «Авто»)
+        brief = (run.get("brief") or "").strip() or (st.get("preset_brief") or "").strip()
         if run.get("market"):                               # площадка запуска поверх пресета
             rules = presets_core.market_rules({"key": run["market"], "cover": True})
             st = dict(st, market=rules)

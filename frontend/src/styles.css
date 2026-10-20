@@ -1346,3 +1346,22 @@ html:has(.site) { scroll-behavior: smooth; }
   .site-head-in .site-btn { padding: 9px 14px; font-size: 14px; }
   .site-logo span, .site-head-in .logo-text { font-size: 17px; }
 }
+
+/* загрузка: описание товара под фото группы */
+.ig-desc { width: 100%; margin-top: 8px; font: inherit; font-size: 13.5px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 10px; resize: vertical; background: #fff; }
+
+/* генерация: компактная строка запуска под настройками съёмки (пожелания, площадка, формат — в пресете) */
+.runbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; }
+.runbar .cmp-batch { display: flex; align-items: center; gap: 10px; }
+.runbar .cmp-scope { flex: 1; min-width: 200px; }
+
+/* пресеты: поле и пояснения не шире выпадающего списка модели */
+.fld { max-width: 560px; }
+.fld textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 10px; resize: vertical; }
+.model-pick { max-width: 560px; }
+.model-stats { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.runbar .cmp-batch { flex-direction: row; align-items: center; gap: 10px; }
+.runbar .cmp-batch select { width: auto; }
+.runbar .cmp-label { margin: 0; white-space: nowrap; }
+.runbar button.big { width: auto; flex: none; }
+.fld textarea { min-height: 0; height: auto; }

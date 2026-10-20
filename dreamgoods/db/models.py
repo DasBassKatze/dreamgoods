@@ -150,6 +150,7 @@ class GenerationPreset(TS, Base):
     plan_mode: Mapped[str] = mapped_column(String(10), default="auto")     # auto — блоки по профилю | manual — свои методы
     manual: Mapped[list] = mapped_column(JSONT, default=list)              # [{title, prompt, block, count, model}]
     block_models: Mapped[dict] = mapped_column(JSONT, default=dict)        # {studio: модель, …} — модель на блок
+    brief: Mapped[str] = mapped_column(Text, default="", server_default="")  # пожелания к генерации (режим «Авто»), по-русски
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=True)  # None — общий
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
 

@@ -36,7 +36,9 @@ def describe(st, images, note, trace):
 
 def applies(block, blocks, is_cover):
     """Применять ли референс к кадру этого блока."""
-    return not is_cover and block in (blocks or DEFAULT_BLOCKS)
+    # оформление применяется к одним и тем же видам кадров (детали, на человеке, общий план, лайфстайл);
+    # кадры «на белом фоне» и обложка остаются по правилам площадки. Выбор блоков в интерфейсе убран.
+    return not is_cover and block in DEFAULT_BLOCKS
 
 
 def apply(prompt, n_product, n_persona, count, description, note=""):

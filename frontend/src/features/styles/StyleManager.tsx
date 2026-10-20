@@ -45,26 +45,25 @@ export function StyleManager({ onClose }: { onClose: () => void }) {
       actions={!creating && <button className="primary" onClick={() => setCreating(true)}>＋ Новый референс</button>}>
       <div className="hint mb10">
         Фото-пример того, как должны выглядеть кадры: свет, цвет, фон и обстановка, композиция, настроение. ИИ разбирает стиль,
-        а генератор получает фото как пример оформления — без копирования предметов, людей и текста. Обложку карточки референс
-        не меняет: там правила площадки.
+        а генератор получает фото как пример оформления — без копирования предметов, людей и текста. Применяется к деталям,
+        кадрам с человеком и лайфстайлу; кадры на белом фоне и обложка карточки — по правилам площадки.
       </div>
-      {creating && data && <NewStyle blocks={data.blocks} onCancel={() => setCreating(false)}
+      {creating && data && <NewStyle onCancel={() => setCreating(false)}
         onCreated={async () => { setCreating(false); await refresh(); }} />}
       {!data ? <div className="empty">Загрузка…</div> : !data.refs.length && !creating ? (
         <div className="empty">Референсов пока нет.
           <div className="row center"><button className="primary" onClick={() => setCreating(true)}>＋ Новый референс</button></div></div>
-      ) : data.refs.map((r) => <StyleCard key={r.id} r={r} blocks={data.blocks} onChange={refresh} run={run} />)}
+      ) : data.refs.map((r) => <StyleCard key={r.id} r={r} onChange={refresh} run={run} />)}
     </Modal>
   );
 }
 
-function NewStyle({ blocks, onCancel, onCreated }: { blocks: StyleListing["blocks"]; onCancel: () => void; onCreated: () => void }) {
+function NewStyle({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
   const { api, run } = useProject();
   const ui = useUI();
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [sel, setSel] = useState<string[]>(["detail", "usage", "scene", "lifestyle"]);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
@@ -72,7 +71,7 @@ function NewStyle({ blocks, onCancel, onCreated }: { blocks: StyleListing["block
     run(async () => {
       if (!files.length) { ui.toast("Выберите фото-пример"); return; }
       setBusy(true);
-      const r = await api.createStyle({ name: name.trim(), note: note.trim(), blocks: sel });
+      const r = await api.createStyle({ name: name.trim(), note: note.trim() });
       for (const f of files) await api.uploadStylePhoto(r.id, f);
       await api.describeStyle(r.id);
       ui.toast("ИИ разбирает стиль…");
@@ -99,8 +98,7 @@ function NewStyle({ blocks, onCancel, onCreated }: { blocks: StyleListing["block
         </div>
         <label className="form-label">Название</label>
         <input type="text" value={name} placeholder="необязательно — ИИ придумает" onChange={(e) => setName(e.target.value)} />
-        <label className="form-label">К каким кадрам</label>
-        <Blocks blocks={blocks} value={sel} onChange={setSel} />
+
       </div>
       <div className="row mt12"><span className="spacer" /><button onClick={onCancel}>Отмена</button>
         <button className="primary" disabled={busy} onClick={submit}>Загрузить и разобрать стиль</button></div>
@@ -108,20 +106,7 @@ function NewStyle({ blocks, onCancel, onCreated }: { blocks: StyleListing["block
   );
 }
 
-function Blocks({ blocks, value, onChange }: { blocks: StyleListing["blocks"]; value: string[]; onChange: (v: string[]) => void }) {
-  return (
-    <div className="row">
-      {blocks.map((b) => (
-        <label key={b.key} className={`pchip ${value.includes(b.key) ? "cur" : ""}`}>
-          <input type="checkbox" checked={value.includes(b.key)}
-            onChange={(e) => onChange(e.target.checked ? [...value, b.key] : value.filter((x) => x !== b.key))} /> {b.name}
-        </label>
-      ))}
-    </div>
-  );
-}
-
-function StyleCard({ r, blocks, onChange, run }: { r: StyleRef; blocks: StyleListing["blocks"]; onChange: () => Promise<void>;
+function StyleCard({ r, onChange, run }: { r: StyleRef; onChange: () => Promise<void>;
   run: (fn: () => Promise<unknown>) => Promise<void> }) {
   const { api } = useProject();
   const ui = useUI();
@@ -168,8 +153,7 @@ function StyleCard({ r, blocks, onChange, run }: { r: StyleRef; blocks: StyleLis
       <div className="form grid">
         <label className="form-label">Что взять из примера</label>
         <textarea className="short" value={note} onChange={(e) => setNote(e.target.value)} />
-        <label className="form-label">Применять к кадрам</label>
-        <Blocks blocks={blocks} value={r.blocks} onChange={(v) => act(() => api.updateStyle(r.id, { blocks: v }))} />
+
       </div>
       <details className="persona-passport mt10">
         <summary>Разбор стиля — то, что получает генератор</summary>

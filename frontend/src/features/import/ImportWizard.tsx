@@ -5,7 +5,7 @@ import { useUI } from "../../components/ui";
 import { useProject } from "../../ProjectContext";
 import type { PickedFile } from "./files";
 import { GroupsStep } from "./GroupsStep";
-import { UploadStep, type ImportOptions } from "./UploadStep";
+import { importModes, UploadStep, type ImportOptions } from "./UploadStep";
 
 type Step = "upload" | "analyzing" | "groups" | "done";
 
@@ -17,7 +17,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const [step, setStep] = useState<Step>("upload");
   const [total, setTotal] = useState(0);
   const [uploading, setUploading] = useState(0);
-  const [opts, setOpts] = useState<ImportOptions>({ group_mode: "auto", label_mode: "read", auto_profile: true });
+  const [opts, setOpts] = useState<ImportOptions>({ ai_sort: true, read_labels: true, auto_profile: true });
+  const modes = importModes(opts);
   const [view, setView] = useState<ImportView | null>(null);
   const [groups, setGroups] = useState<ImportGroup[]>([]);
   const [roles, setRoles] = useState<Record<string, PhotoRole>>({});
@@ -91,7 +92,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const analyze = async () => {
     if (sid == null) return;
     try {
-      await api.analyzeImport(sid, opts.group_mode, opts.label_mode);
+      await api.analyzeImport(sid, modes.group_mode, modes.label_mode);
       setStep("analyzing");
       setView(null);
       watch(sid);
@@ -104,7 +105,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     if (sid == null) return;
     const real = groups
       .filter((g) => !g.junk && g.photos.length)
-      .map((g) => ({ name: g.name.trim(), photos: g.photos.map((n) => [n, roles[n] || "product"] as [string, PhotoRole]) }));
+      .map((g) => ({ name: g.name.trim(), photos: g.photos.map((n) => [n, roles[n] || "product"] as [string, PhotoRole]),
+        description: (g.description || "").trim() }));
     const names = real.map((g) => g.name.toLowerCase());
     if (names.some((n, i) => !n || names.indexOf(n) !== i)) {
       ui.toast("У групп должны быть разные непустые названия");
@@ -119,7 +121,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     });
     if (!ok) return;
     try {
-      const r = await api.applyImport(sid, real, opts.label_mode, opts.auto_profile);
+      // бирки (найденные ИИ или отмеченные вручную) сохраняются у товара отдельно и в генерацию не идут
+      const r = await api.applyImport(sid, real, "read", opts.auto_profile);
       setResult(r);
       setStep("done");
       setSid(null);
@@ -154,7 +157,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
         </div>
       )}
       {step === "groups" && view && (
-        <GroupsStep view={view} groups={groups} roles={roles} labelMode={opts.label_mode}
+        <GroupsStep view={view} groups={groups} roles={roles} labelMode={modes.label_mode}
           onGroups={setGroups} onRoles={setRoles} onBack={() => setStep("upload")} onApply={apply} />
       )}
       {step === "done" && result && (

@@ -379,8 +379,9 @@ def make_profile(st, sku, refs, categories, label_hint, trace, person_hint="", s
     plan = plan_of(st)
     system = PROFILE_PROMPT.format(categories=", ".join(categories), **{f"n_{k}": plan[k] for k in BLOCK_ORDER})
     content = [{"type": "text", "text": f"Reference photos of the product (SKU '{sku}'):"
-                + (f"\nText read from the product's label/tag photos (use it for brand, article, color and material names; "
-                   f"do NOT draw the label): {label_hint}" if label_hint else "")
+                + (f"\nInformation about the product — text read from its label/tag photos and the client's own description "
+                   f"(use it for brand, article, color, material and what the product is; do NOT draw the label): {label_hint}"
+                   if label_hint else "")
                 + (f"\nThe client's model (the person in all usage and scene shots) is fixed: {person_hint}. "
                    "If the product is worn or held, write this exact person into \"person\" and \"person_noun\", "
                    "and choose the outfit, location, mood and poses that suit this person and the product." if person_hint else "")

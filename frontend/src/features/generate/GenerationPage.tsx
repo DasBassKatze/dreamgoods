@@ -6,7 +6,6 @@ import { ProductList } from "../../components/ProductList";
 import { ProjectBar } from "../../components/ProjectBar";
 import { ListBar, Toolbar, type Filter } from "../../components/Toolbar";
 import type { RunOptions } from "../../hooks/useActions";
-import { usePersistentState } from "../../hooks/usePersistentState";
 import { useProject } from "../../ProjectContext";
 import { Composer } from "./Composer";
 import { FrameDetails } from "./FrameDetails";
@@ -22,7 +21,8 @@ interface Props {
 /** Вкладка «Генерация»: строка запуска, настройки съёмки, товары с кадрами и детали выбранного кадра справа. */
 export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }: Props) {
   const { state, product } = useProject();
-  const [opts, setOpts] = usePersistentState<RunOptions>(`run_${state.project.id}`, {});
+  // пожелания, площадка и формат задаются в пресете — у запуска своих настроек нет
+  const opts: RunOptions = {};
   const [query, setQuery] = useState("");
   const [focus, setFocus] = useState<{ productId: number; frameId: number } | null>(null);
   // кадр удалили или пересобрали — панель деталей закрывается
@@ -36,8 +36,8 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
     <RunOptionsCtx.Provider value={opts}>
       <Header dialogs={dialogs} onProjectsChanged={onProjectsChanged} />
       <div className="gen-top">
-        <Composer value={opts} onChange={setOpts} />
         <ProjectBar dialogs={dialogs} />
+        <Composer />
       </div>
       <Toolbar filter={filter} onFilter={onFilter} query={query} onQuery={setQuery} />
       <div className="layout">

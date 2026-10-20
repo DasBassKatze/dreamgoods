@@ -1,7 +1,8 @@
-"""Импорт фото: загрузка кучей/архивом → ИИ раскладывает по товарам → подтверждение."""
+"""Импорт фото: загрузка кучей или папками → ИИ раскладывает по товарам → подтверждение."""
 from fastapi import APIRouter, Depends, Request
 
-from ...services import importer, plans
+from ...core import auth
+from ...services import importer, moderation, plans
 from ..deps import need_key, project_id
 from ..schemas import ImportAnalyze, ImportApply
 
@@ -26,7 +27,7 @@ def get_import(sid: int = Depends(session_id)):
 
 @router.post("/{import_id}/files")
 async def upload(request: Request, path: str = "file.jpg", sid: int = Depends(session_id)):
-    """Тело запроса — байты файла (фото или ZIP); path — относительный путь (папка/имя), из него берётся группа."""
+    """Тело запроса — байты файла (фото); path — относительный путь (папка/имя), из него берётся группа."""
     added, total = importer.upload(sid, path, await request.body())
     return {"added": added, "total": total}
 
@@ -39,5 +40,6 @@ def analyze(body: ImportAnalyze, sid: int = Depends(session_id), pid: int = Depe
 
 
 @router.post("/{import_id}/apply")
-def apply(body: ImportApply, sid: int = Depends(session_id)):
+def apply(body: ImportApply, request: Request, sid: int = Depends(session_id), pid: int = Depends(project_id)):
+    moderation.guard("описание товара", [g.description for g in body.groups], project_id=pid, user=auth.user(request))
     return importer.apply_request(sid, [g.model_dump() for g in body.groups], body.label_mode, body.auto_profile)

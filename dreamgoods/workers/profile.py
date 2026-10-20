@@ -33,7 +33,10 @@ def handle(job_id):
     trace = Trace(f"[{sku}]")
     set_note(job_id, "профиль по фото")
     hint = " | ".join(x for x in ["article: " + ", ".join(labels.get("articles") or []) if labels.get("articles") else "",
-                                  "; ".join(labels.get("texts") or [])] if x)
+                                  "; ".join(labels.get("texts") or []),
+                                  # описание товара словами от клиента (при загрузке) — по-русски, как есть
+                                  f"client's description of the product: {labels['user_text']}" if labels.get("user_text") else ""]
+                    if x)
     prof, cost, model = prompts.make_profile(st, sku, [storage.get(a) for a in assets], cats, hint, trace, person_hint, style_hint)
     with db.session() as s:
         product = s.get(Product, ids["product"])

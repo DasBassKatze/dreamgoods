@@ -65,13 +65,14 @@ class ProfileGenerate(BaseModel):
 
 
 class ImportAnalyze(BaseModel):
-    group_mode: Literal["auto", "folders"] = "auto"
+    group_mode: Literal["auto", "folders", "none"] = "auto"     # none — без ИИ: по папкам, всё — фото товара
     label_mode: Literal["read", "skip", "keep"] = "read"
 
 
 class ImportGroup(BaseModel):
     name: str
     photos: list[tuple[str, str]]             # [имя файла, роль: product | packaging | label | junk]
+    description: str = Field("", max_length=2000)   # описание товара словами (необязательно) — подсказка для профиля
 
 
 class ImportApply(BaseModel):
@@ -121,6 +122,7 @@ class PresetSave(BaseModel):
     plan_mode: Literal["auto", "manual"] = "auto"     # auto — кадры придумывает ИИ по блокам; manual — свои методы съёмки
     manual: list[dict] = []                           # [{title, prompt, block, count, model}]
     block_models: dict = {}                           # {studio|detail|worn|full|lifestyle: модель генерации}
+    brief: str = Field("", max_length=1500)           # пожелания к генерации (режим «Авто»), по-русски
     # только для мастера: пресет студии — виден всем кабинетам и на сайте («Цены и оплата»). По умолчанию — нет:
     # новый пресет мастера хранится в кабинете открытого проекта, как у любого пользователя
     shared: bool | None = None

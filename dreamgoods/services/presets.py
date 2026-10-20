@@ -43,7 +43,8 @@ def _view(p, default_id, used):
     return {"id": p.id, "name": p.name, "shared": p.client_id is None, "description": p.description, "quality": p.quality, "custom": p.custom or {},
             "plan": P.clean_plan(p.plan), "total": P.preset_total(p), "is_default": p.id == default_id,
             "plan_mode": p.plan_mode or "auto", "manual": P.clean_manual(p.manual), "block_models": P.clean_block_models(p.block_models),
-            "products": used.get(p.id, 0), "market": P.clean_market(p.market), "strictness": p.strictness or "normal"}
+            "products": used.get(p.id, 0), "market": P.clean_market(p.market), "strictness": p.strictness or "normal",
+            "brief": p.brief or ""}
 
 
 def listing(project_id):
@@ -144,6 +145,7 @@ def save(project_id, preset_id, data, master=False):
         p.block_models = P.clean_block_models(data.get("block_models"))
         p.market = P.clean_market(data.get("market"))
         p.strictness = data.get("strictness") if data.get("strictness") in P.STRICTNESS else "normal"
+        p.brief = str(data.get("brief") or "").strip()[:1500]
         cover = p.market.get("cover") and p.market["key"] != "none"
         if cover and p.plan_mode == "manual" and p.manual and p.manual[0]["block"] != "studio":
             raise ValueError("для обложки площадки первым методом съёмки должен идти тип «товар» — он станет обложкой")

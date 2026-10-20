@@ -3,7 +3,7 @@ import { assetUrl } from "../../api/client";
 import type { ImportGroup, ImportView, PhotoRole } from "../../api/types";
 import { rub } from "../../lib/format";
 
-const ROLE_RU: Record<PhotoRole, string> = { product: "товар", packaging: "упаковка", label: "этикетка", junk: "не брать" };
+const ROLE_RU: Record<PhotoRole, string> = { product: "товар", packaging: "упаковка", label: "бирка", junk: "не брать" };
 const ROLE_NEXT: Record<PhotoRole, PhotoRole> = { product: "label", packaging: "label", label: "junk", junk: "product" };
 
 interface Props {
@@ -51,6 +51,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
   };
 
   const rename = (id: string, name: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, name } : g)));
+  const describe = (id: string, description: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, description } : g)));
 
   const dropProps = (id: string) => ({
     onDragOver: (e: DragEvent) => { if (drag) { e.preventDefault(); setOver(id); } },
@@ -61,10 +62,13 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
   return (
     <>
       <div className="hint mb10">
-        Фото: <b>{view.photos.length}</b> · групп: <b>{real.length}</b> · этикеток: <b>{labels}</b> · стоимость анализа: <b>{rub(view.cost)}</b>
+        Фото: <b>{view.photos.length}</b> · товаров: <b>{real.length}</b> · бирок: <b>{labels}</b>
+        {view.cost > 0 && <> · стоимость анализа: <b>{rub(view.cost)}</b></>}
       </div>
       <div className="hint mb10">
-        Перетаскивайте фото между группами, клик по метке внизу фото меняет роль (товар → этикетка → не использовать). Название группы = артикул товара.
+        Перетаскивайте фото между товарами. Клик по метке внизу фото меняет роль: товар → бирка → не брать — так отмечается
+        фото бирки (с неё берутся артикул и состав, в генерацию она не идёт). Название = артикул товара. Под фото можно
+        описать товар словами — это поможет ИИ точнее его описать.
       </div>
       <div className="igroups">
         {groups.filter((g) => g.photos.length || !g.junk).map((g) => {
@@ -77,9 +81,10 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                 ) : (
                   <>
                     <input type="text" value={g.name} title="Артикул товара" onChange={(e) => rename(g.id, e.target.value)} />
-                    {g.article ? <span className="tag">артикул с этикетки: {g.articles.join(", ")}</span>
-                      : g.photos.some((n) => roles[n] === "label") ? <span className="tag bad">артикул на этикетке не прочитан</span>
-                        : <span className="tag bad">этикетки нет</span>}
+                    {g.article ? <span className="tag">артикул с бирки: {g.articles.join(", ")}</span>
+                      : g.photos.some((n) => roles[n] === "label")
+                        ? <span className="tag">{labelMode === "read" ? "артикул на бирке не прочитан" : "бирка отмечена"}</span>
+                        : <span className="tag bad">бирки нет</span>}
                     {g.exists && <span className="tag">товар уже есть — фото добавятся</span>}
                     <span className="hint">{g.product}{g.text ? " · " + g.text : ""}</span>
                     <span className="spacer" />
@@ -102,12 +107,17 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                       title={`${n}${ph?.article ? " · артикул " + ph.article : ""}${ph?.text ? " · " + ph.text : ""}`}>
                       {ph && <img loading="lazy" src={assetUrl(ph.asset, 200)} alt="" />}
                       <span className="rl" onClick={() => onRoles({ ...roles, [n]: ROLE_NEXT[r] })}>
-                        {ROLE_RU[r]}{r === "label" && labelMode === "keep" ? "*" : ""}
+                        {ROLE_RU[r]}
                       </span>
                     </div>
                   );
                 })}
               </div>
+              {!g.junk && (
+                <textarea className="ig-desc" rows={2} maxLength={2000} value={g.description || ""}
+                  onChange={(e) => describe(g.id, e.target.value)}
+                  placeholder="Описание товара словами (необязательно): что это, материал, цвет, особенности — например, «зимние ботинки из натуральной кожи, мех внутри, молния с внутренней стороны»" />
+              )}
             </div>
           );
         })}

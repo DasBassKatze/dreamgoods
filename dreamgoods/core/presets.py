@@ -97,7 +97,7 @@ STRICTNESS = {
 def clean_market(m):
     m = m or {}
     key = m.get("key") if m.get("key") in MARKETS else "none"
-    out = {"key": key, "cover": bool(m.get("cover", key != "none"))}
+    out = {"key": key, "cover": key != "none"}      # обложка по правилам площадки — всегда, если площадка выбрана
     if key == "custom":
         base = MARKETS["custom"]
         out["aspect"] = m.get("aspect") if m.get("aspect") in ASPECTS else base["aspect"]
@@ -234,6 +234,8 @@ def apply(st, preset):
     out["block_models"] = clean_block_models(preset.block_models)
     out["preset_id"], out["preset_name"] = preset.id, preset.name
     out["qc_strictness"] = preset.strictness if preset.strictness in STRICTNESS else "normal"
+    # пожелания к генерации — для режима «Авто» (в ручном режиме у каждого метода свой промпт)
+    out["preset_brief"] = (getattr(preset, "brief", "") or "").strip() if out["plan_mode"] != "manual" else ""
     rules = market_rules(preset.market)
     out["market"] = rules
     if rules["aspect"]:

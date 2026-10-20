@@ -144,7 +144,8 @@ export function projectApi(id: number) {
       request<{ added: number; total: number }>("POST", `${p}/imports/${sid}/files?path=${encodeURIComponent(path)}`, file),
     analyzeImport: (sid: number, group_mode: string, label_mode: string) =>
       post<{ ok: true }>(`${p}/imports/${sid}/analyze`, { group_mode, label_mode }),
-    applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][] }[], label_mode: string, auto_profile: boolean) =>
+    applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][]; description?: string }[], label_mode: string,
+      auto_profile: boolean) =>
       post<ImportResult>(`${p}/imports/${sid}/apply`, { groups, label_mode, auto_profile }),
 
     exportUrl: (include: "accepted" | "all" | "picked", ids: { frames?: number[]; products?: number[] } = {}) =>
