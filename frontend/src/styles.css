@@ -1425,3 +1425,20 @@ html:has(.site) { scroll-behavior: smooth; }
 .import-actions .hint { margin-right: 4px; }
 .page-body .igroups, .igroups { max-height: none; overflow: visible; }
 @media (max-width: 700px) { .import-actions { bottom: 58px; } }
+/* номенклатура загрузки */
+.nomen { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; background: #fff; }
+.nomen > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.nomen > summary .hint { font-weight: 400; }
+.nomen-grid { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px 14px; align-items: center; margin: 10px 0 4px; }
+.nomen-grid > span { color: var(--muted); font-size: 13px; }
+.nomen-grid select { width: auto; max-width: 100%; }
+.nomen-grid .ch { display: flex; flex-direction: column; gap: 4px; }
+.nomen-grid .row.nowrap input { flex: none; }
+.nomen-grid .row.nowrap .hint { white-space: normal; }
+.tag.warn { background: #fff4e0; color: #8a5a00; }
+@media (max-width: 700px) { .nomen-grid { grid-template-columns: 1fr; gap: 4px; } .nomen-grid > span { margin-top: 8px; } }
+.nomen-grid select { width: auto; min-width: 240px; justify-self: start; }
+@media (max-width: 700px) {
+  .nomen-grid select { min-width: 0; width: 100%; }
+  .nomen-grid .row.nowrap { flex-wrap: wrap; }
+}

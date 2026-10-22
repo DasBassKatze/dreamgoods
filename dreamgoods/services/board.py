@@ -14,6 +14,7 @@ from ..db.models import (Frame, Generation, GenerationPreset, ImportFile, Import
                          StyleRefPhoto, Product, ProductPhoto, ProductProfile,
                          Project, QCCheck, UsageEntry)
 from . import billing
+from . import import_rules as import_rules_mod
 from .common import LIVE, persona_id_for
 from .metrics import metrics
 
@@ -207,6 +208,7 @@ def state(project_id, admin=False):
                         .group_by(ImportSession.id).order_by(ImportSession.id.desc()).limit(1)).first()
         if row:
             open_import = {"id": row[0], "status": row[1], "count": row[2]}
+        import_rules = import_rules_mod.clean((project.settings or {}).get("import_rules"))
         settings = public(org, project)
         client = project.client
         markup = billing.markup_of(client, org)
@@ -220,5 +222,5 @@ def state(project_id, admin=False):
             "log": log_lines,
             "totals": {"done": done_all, "total": total_all, "review": review_n, "spent_all": round(spent_all, 2) if admin else None,
                        "avg_cost": round(sum(recent) / len(recent) * (1 if admin else markup), 2) if recent else 0.0},
-            "account": account, "open_import": open_import,
+            "account": account, "open_import": open_import, "import_rules": import_rules,
             "metrics": met, "balance": b["value"], "balance_error": b["error"]}

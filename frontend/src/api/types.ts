@@ -127,6 +127,8 @@ export interface ProjectState {
   account: { balance: number; billing: boolean; client?: string };
   /** незавершённая загрузка фото: фото загружены, но товары из них ещё не созданы */
   open_import?: { id: number; status: string; count: number } | null;
+  /** номенклатура загрузки, сохранённая в проекте (подставляется в следующую загрузку) */
+  import_rules?: ImportRules;
   project: ProjectRef;
   persona: { id: number; name: string; asset: string | null } | null;
   style_ref: { id: number; name: string; asset: string | null } | null;
@@ -192,6 +194,18 @@ export interface ImportPhoto {
   text?: string;
 }
 
+/** Номенклатура загрузки: как продавец снимает товары и как устроены его бирки. */
+export interface ImportRules {
+  order: "auto" | "label_after" | "label_before" | "no_label";
+  photos_per_product: number;      // 0 — не знаю
+  labels_per_product: number;      // -1 — не знаю
+  article_example: string;
+  colors_separate: boolean;
+  sizes_together: boolean;
+  ignore: ("price" | "barcode" | "size" | "packaging")[];
+  rule: string;
+}
+
 export interface ImportGroup {
   id: string;
   name: string;
@@ -206,6 +220,8 @@ export interface ImportGroup {
   description?: string;
   /** пользователь отметил, что ИИ разложил этот товар неверно */
   sort_error?: boolean;
+  /** подсказка «проверьте группу» по правилам раскладки */
+  warn?: string;
 }
 
 export interface ImportView {

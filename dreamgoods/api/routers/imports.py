@@ -40,8 +40,12 @@ async def upload(request: Request, path: str = "file.jpg", sid: int = Depends(se
 @router.post("/{import_id}/analyze")
 def analyze(body: ImportAnalyze, request: Request, sid: int = Depends(session_id), pid: int = Depends(project_id)):
     need_key(pid)
-    moderation.guard("правило раскладки", body.sort_rule, project_id=pid, user=auth.user(request))
-    importer.analyze_request(sid, body.group_mode, body.label_mode, body.sort_rule)
+    rules = {**(body.rules or {})}
+    if body.sort_rule and not rules.get("rule"):
+        rules["rule"] = body.sort_rule
+    moderation.guard("правила раскладки", rules.get("rule") or "", rules.get("article_example") or "", project_id=pid,
+                     user=auth.user(request))
+    importer.analyze_request(sid, body.group_mode, body.label_mode, rules)
     return {"ok": True}
 
 

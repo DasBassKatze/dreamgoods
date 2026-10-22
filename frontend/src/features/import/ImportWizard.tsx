@@ -5,7 +5,7 @@ import { useUI } from "../../components/ui";
 import { useProject } from "../../ProjectContext";
 import type { PickedFile } from "./files";
 import { GroupsStep } from "./GroupsStep";
-import { importModes, UploadStep, type ImportOptions } from "./UploadStep";
+import { DEFAULT_RULES, importModes, UploadStep, type ImportOptions } from "./UploadStep";
 
 type Step = "upload" | "analyzing" | "groups" | "done";
 
@@ -17,7 +17,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const [step, setStep] = useState<Step>("upload");
   const [total, setTotal] = useState(0);
   const [uploading, setUploading] = useState(0);
-  const [opts, setOpts] = useState<ImportOptions>({ ai_sort: true, read_labels: true, auto_profile: true, sort_rule: "" });
+  const [opts, setOpts] = useState<ImportOptions>({ ai_sort: true, read_labels: true, auto_profile: true,
+    rules: { ...DEFAULT_RULES, ...(state.import_rules || {}) } });
   const modes = importModes(opts);
   const [view, setView] = useState<ImportView | null>(null);
   const [groups, setGroups] = useState<ImportGroup[]>([]);
@@ -121,7 +122,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const analyze = async () => {
     if (sid == null) return;
     try {
-      await api.analyzeImport(sid, modes.group_mode, modes.label_mode, opts.ai_sort ? opts.sort_rule.trim() : "");
+      await api.analyzeImport(sid, modes.group_mode, modes.label_mode, { ...opts.rules, rule: opts.rules.rule.trim() });
       setStep("analyzing");
       setView(null);
       watch(sid);

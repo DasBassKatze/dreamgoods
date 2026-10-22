@@ -122,6 +122,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                         ? <span className="tag">{labelMode === "read" ? "артикул на бирке не прочитан" : "бирка отмечена"}</span>
                         : <span className="tag bad">бирки нет</span>}
                     {g.exists && <span className="tag">товар уже есть — фото добавятся</span>}
+                    {g.warn && <span className="tag warn" title="По правилам раскладки эту группу стоит проверить">⚠ {g.warn}</span>}
                     {(g.articles?.length || 0) > 1 && <span className="tag bad">на бирках разные артикулы: {g.articles.join(", ")} — проверьте</span>}
                     <span className="hint">{g.product}{g.text ? " · " + g.text : ""}</span>
                     <span className="spacer" />
