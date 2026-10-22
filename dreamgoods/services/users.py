@@ -1,5 +1,5 @@
 """Пользователи сайта (для мастер-аккаунта): заведение, личные кабинеты, ключи Polza, балансы."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 
@@ -8,7 +8,7 @@ from ..ai import polza
 from ..core import auth, keys, plans as plans_core
 from ..core.logs import log
 from ..db.models import (BalanceEntry, Client, Organization, PolzaKey, Project, UsageEntry, User)
-from . import billing, plans
+from . import billing, consents, plans
 
 
 def _org(s, u):
@@ -21,6 +21,7 @@ def me(cu):
         c = s.get(Client, u.client_id) if u.client_id else None
         org = s.get(Organization, u.org_id)
         out = {"id": u.id, "email": u.email, "name": u.name or u.email, "role": u.role,
+               "consents_required": consents.required_for(cu),
                "client": {"id": c.id, "name": c.name, "balance": round(c.balance_rub or 0, 2), "billing": c.billing,
                           "plan": plans.view(c, org.settings if org else {}) if c.billing else None}
                if c else None}
@@ -58,6 +59,7 @@ def listing(cu):
         for u in users:
             c = clients.get(u.client_id)
             out.append({"id": u.id, "email": u.email, "name": u.name, "role": u.role, "active": u.active,
+                        "verified": u.email_verified_at is not None,
                         "last_login": u.last_login_at.isoformat() if u.last_login_at else None,
                         "created": u.created_at.isoformat() if u.created_at else None,
                         "client": None if not c else {
@@ -107,7 +109,7 @@ def create(cu, data):
                 c.markup = max(0.0, float(data["markup"]))
             client_id = c.id
         u = User(org_id=cu.org_id, email=email, name=name, role=role, password_hash=auth.hash_password(password),
-                 client_id=client_id, active=True)
+                 client_id=client_id, active=True, email_verified_at=datetime.now(timezone.utc))   # завёл мастер
         s.add(u)
         s.flush()
         uid = u.id

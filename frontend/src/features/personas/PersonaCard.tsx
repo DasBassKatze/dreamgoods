@@ -99,7 +99,8 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
   const upload = (files: FileList | null) =>
     act(async () => {
       if (!p.consent) {
-        const ok = await ui.confirm({ text: "У вас есть согласие этого человека на использование его фото для изображений товаров?", ok: "Да, есть" });
+        const ok = await ui.confirm({ text: <>У вас есть согласие этого человека на использование его фото для изображений товаров?{" "}
+          <a href="/legal/persona_photo" target="_blank" rel="noreferrer">Подробнее</a>. Отметка сохранится в журнале согласий.</>, ok: "Да, есть" });
         if (!ok) return;
         await api.updatePersona(p.id, { consent: true });
       }

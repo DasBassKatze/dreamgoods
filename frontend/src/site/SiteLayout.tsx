@@ -24,7 +24,7 @@ export function useSignedIn() {
   return me;
 }
 
-export function SiteLayout({ page, children }: { page: "home" | "pricing"; children: ReactNode }) {
+export function SiteLayout({ page, children }: { page: "home" | "pricing" | "legal"; children: ReactNode }) {
   const signedIn = useSignedIn();
   const [open, setOpen] = useState(false);
   const home = page === "home" ? "" : "/";
@@ -47,7 +47,7 @@ export function SiteLayout({ page, children }: { page: "home" | "pricing"; child
           ) : (
             <>
               <a className="site-btn ghost hide-sm" href="/studio">Войти</a>
-              <a className="site-btn primary" href="/studio">Попробовать</a>
+              <a className="site-btn primary" href="/studio?register">Попробовать</a>
             </>
           )}
           <button className="site-burger" aria-label="Меню" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -67,6 +67,11 @@ export function SiteLayout({ page, children }: { page: "home" | "pricing"; child
             <a href="/pricing">Цены и оплата</a>
             <a href="/#features">Возможности</a>
             <a href="/#faq">Вопросы</a>
+          </nav>
+          <nav aria-label="Документы" className="site-foot-legal">
+            <a href="/legal/terms">Пользовательское соглашение</a>
+            <a href="/legal/privacy">Политика обработки персональных данных</a>
+            <a href="/legal/pd_consent">Согласие на обработку данных</a>
           </nav>
           <small>© {new Date().getFullYear()} DreamGoods. Все права защищены.</small>
         </div>

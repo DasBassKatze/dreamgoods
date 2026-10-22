@@ -17,6 +17,7 @@ const MASTER: [Route, string][] = [
   ["m-finance", "Финансы"],
   ["m-keys", "Ключи Polza"],
   ["m-analytics", "Аналитика и отчёты"],
+  ["m-legal", "Документы и согласия"],
   ["m-log", "Журнал сервера"],
   ["m-settings", "Тех. настройки"],
 ];

@@ -66,6 +66,8 @@ class User(TS, Base):
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # почта подтверждена (регистрация на сайте); у учётных записей, заведённых мастером, — время создания
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Session(Base):
@@ -76,6 +78,52 @@ class Session(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ip: Mapped[str] = mapped_column(String(64), default="")
     agent: Mapped[str] = mapped_column(String(300), default="")
+
+
+class EmailToken(Base):
+    """Одноразовые ссылки из писем: подтверждение почты (verify). В базе — только sha256 токена."""
+    __tablename__ = "email_tokens"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="verify")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LegalDocument(TS, Base):
+    """Юридический документ сервиса (политика, согласия, соглашение) — версии. Текущая — наибольшая version по kind.
+    Новая версия обязательного документа — пользователи принимают её заново при входе."""
+    __tablename__ = "legal_documents"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(30))                    # privacy | pd_consent | terms | cross_border | marketing | persona_photo
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    required: Mapped[bool] = mapped_column(Boolean, default=True)     # без согласия пользоваться сервисом нельзя
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (UniqueConstraint("org_id", "kind", "version"),)
+
+
+class Consent(TS, Base):
+    """Журнал согласий (только добавление): кто, на что, какой версии документа, когда, откуда. Отзыв — новая запись
+    с granted=False. Действующее согласие — последняя запись по (пользователь, kind, ref)."""
+    __tablename__ = "consents"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+    email: Mapped[str] = mapped_column(String(200), default="")      # логин на момент согласия (запись живёт и без учётки)
+    kind: Mapped[str] = mapped_column(String(30))
+    doc_version: Mapped[int] = mapped_column(Integer, default=0)
+    granted: Mapped[bool] = mapped_column(Boolean, default=True)      # False — отзыв
+    source: Mapped[str] = mapped_column(String(20), default="")      # register | login | account | persona | master
+    subject: Mapped[str] = mapped_column(String(300), default="")    # чьё согласие подтверждено (для фото людей — имя модели)
+    ref: Mapped[str] = mapped_column(String(120), default="")        # к чему относится: persona:12
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    agent: Mapped[str] = mapped_column(String(300), default="")
+    __table_args__ = (Index("ix_consents_user_kind", "user_id", "kind"),)
 
 
 class Client(TS, Base):

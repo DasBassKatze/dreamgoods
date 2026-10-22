@@ -22,7 +22,8 @@ from .logs import log
 
 COOKIE = "dg_session"
 TTL = timedelta(days=30)
-PUBLIC = ("/api/auth/login", "/api/auth/logout", "/api/health", "/api/public/")
+PUBLIC = ("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/verify", "/api/auth/resend",
+          "/api/health", "/api/public/")
 
 
 class Unauthorized(PermissionError):
@@ -105,8 +106,21 @@ def login(email, password, ip="", agent=""):
         if not u or not u.active or not check_password(password, u.password_hash):
             _fail(ip)
             raise Unauthorized("неверный логин или пароль")
+        if u.email_verified_at is None:
+            raise Forbidden(UNVERIFIED)
+        user_id = u.id
+    return open_session(user_id, ip, agent)
+
+
+UNVERIFIED = "почта не подтверждена — перейдите по ссылке из письма (можно отправить письмо ещё раз)"
+
+
+def open_session(user_id, ip="", agent=""):
+    """Новая сессия пользователя → (токен для cookie, CurrentUser)."""
+    with db.session() as s:
+        u = s.get(User, user_id)
         token = secrets.token_urlsafe(32)
-        s.add(Session(id=_sid(token), user_id=u.id, expires_at=utcnow() + TTL, ip=ip[:64], agent=(agent or "")[:300]))
+        s.add(Session(id=_sid(token), user_id=u.id, expires_at=utcnow() + TTL, ip=(ip or "")[:64], agent=(agent or "")[:300]))
         u.last_login_at = utcnow()
         cu = _current(u)
     log.info("Вход: %s (%s) с %s", cu.email, cu.role, ip or "?")

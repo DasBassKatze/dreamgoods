@@ -36,7 +36,12 @@ def update(persona_id: int, body: PersonaUpdate, request: Request, pid: int = De
     if not admin.is_admin(request):          # паспорт меняет только мастер
         values.pop("description", None)
         values.pop("style", None)
+    was = personas.consent_of(pid, persona_id) if values.get("consent") is not None else None
     personas.update(pid, persona_id, values)
+    if values.get("consent") is not None and bool(values["consent"]) != was:
+        # подтверждение (или снятие) согласия человека на фото — в журнал согласий: кто, когда, откуда
+        personas.record_consent(pid, persona_id, auth.user(request), bool(values["consent"]),
+                                request.client.host if request.client else "", request.headers.get("user-agent", ""))
     return {"ok": True}
 
 

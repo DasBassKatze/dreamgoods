@@ -444,6 +444,37 @@ export interface Me {
   name: string;
   role: "master" | "user";
   client: { id: number; name: string; balance: number; billing: boolean; plan: MyPlan | null } | null;
+  /** обязательные документы, новые версии которых пользователь ещё не принял */
+  consents_required?: LegalDocBrief[];
+}
+
+export type LegalKind = "terms" | "privacy" | "pd_consent" | "cross_border" | "marketing" | "persona_photo";
+
+/** Документ сервиса (текущая версия): название, обязательный ли, где спрашивается, подпись у галочки ({link}). */
+export interface LegalDocBrief {
+  kind: LegalKind;
+  title: string;
+  version: number;
+  required: boolean;
+  where: "register" | "persona";
+  label: string;
+  updated: string | null;
+}
+
+export interface LegalDoc extends LegalDocBrief { body: string }
+
+/** Моё согласие по документу. */
+export interface MyConsent extends LegalDocBrief { granted: boolean; granted_version: number; at: string | null }
+
+export interface LegalAdmin {
+  registration_open: boolean;
+  mail: boolean;
+  docs: (LegalDoc & { consents: number; versions: { version: number; at: string | null }[] })[];
+}
+
+export interface ConsentRow {
+  id: number; at: string | null; email: string; user_id: number | null; kind: LegalKind; title: string; version: number;
+  granted: boolean; source: string; subject: string; ref: string; ip: string; agent: string;
 }
 
 export interface LedgerEntry {
@@ -474,6 +505,8 @@ export interface SiteUser {
   name: string;
   role: "master" | "user";
   active: boolean;
+  /** почта подтверждена (регистрация на сайте); заведённые мастером — всегда да */
+  verified?: boolean;
   last_login: string | null;
   created: string | null;
   client: {

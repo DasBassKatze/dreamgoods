@@ -1,6 +1,11 @@
 // Тонкая обёртка над fetch и все вызовы API в одном месте.
 import type {
+  ConsentRow,
   ImportRules,
+  LegalAdmin,
+  LegalDoc,
+  LegalDocBrief,
+  MyConsent,
   AccountBalance,
   AdminOverview,
   FinanceView,
@@ -208,6 +213,13 @@ export const api = {
 
 export const authApi = {
   me: () => get<Me>("/api/auth/me"),
+  register: (email: string, name: string, password: string, accepted: string[]) =>
+    post<{ ok: true; email: string; sent: boolean }>("/api/auth/register", { email, name, password, accepted }),
+  verify: (token: string) => post<Me>("/api/auth/verify", { token }),
+  resend: (email: string) => post<{ ok: true }>("/api/auth/resend", { email }),
+  consents: () => get<{ items: MyConsent[] }>("/api/account/consents"),
+  acceptConsents: (kinds: string[]) => post<{ items: MyConsent[] }>("/api/account/consents", { kinds }),
+  revokeConsent: (kind: string) => post<{ items: MyConsent[] }>(`/api/account/consents/${kind}/revoke`),
   login: (email: string, password: string) => post<Me>("/api/auth/login", { email, password }),
   logout: () => post<{ ok: true }>("/api/auth/logout"),
   password: (old: string, next: string) => post<{ ok: true }>("/api/auth/password", { old, new: next }),
@@ -225,7 +237,20 @@ export const publicApi = {
   prices: () => get<PriceList>("/api/public/prices"),
 };
 
+/** Публичные документы сервиса (без входа). */
+export const legalApi = {
+  list: () => get<{ registration_open: boolean; docs: LegalDocBrief[] }>("/api/public/legal"),
+  doc: (kind: string) => get<LegalDoc>(`/api/public/legal/${kind}`),
+};
+
 export const adminApi = {
+  legal: () => get<LegalAdmin>("/api/admin/legal"),
+  saveLegal: (kind: string, title: string, body: string, required: boolean) =>
+    request<LegalAdmin>("PUT", `/api/admin/legal/${kind}`, { title, body, required }),
+  setRegistration: (open: boolean) => request<LegalAdmin>("PUT", "/api/admin/registration", { open }),
+  consents: (kind = "", q = "") => get<{ items: ConsentRow[] }>(`/api/admin/consents?kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(q)}`),
+  consentsCsvUrl: (kind = "", q = "") => `/api/admin/consents?format=csv&kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(q)}`,
+  verifyUser: (id: number) => post<{ ok: true }>(`/api/admin/users/${id}/verify`),
   topups: (status = "") => get<{ items: TopupRequest[] }>(`/api/admin/topups${status ? `?status=${status}` : ""}`),
   resolveTopup: (id: number, action: "paid" | "cancel") => post<{ ok: true }>(`/api/admin/topups/${id}/${action}`),
   users: () => get<UsersListing>("/api/admin/users"),

@@ -288,3 +288,18 @@ def set_product_persona(project_id, product_id, persona_id):
         if persona_id:
             _persona(s, project_id, persona_id)
         pr.persona_id = int(persona_id) if persona_id else None
+
+
+def consent_of(project_id, persona_id):
+    with db.session() as s:
+        return bool(_persona(s, project_id, persona_id).consent)
+
+
+def record_consent(project_id, persona_id, cu, granted, ip, agent):
+    """Подтверждение согласия человека на фото модели — запись в журнал согласий."""
+    from . import consents
+    with db.session() as s:
+        p = _persona(s, project_id, persona_id)
+        org = org_of_project(s, project_id)
+        consents.persona_photo(s, org.id, cu, p, ip, agent, granted)
+    log.info("Модель «%s»: согласие человека на фото %s (%s)", p.name, "подтверждено" if granted else "снято", cu.email)

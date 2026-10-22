@@ -11,6 +11,7 @@ const P: Record<string, string> = {
   "m-keys": "M7.5 12.5a4 4 0 1 1 3.4-6.1L17 6.4V9h-2v2h-2.4M6.5 8.5h.01",
   "m-analytics": "M3 17h14M5 14V9M9 14V5M13 14v-3M17 14V7",
   "m-reports": "M5 2.5h7l3 3v12H5zM12 2.5v3h3M8 14v-3M10.5 14V9M13 14v-2",
+  "m-legal": "M5 2.5h7l3 3v12H5zM12 2.5v3h3M7.5 9h5M7.5 12h5M7.5 15h3",
   "m-log": "M5 3h10v14H5zM8 7h4M8 10h4M8 13h2",
   "m-settings": "M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.3 4.3l1.8 1.8M13.9 13.9l1.8 1.8M4.3 15.7l1.8-1.8M13.9 6.1l1.8-1.8",
   logout: "M8 4H4v12h4M12 6.5 15.5 10 12 13.5M15.5 10H8",

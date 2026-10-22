@@ -35,6 +35,17 @@ export function UsersPage() {
     load();
   }, [load]);
 
+  const verify = async (u: SiteUser) => {
+    if (!(await ui.confirm({ text: `Подтвердить почту ${u.email} без письма? Пользователь сможет войти с паролем, который указал при регистрации.`, ok: "Подтвердить" }))) return;
+    try {
+      await adminApi.verifyUser(u.id);
+      ui.toast("Почта подтверждена");
+      await load();
+    } catch (e) {
+      ui.toast((e as Error).message);
+    }
+  };
+
   const topup = async (u: SiteUser) => {
     if (!u.client) return;
     const v = await ui.ask({ title: `Пополнить баланс: ${u.name}`, ok: "Пополнить", fields: [
@@ -85,6 +96,8 @@ export function UsersPage() {
                   <td>
                     <button className="link strong" onClick={() => setEditing(u)}>{u.name}</button>
                     <div className="hint">{u.email}{u.role === "master" ? " · мастер" : ""}{!u.active && " · заблокирован"}
+                      {u.verified === false && <> · <span className="bad-text">почта не подтверждена</span>{" "}
+                        <button className="link" onClick={() => verify(u)}>подтвердить</button></>}
                       {u.client && ` · проектов ${u.client.projects}`}</div>
                   </td>
                   <td>{u.client?.billing ? (

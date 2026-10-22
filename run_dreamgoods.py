@@ -86,6 +86,8 @@ def main():
     org_id = projects.bootstrap()
     from dreamgoods.services import presets
     presets.seed(org_id)
+    from dreamgoods.services import consents as consents_svc
+    consents_svc.seed(org_id)
     from dreamgoods.core import auth
     if "--reset-master" in sys.argv:
         auth.reset_master(org_id)

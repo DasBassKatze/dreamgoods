@@ -7,7 +7,9 @@ import { useUI } from "./components/ui";
 import { AccountPage } from "./features/account/AccountPage";
 import { BalancePage } from "./features/account/BalancePage";
 import { AdminPanel } from "./features/admin/AdminPanel";
+import { ConsentGate } from "./features/auth/ConsentGate";
 import { LoginPage } from "./features/auth/LoginPage";
+import { LegalPage } from "./features/master/LegalPage";
 import { ModelCatalog, type CatalogKind, type CatalogPick } from "./features/catalog/ModelCatalog";
 import { FrameViewer } from "./features/frame/FrameViewer";
 import { GalleryPage } from "./features/gallery/GalleryPage";
@@ -53,6 +55,8 @@ export function App() {
   }, []);
   if (me === undefined) return <div className="empty">Загрузка…</div>;
   if (!me) return <LoginPage onLogin={setMe} />;
+  if (me.consents_required?.length)
+    return <ConsentGate me={me} onDone={setMe} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
   return <Workspace key={me.id} me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
 }
 
@@ -185,6 +189,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
       case "m-keys": return <KeysPage />;
       case "m-finance": return <FinancePage />;
       case "m-reports": return <ReportsPage />;
+      case "m-legal": return <LegalPage />;
       case "balance": return <BalancePage />;
       case "account": return <AccountPage me={me} onLogout={onLogout} />;
     }
