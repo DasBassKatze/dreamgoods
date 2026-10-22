@@ -25,6 +25,12 @@ def get_import(sid: int = Depends(session_id)):
     return importer.view(sid)
 
 
+@router.delete("/{import_id}")
+def cancel_import(sid: int = Depends(session_id)):
+    importer.cancel(sid)
+    return {"ok": True}
+
+
 @router.post("/{import_id}/files")
 async def upload(request: Request, path: str = "file.jpg", sid: int = Depends(session_id)):
     """Тело запроса — байты файла (фото); path — относительный путь (папка/имя), из него берётся группа."""

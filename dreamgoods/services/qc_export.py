@@ -16,8 +16,8 @@ from sqlalchemy import select
 from .. import db
 from ..core import storage
 from ..core.logs import log
-from ..db.models import (Asset, Client, Frame, Generation, Product, ProductPhoto, ProductProfile, Project, QCCheck,
-                         Review, SpecCache)
+from ..db.models import (Asset, Client, Frame, Generation, ImportFile, ImportSession, Product, ProductPhoto,
+                         ProductProfile, Project, QCCheck, Review, SpecCache)
 
 MAX_IMAGES = 400          # кадров с картинками в одном архиве
 IMG_SIDE = 1024           # сторона картинки в архиве: хватает для разбора, архив остаётся небольшим
@@ -32,6 +32,8 @@ reviews.csv   — ручные решения: verdict (ok/bad) против ai_
 profiles.csv  — текущие профили товаров (описание, застёжки и их стороны, детали, чек-лист) — JSON.
 references.csv— фото товаров: ракурс и что на них видно.
 expectations.csv — ожидания по тексту задания (сколько людей/товара, что запрещено) — кэш проверки.
+import_sort.csv — раскладка фото при загрузке: роль и группа от ИИ против итога пользователя (перенесено ли фото,
+                сменена ли роль), отметка «ошибка раскладки» у товара, артикул и текст, прочитанные ИИ.
 images/       — картинки попыток (gen_<id>.jpg) и фото товаров (ref_<sku>_<n>.jpg), если выбрано «с картинками».
 """
 
@@ -122,6 +124,7 @@ def build(org_id, project_id=None, days=None, images="disputed"):
             if images != "none":
                 want_refs.append((safe, ph.asset_id))
         specs = [{"hash": x.hash, "expectation": _j(x.data)} for x in s.scalars(select(SpecCache)).all()]
+        sort_rows = _import_rows(s, org_id, project_id, since)
         assets = {a.id: a for a in s.scalars(select(Asset).where(
             Asset.id.in_(list(want_gens.values())[:MAX_IMAGES] + [a for _, a in want_refs]))).all()} if images != "none" else {}
 
@@ -135,6 +138,7 @@ def build(org_id, project_id=None, days=None, images="disputed"):
         z.writestr("profiles.csv", _csv(profiles, ["sku", "product", "category", "profile_version", "profile"]))
         z.writestr("references.csv", _csv(refs, ["sku", "view", "visible", "reference", "image"]))
         z.writestr("expectations.csv", _csv(specs, ["hash", "expectation"]))
+        z.writestr("import_sort.csv", _csv(sort_rows, IMPORT_COLS))
         if images != "none":
             jobs = [(f"images/gen_{gid}.jpg", assets.get(aid)) for gid, aid in list(want_gens.items())[:MAX_IMAGES]]
             jobs += [(name, assets.get(aid)) for name, aid in want_refs]
@@ -148,6 +152,37 @@ def build(org_id, project_id=None, days=None, images="disputed"):
     log.info("Выгрузка данных проверки: проверок %d, решений %d, картинок попыток %d%s", len(checks), len(rev_rows),
              min(len(want_gens), MAX_IMAGES), f", не найдено файлов {skipped}" if skipped else "")
     return buf.getvalue(), {"checks": len(checks), "reviews": len(rev_rows), "images": min(len(want_gens), MAX_IMAGES)}
+
+
+IMPORT_COLS = ["session", "created", "client", "project", "options", "photo", "ai_role", "ai_group", "final_role",
+               "final_group", "moved", "role_changed", "group_flagged", "article", "text", "product"]
+
+
+def _import_rows(s, org_id, project_id, since):
+    """Завершённые загрузки: что решил ИИ и что в итоге подтвердил пользователь."""
+    q = (select(ImportFile, ImportSession, Project, Client)
+         .join(ImportSession, ImportSession.id == ImportFile.session_id)
+         .join(Project, Project.id == ImportSession.project_id)
+         .join(Client, Client.id == Project.client_id)
+         .where(Client.org_id == org_id, ImportSession.status == "done"))
+    if project_id:
+        q = q.where(Project.id == project_id)
+    if since:
+        q = q.where(ImportSession.created_at >= since)
+    out = []
+    for f, sess, pr, cl in s.execute(q.order_by(ImportSession.id, ImportFile.id)).all():
+        a = f.analysis or {}
+        if "final_role" not in a:          # загрузки до появления сравнения
+            continue
+        flagged = {x.get("name") for x in ((sess.result or {}).get("feedback") or {}).get("flagged") or []}
+        out.append({"session": sess.id, "created": sess.created_at.isoformat(timespec="seconds") if sess.created_at else "",
+                    "client": cl.name, "project": pr.name, "options": _j(sess.options), "photo": f.rel_path,
+                    "ai_role": a.get("role", ""), "ai_group": a.get("ai_group") or "", "final_role": a.get("final_role", ""),
+                    "final_group": a.get("final_group", ""), "moved": "да" if a.get("moved") else "",
+                    "role_changed": "да" if a.get("role_changed") else "",
+                    "group_flagged": "да" if a.get("final_group") in flagged else "", "article": a.get("article", ""),
+                    "text": a.get("text", ""), "product": a.get("product", "")})
+    return out
 
 
 def _prepare(job):

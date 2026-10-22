@@ -125,6 +125,8 @@ export interface ProjectState {
   /** true — мастер-аккаунт (видны себестоимость, баланс Polza, метрики) */
   admin: boolean;
   account: { balance: number; billing: boolean; client?: string };
+  /** незавершённая загрузка фото: фото загружены, но товары из них ещё не созданы */
+  open_import?: { id: number; status: string; count: number } | null;
   project: ProjectRef;
   persona: { id: number; name: string; asset: string | null } | null;
   style_ref: { id: number; name: string; asset: string | null } | null;
@@ -202,6 +204,8 @@ export interface ImportGroup {
   junk?: boolean;
   /** описание товара словами от пользователя (необязательно) */
   description?: string;
+  /** пользователь отметил, что ИИ разложил этот товар неверно */
+  sort_error?: boolean;
 }
 
 export interface ImportView {

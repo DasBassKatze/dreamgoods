@@ -6,9 +6,7 @@ import { Icon } from "../layout/Icon";
 export type Filter = "all" | "todo" | "review" | "err";
 
 /** Статус проекта + поиск + фильтры. */
-export function Toolbar({ filter, onFilter, query, onQuery }: {
-  filter: Filter; onFilter: (f: Filter) => void; query: string; onQuery: (q: string) => void;
-}) {
+export function Toolbar({ filter, onFilter }: { filter: Filter; onFilter: (f: Filter) => void }) {
   const { state } = useProject();
   const { totals: t, runner: r } = state;
   const todo = state.products.filter((p) => p.done < p.total).length;
@@ -25,7 +23,6 @@ export function Toolbar({ filter, onFilter, query, onQuery }: {
         <div className="progress"><i style={{ width: `${t.total ? (t.done / t.total) * 100 : 0}%` }} /></div>
       </div>
       <span className="spacer" />
-      <input className="search" type="search" placeholder="Артикул или название…" value={query} onChange={(e) => onQuery(e.target.value)} />
       <span className="seg">
         {FILTERS.map(([k, name, n]) => (
           <button key={k} className={`${filter === k ? "on" : ""} ${k === "err" && n ? "has-err" : ""}`} onClick={() => onFilter(k)}>

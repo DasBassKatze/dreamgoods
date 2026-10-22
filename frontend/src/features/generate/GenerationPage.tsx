@@ -34,14 +34,14 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
 
   return (
     <RunOptionsCtx.Provider value={opts}>
-      <Header dialogs={dialogs} onProjectsChanged={onProjectsChanged} />
+      <Header dialogs={dialogs} onProjectsChanged={onProjectsChanged} query={query} onQuery={setQuery} />
       <div className="gen-top">
         <div className="gen-setup">
           <ProjectBar dialogs={dialogs} />
           <Composer />
         </div>
       </div>
-      <Toolbar filter={filter} onFilter={onFilter} query={query} onQuery={setQuery} />
+      <Toolbar filter={filter} onFilter={onFilter} />
       <div className="layout">
         <div className="main-col">
           <ListBar />

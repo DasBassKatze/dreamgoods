@@ -27,6 +27,35 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
 
   useEffect(() => () => window.clearTimeout(poll.current), []);
 
+  // незавершённая загрузка (окно закрыли, страницу обновили) — продолжаем с того же места
+  const resumed = useRef(false);
+  useEffect(() => {
+    const oi = state.open_import;
+    if (resumed.current || !open || sid != null || !oi) return;
+    resumed.current = true;
+    setSid(oi.id);
+    setTotal(oi.count);
+    if (oi.status === "analyzing" || oi.status === "ready") {
+      setStep("analyzing");
+      watch(oi.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, state.open_import]);
+
+  const restart = async () => {
+    if (sid == null) return;
+    if (!(await ui.confirm({ title: "Начать загрузку заново?", text: `Загруженные фото (${total}) не попадут в товары — их нужно будет загрузить снова.`, ok: "Начать заново" }))) return;
+    try {
+      await api.cancelImport(sid);
+    } catch (e) {
+      ui.toast((e as Error).message);
+      return;
+    }
+    window.clearTimeout(poll.current);
+    setSid(null); setTotal(0); setView(null); setGroups([]); setRoles({}); setStep("upload");
+    await reload();
+  };
+
   const ensure = async () => {
     if (sid != null) return sid;
     const r = await api.newImport();
@@ -106,7 +135,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     const real = groups
       .filter((g) => !g.junk && g.photos.length)
       .map((g) => ({ name: g.name.trim(), photos: g.photos.map((n) => [n, roles[n] || "product"] as [string, PhotoRole]),
-        description: (g.description || "").trim() }));
+        description: (g.description || "").trim(), sort_error: !!g.sort_error }));
     const names = real.map((g) => g.name.toLowerCase());
     if (names.some((n, i) => !n || names.indexOf(n) !== i)) {
       ui.toast("У групп должны быть разные непустые названия");
@@ -146,7 +175,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     <Modal title={<>Загрузка фото{sid != null && <span className="hint"> · сессия {sid}</span>}</>} width={1280}
       onClose={step === "done" ? finish : onClose}>
       {step === "upload" && (
-        <UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze} />
+        <UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze}
+          onRestart={sid != null && total > 0 ? restart : undefined} />
       )}
       {step === "analyzing" && (
         <div className="empty">
@@ -158,7 +188,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
       )}
       {step === "groups" && view && (
         <GroupsStep view={view} groups={groups} roles={roles} labelMode={modes.label_mode}
-          onGroups={setGroups} onRoles={setRoles} onBack={() => setStep("upload")} onApply={apply} />
+          onGroups={setGroups} onRoles={setRoles} onBack={() => setStep("upload")} onApply={apply} onRestart={restart} />
       )}
       {step === "done" && result && (
         <>

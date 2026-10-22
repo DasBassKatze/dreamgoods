@@ -21,9 +21,10 @@ interface Props {
   onOptions: (o: ImportOptions) => void;
   onFiles: (files: PickedFile[]) => void;
   onAnalyze: () => void;
+  onRestart?: () => void;
 }
 
-export function UploadStep({ total, uploading, options: o, onOptions, onFiles, onAnalyze }: Props) {
+export function UploadStep({ total, uploading, options: o, onOptions, onFiles, onAnalyze, onRestart }: Props) {
   const [over, setOver] = useState(false);
   const filesRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
@@ -75,6 +76,7 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
           {" "}сразу составить профиль товара и промпты для новых товаров</label>
       </div>
       <div className="row mt16">
+        {onRestart && <button onClick={onRestart} disabled={uploading > 0}>Начать заново</button>}
         <span className="spacer" />
         <button className="primary" disabled={!total || uploading > 0} onClick={onAnalyze}>
           {!analysis ? (total ? `Загрузить ${total} фото` : "Загрузить")

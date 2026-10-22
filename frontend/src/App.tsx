@@ -25,6 +25,7 @@ import { SettingsDialog } from "./features/settings/SettingsDialog";
 import { StyleManager } from "./features/styles/StyleManager";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useProjectState } from "./hooks/useProjectState";
+import { useReadyNotify } from "./lib/notify";
 import { useRoute, type Route } from "./hooks/useRoute";
 import { ProjectsSidebar } from "./layout/ProjectsSidebar";
 import { ANALYTICS_ROUTES, AnalyticsNav, SECTION_ROUTES, SectionNav } from "./layout/SectionNav";
@@ -65,6 +66,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [projects, setProjects] = useState<ProjectRef[]>([]);
   const [projectId, setProjectId] = usePersistentState<number | null>(`project_${me.id}`, null);
   const { state, offline, reload } = useProjectState(projectId);
+  useReadyNotify(state, ui.toast);
   const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
   const [pickedByProject, setPickedByProject] = usePersistentState<Record<string, number[]>>("picked-frames", {});
   const [filter, setFilter] = useState<Filter>("all");

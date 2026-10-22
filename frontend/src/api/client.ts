@@ -140,11 +140,12 @@ export function projectApi(id: number) {
 
     newImport: () => post<{ id: number }>(`${p}/imports`),
     getImport: (sid: number) => get<ImportView>(`${p}/imports/${sid}`),
+    cancelImport: (sid: number) => request<{ ok: true }>("DELETE", `${p}/imports/${sid}`),
     uploadImportFile: (sid: number, path: string, file: Blob) =>
       request<{ added: number; total: number }>("POST", `${p}/imports/${sid}/files?path=${encodeURIComponent(path)}`, file),
     analyzeImport: (sid: number, group_mode: string, label_mode: string, sort_rule = "") =>
       post<{ ok: true }>(`${p}/imports/${sid}/analyze`, { group_mode, label_mode, sort_rule }),
-    applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][]; description?: string }[], label_mode: string,
+    applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][]; description?: string; sort_error?: boolean }[], label_mode: string,
       auto_profile: boolean) =>
       post<ImportResult>(`${p}/imports/${sid}/apply`, { groups, label_mode, auto_profile }),
 

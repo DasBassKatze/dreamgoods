@@ -15,18 +15,23 @@ interface Props {
   onRoles: (r: Record<string, PhotoRole>) => void;
   onBack: () => void;
   onApply: () => void;
+  onRestart: () => void;
 }
 
-export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, onBack, onApply }: Props) {
+export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, onBack, onApply, onRestart }: Props) {
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());     // выбранные кликом фото — для переноса
+  const pick = (n: string) => setPicked((s) => { const x = new Set(s); if (x.has(n)) x.delete(n); else x.add(n); return x; });
   const photo = (n: string) => view.photos.find((p) => p.name === n);
   const real = groups.filter((g) => !g.junk && g.photos.length);
   const labels = Object.values(roles).filter((r) => r === "label").length;
 
-  const moveTo = (targetId: string) => {
-    if (!drag) return;
-    let next = groups.map((g) => ({ ...g, photos: g.photos.filter((n) => n !== drag) }));
+  /** Перенос фото (перетащенного или выбранных кликом) в другой товар, в «не использовать» или в новый товар. */
+  const moveTo = (targetId: string, names?: string[]) => {
+    const list = names || (drag ? (picked.has(drag) ? [...picked] : [drag]) : []);
+    if (!list.length) return;
+    let next = groups.map((g) => ({ ...g, photos: g.photos.filter((n) => !list.includes(n)) }));
     let target = next.find((g) => g.id === targetId);
     if (targetId === "__new") {
       const k = next.filter((g) => /^новая_группа/.test(g.name)).length + 1;
@@ -35,12 +40,14 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
       next = [...next.slice(0, j < 0 ? next.length : j), target, ...next.slice(j < 0 ? next.length : j)];
     }
     if (!target) return;
-    target.photos.push(drag);
+    target.photos.push(...list);
     onGroups(next);
-    if (target.junk) onRoles({ ...roles, [drag]: "junk" });
-    else if (roles[drag] === "junk") onRoles({ ...roles, [drag]: "product" });
+    const r = { ...roles };
+    list.forEach((n) => { if (target!.junk) r[n] = "junk"; else if (r[n] === "junk") r[n] = "product"; });
+    onRoles(r);
     setDrag(null);
     setOver(null);
+    setPicked(new Set());
   };
 
   const merge = (fromId: string, intoId: string) => {
@@ -52,6 +59,8 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
 
   const rename = (id: string, name: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, name } : g)));
   const describe = (id: string, description: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, description } : g)));
+  const flag = (id: string, sort_error: boolean) => onGroups(groups.map((g) => (g.id === id ? { ...g, sort_error } : g)));
+  const targets = groups.filter((g) => !g.junk && (g.photos.length || g.id.startsWith("n")));
 
   const dropProps = (id: string) => ({
     onDragOver: (e: DragEvent) => { if (drag) { e.preventDefault(); setOver(id); } },
@@ -66,10 +75,23 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
         {view.cost > 0 && <> · стоимость анализа: <b>{rub(view.cost)}</b></>}
       </div>
       <div className="hint mb10">
-        Перетаскивайте фото между товарами. Клик по метке внизу фото меняет роль: товар → бирка → не брать — так отмечается
-        фото бирки (с неё берутся артикул и состав, в генерацию она не идёт). Название = артикул товара. Под фото можно
-        описать товар словами — это поможет ИИ точнее его описать.
+        Чтобы перенести фото в другой товар, перетащите его или выберите кликом (можно несколько) и укажите, куда
+        перенести. Метка внизу фото меняет роль: товар → бирка → не брать. «Бирка» — отдельное фото этикетки: с неё
+        берутся артикул и состав, в генерацию оно не идёт; фото товара с наклеенной биркой (например, подошва) оставьте
+        «товаром». Если ИИ разложил неверно — отметьте «ошибка раскладки», это поможет улучшить раскладку.
       </div>
+      {picked.size > 0 && (
+        <div className="ig-movebar">
+          <b>Выбрано фото: {picked.size}</b>
+          <select value="" onChange={(e) => e.target.value && moveTo(e.target.value, [...picked])}>
+            <option value="">перенести в…</option>
+            {targets.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            <option value="__new">новый товар</option>
+            {groups.some((g) => g.junk) && <option value="junk">не использовать</option>}
+          </select>
+          <button onClick={() => setPicked(new Set())}>Снять выбор</button>
+        </div>
+      )}
       <div className="igroups">
         {groups.filter((g) => g.photos.length || !g.junk).map((g) => {
           const products = g.photos.filter((n) => roles[n] !== "label" && roles[n] !== "junk").length;
@@ -86,9 +108,12 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                         ? <span className="tag">{labelMode === "read" ? "артикул на бирке не прочитан" : "бирка отмечена"}</span>
                         : <span className="tag bad">бирки нет</span>}
                     {g.exists && <span className="tag">товар уже есть — фото добавятся</span>}
+                    {(g.articles?.length || 0) > 1 && <span className="tag bad">на бирках разные артикулы — проверьте</span>}
                     <span className="hint">{g.product}{g.text ? " · " + g.text : ""}</span>
                     <span className="spacer" />
                     <span className="hint">товар: {products}</span>
+                    <label className={`check small ig-flag ${g.sort_error ? "on" : ""}`} title="ИИ разложил этот товар неверно: смешал товары, разделил один товар или перепутал бирку">
+                      <input type="checkbox" checked={!!g.sort_error} onChange={(e) => flag(g.id, e.target.checked)} /> ошибка раскладки</label>
                     <select value="" onChange={(e) => e.target.value && merge(g.id, e.target.value)}>
                       <option value="">объединить с…</option>
                       {groups.filter((x) => x.id !== g.id && !x.junk && x.photos.length).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
@@ -101,12 +126,14 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                   const r = roles[n] || "product";
                   const ph = photo(n);
                   return (
-                    <div key={n} className={`it ${r} ${drag === n ? "dragging" : ""}`} draggable
+                    <div key={n} className={`it ${r} ${drag === n ? "dragging" : ""} ${picked.has(n) ? "picked" : ""}`} draggable
+                      onClick={() => pick(n)}
                       onDragStart={(e) => { setDrag(n); e.dataTransfer.effectAllowed = "move"; }}
                       onDragEnd={() => { setDrag(null); setOver(null); }}
                       title={`${n}${ph?.article ? " · артикул " + ph.article : ""}${ph?.text ? " · " + ph.text : ""}`}>
                       {ph && <img loading="lazy" src={assetUrl(ph.asset, 200)} alt="" />}
-                      <span className="rl" onClick={() => onRoles({ ...roles, [n]: ROLE_NEXT[r] })}>
+                      {picked.has(n) && <span className="pk">✓</span>}
+                      <span className="rl" onClick={(e) => { e.stopPropagation(); onRoles({ ...roles, [n]: ROLE_NEXT[r] }); }}>
                         {ROLE_RU[r]}
                       </span>
                     </div>
@@ -124,7 +151,8 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
         <div className={`ig newg ${over === "__new" ? "over" : ""}`} {...dropProps("__new")}>＋ Перетащите сюда фото, чтобы создать новую группу</div>
       </div>
       <div className="row mt12">
-        <button onClick={onBack}>← Загрузить ещё / заново</button>
+        <button onClick={onBack}>← Загрузить ещё</button>
+        <button onClick={onRestart}>Начать заново</button>
         <span className="spacer" />
         <button className="primary" onClick={onApply}>Создать товары</button>
       </div>

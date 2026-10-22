@@ -9,7 +9,8 @@ from ..ai import polza, prompts
 from ..core import presets as presets_core
 from ..core.events import STARTED_AT, lines
 from ..core.settings import effective, public
-from ..db.models import (Frame, Generation, GenerationPreset, Job, Organization, Persona, PersonaPhoto, StyleRef,
+from ..db.models import (Frame, Generation, GenerationPreset, ImportFile, ImportSession, Job, Organization, Persona,
+                         PersonaPhoto, StyleRef,
                          StyleRefPhoto, Product, ProductPhoto, ProductProfile,
                          Project, QCCheck, UsageEntry)
 from . import billing
@@ -198,6 +199,14 @@ def state(project_id, admin=False):
             "styles": [{"id": x.id, "name": x.name} for x in s.scalars(select(StyleRef).where(
                 StyleRef.client_id == project.client_id, StyleRef.status == "ready").order_by(StyleRef.id)).all()],
         }
+        open_import = None               # незавершённая загрузка фото — к ней можно вернуться
+        row = s.execute(select(ImportSession.id, ImportSession.status, func.count(ImportFile.id))
+                        .join(ImportFile, ImportFile.session_id == ImportSession.id)
+                        .where(ImportSession.project_id == project_id,
+                               ImportSession.status.in_(("upload", "analyzing", "ready", "error")))
+                        .group_by(ImportSession.id).order_by(ImportSession.id.desc()).limit(1)).first()
+        if row:
+            open_import = {"id": row[0], "status": row[1], "count": row[2]}
         settings = public(org, project)
         client = project.client
         markup = billing.markup_of(client, org)
@@ -211,5 +220,5 @@ def state(project_id, admin=False):
             "log": log_lines,
             "totals": {"done": done_all, "total": total_all, "review": review_n, "spent_all": round(spent_all, 2) if admin else None,
                        "avg_cost": round(sum(recent) / len(recent) * (1 if admin else markup), 2) if recent else 0.0},
-            "account": account,
+            "account": account, "open_import": open_import,
             "metrics": met, "balance": b["value"], "balance_error": b["error"]}

@@ -74,6 +74,7 @@ class ImportGroup(BaseModel):
     name: str
     photos: list[tuple[str, str]]             # [имя файла, роль: product | packaging | label | junk]
     description: str = Field("", max_length=2000)   # описание товара словами (необязательно) — подсказка для профиля
+    sort_error: bool = False                        # пользователь отметил ошибку раскладки ИИ
 
 
 class ImportApply(BaseModel):

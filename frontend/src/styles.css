@@ -1391,3 +1391,23 @@ html:has(.site) { scroll-behavior: smooth; }
   .run-what, .run-what select, .gen-setup .runbar button.big { width: 100%; }
   .gen-setup .runbar button.big { padding: 12px; }
 }
+/* раскладка при загрузке: выбор фото кликом, перенос, отметка ошибки */
+.it { cursor: pointer; }
+.it.picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.it .pk { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.ig-movebar { position: sticky; top: 0; z-index: 3; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 10px; background: var(--accent-soft); border: 1px solid #d9cefc; border-radius: 12px; }
+.ig-movebar select { width: auto; min-width: 220px; }
+.ig-flag { color: var(--muted); white-space: nowrap; }
+.ig-flag.on { color: #b42318; font-weight: 600; }
+/* поиск товаров — в шапке страницы, крупный */
+.search-big { flex: 1 1 360px; max-width: 620px; margin: 0 8px 0 20px; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 16px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); color: var(--muted); }
+.search-big:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search-big input { flex: 1; min-width: 0; border: none; outline: none; background: none; font: inherit; font-size: 15.5px; padding: 0; height: 100%; box-shadow: none; }
+.resume-import { border-color: #f5c46b; background: #fff8e8; color: #8a5a00; font-weight: 600; }
+.resume-import:hover { background: #fff1cf; }
+@media (max-width: 900px) {
+  .products-head { flex-wrap: wrap; }
+  .search-big { order: 5; flex-basis: 100%; max-width: none; margin: 8px 0 0; }
+}
+.notify-btn { width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.notify-btn.on { color: var(--accent); border-color: #cbbdfb; background: var(--accent-soft); }
