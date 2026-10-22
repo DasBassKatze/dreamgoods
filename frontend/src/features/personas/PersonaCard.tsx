@@ -120,7 +120,8 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
 
   const photo = (ph: PersonaPhoto) => (
     <div key={ph.id} className={`pphoto ${ph.kind}`}>
-      <img loading="lazy" src={assetUrl(ph.asset, 400)} alt="" onClick={() => window.open(assetUrl(ph.asset), "_blank")} />
+      <img loading="lazy" src={assetUrl(ph.asset, 400)} alt="" title="Открыть крупно"
+        onClick={() => { const list = p.photos.filter((x) => x.kind === ph.kind); ui.zoom(list.map((x) => ({ asset: x.asset, caption: `${p.name} · ${KIND_RU[x.kind] || ""}` })), list.indexOf(ph)); }} />
       {ph.kind !== "candidate" && <span className="pk">{KIND_RU[ph.kind]}{ph.view && ph.kind === "sheet" ? ` · ${VIEW_RU[ph.view] || ph.view}` : ""}</span>}
       <button className="pdel" title="Удалить" onClick={() => act(() => api.deletePersonaPhoto(p.id, ph.id))}>✕</button>
       {ph.kind === "candidate" && (

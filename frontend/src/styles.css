@@ -1442,3 +1442,25 @@ html:has(.site) { scroll-behavior: smooth; }
   .nomen-grid select { min-width: 0; width: 100%; }
   .nomen-grid .row.nowrap { flex-wrap: wrap; }
 }
+/* просмотр фото крупно */
+.lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(10,10,16,.97); backdrop-filter: blur(4px); display: flex; flex-direction: column; animation: lbIn .15s ease-out; }
+@keyframes lbIn { from { opacity: 0; } }
+.lb-top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #e8e8f0; }
+.lb-top button, .lb-top .btn { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.18); padding: 6px 12px; border-radius: 10px; }
+.lb-top button:disabled { opacity: .35; }
+.lb-cap { font-size: 13.5px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-scale { font-size: 12.5px; min-width: 42px; text-align: center; opacity: .8; font-variant-numeric: tabular-nums; }
+.lb-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; position: relative; padding: 0 56px 20px; }
+.lb-stage.zoomed { cursor: zoom-out; }
+.lb-stage img { max-width: 100%; max-height: 100%; object-fit: contain; transition: transform .18s ease-out, opacity .15s; user-select: none; }
+.lb-stage .spinner { position: absolute; }
+.lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; border-radius: 12px; border: none; background: rgba(255,255,255,.12); color: #fff; font-size: 34px; line-height: 1; padding: 0; }
+.lb-nav:hover { background: rgba(255,255,255,.22); }
+.lb-nav.prev { left: 8px; } .lb-nav.next { right: 8px; }
+@media (max-width: 700px) { .lb-stage { padding: 0 0 12px; } .lb-nav { width: 36px; height: 52px; font-size: 28px; } .lb-scale { display: none; } }
+/* кнопка-лупа на миниатюрах */
+.zoom-btn { position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; cursor: zoom-in; padding: 0; border-radius: 7px; border: none; background: rgba(20,20,30,.6); color: #fff; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .15s; z-index: 2; }
+.ref:hover .zoom-btn, .it:hover .zoom-btn, .pphoto:hover .zoom-btn, .zoom-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .zoom-btn { opacity: .85; } }
+.ref { position: relative; }
+.pphoto img { cursor: zoom-in; }

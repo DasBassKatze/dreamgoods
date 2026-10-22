@@ -28,6 +28,8 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
   const { generate, regenerate, profiles, quick } = useActions();
   const opts = useRunOptions();
   const ui = useUI();
+  const zoomRefs = (i: number) => ui.zoom(p.photos.map((x) => ({ asset: x.asset,
+    caption: `${p.sku}${x.view ? ` · ${VIEW_RU[x.view] || x.view}` : ""} · ${x.selected ? "идёт в генерацию" : "не используется"}` })), i);
   const chosen = p.photos.filter((x) => x.selected);
   const busy = p.profile_job?.state === "running";
   const own = p.preset_id ? state.presets.find((x) => x.id === p.preset_id) : null;
@@ -77,10 +79,11 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
 
       <div className="refs">
         <span className="lbl">Референсы {chosen.length} из {p.photos.length}:</span>
-        {p.photos.map((ph) => (
+        {p.photos.map((ph, i) => (
           <button key={ph.asset} className={`ref ${ph.selected ? "on" : ""}`} onClick={() => toggleRef(ph.asset)}
             title={(ph.selected ? "Идёт в генерацию" : "Не используется") + (ph.view ? ` · ракурс: ${VIEW_RU[ph.view] || ph.view}` : "")}>
             <img loading="lazy" src={assetUrl(ph.asset, 160)} alt="" />
+            <span className="zoom-btn" role="button" title="Открыть крупно" onClick={(e) => { e.stopPropagation(); zoomRefs(i); }}><Icon name="search" size={14} /></span>
           </button>
         ))}
         {!chosen.length && <span className="err-text">не выбрано ни одного фото</span>}

@@ -139,7 +139,8 @@ function StyleCard({ r, onChange, run }: { r: StyleRef; onChange: () => Promise<
       <div className="persona-photos">
         {r.photos.map((ph) => (
           <div key={ph.id} className="pphoto">
-            <img loading="lazy" src={assetUrl(ph.asset, 400)} alt="" onClick={() => window.open(assetUrl(ph.asset), "_blank")} />
+            <img loading="lazy" src={assetUrl(ph.asset, 400)} alt="" title="Открыть крупно"
+              onClick={() => ui.zoom(r.photos.map((x) => ({ asset: x.asset, caption: r.name })), r.photos.indexOf(ph))} />
             <button className="pdel" title="Удалить" onClick={() => act(() => api.deleteStylePhoto(r.id, ph.id))}>✕</button>
           </div>
         ))}

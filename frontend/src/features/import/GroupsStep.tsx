@@ -1,6 +1,8 @@
 import { useState, type DragEvent } from "react";
 import { assetUrl } from "../../api/client";
 import type { ImportGroup, ImportView, PhotoRole } from "../../api/types";
+import { useUI } from "../../components/ui";
+import { Icon } from "../../layout/Icon";
 import { rub } from "../../lib/format";
 
 const ROLE_RU: Record<PhotoRole, string> = { product: "товар", packaging: "упаковка", label: "бирка", junk: "не брать" };
@@ -21,7 +23,13 @@ interface Props {
 export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, onBack, onApply, onRestart }: Props) {
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());     // выбранные кликом фото — для переноса
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const ui = useUI();
+  /** Крупный просмотр: листаются фото этого товара. */
+  const zoomIn = (g: ImportGroup, n: string) => ui.zoom(g.photos.filter((x) => photo(x)).map((x) => {
+    const ph = photo(x)!;
+    return { asset: ph.asset, caption: `${g.name} · ${ROLE_RU[roles[x] || "product"]}${ph.article ? ` · артикул ${ph.article}` : ""}${ph.text ? ` · ${ph.text}` : ""}` };
+  }), g.photos.filter((x) => photo(x)).indexOf(n));     // выбранные кликом фото — для переноса
   const pick = (n: string) => setPicked((s) => { const x = new Set(s); if (x.has(n)) x.delete(n); else x.add(n); return x; });
   const photo = (n: string) => view.photos.find((p) => p.name === n);
   const real = groups.filter((g) => !g.junk && g.photos.length);
@@ -140,6 +148,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                       title={`${n}${ph?.article ? " · артикул " + ph.article : ""}${ph?.text ? " · " + ph.text : ""}`}>
                       {ph && <img loading="lazy" src={assetUrl(ph.asset, 200)} alt="" />}
                       {picked.has(n) && <span className="pk">✓</span>}
+                      <span className="zoom-btn" role="button" title="Открыть крупно" onClick={(e) => { e.stopPropagation(); zoomIn(g, n); }}><Icon name="search" size={14} /></span>
                       <span className="rl" onClick={(e) => { e.stopPropagation(); onRoles({ ...roles, [n]: ROLE_NEXT[r] }); }}>
                         {ROLE_RU[r]}
                       </span>

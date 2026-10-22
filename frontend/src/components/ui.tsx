@@ -1,5 +1,6 @@
 // Всплывающие уведомления и диалоги подтверждения/ввода — вместо alert/confirm/prompt браузера.
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { Lightbox, type ZoomImage } from "./Lightbox";
 import { Modal } from "./Modal";
 
 interface ConfirmOptions {
@@ -28,6 +29,8 @@ interface UI {
   confirm: (o: ConfirmOptions) => Promise<boolean>;
   choose: <T extends string>(o: { title: string; text: ReactNode; choices: Choice<T>[] }) => Promise<T | null>;
   ask: (o: { title: string; fields: Field[]; ok?: string }) => Promise<Record<string, string> | null>;
+  /** Открыть фото крупно (с листанием по списку). */
+  zoom: (images: ZoomImage[] | string[], start?: number) => void;
 }
 
 const Ctx = createContext<UI | null>(null);
@@ -46,6 +49,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [toastText, setToastText] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [lb, setLb] = useState<{ images: ZoomImage[]; start: number } | null>(null);
+  const zoom = useCallback((images: ZoomImage[] | string[], start = 0) =>
+    setLb({ images: images.map((x) => (typeof x === "string" ? { asset: x } : x)), start }), []);
 
   const toast = useCallback((text: string, ms = 3200) => {
     setToastText(text);
@@ -82,7 +88,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const value = useMemo(() => ({ toast, confirm, choose, ask }), [toast, confirm, choose, ask]);
+  const value = useMemo(() => ({ toast, confirm, choose, ask, zoom }), [toast, confirm, choose, ask, zoom]);
 
   const close = (v: string | null | Record<string, string>) => {
     if (!dialog) return;
@@ -107,6 +113,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
         </Modal>
       )}
       {dialog?.kind === "ask" && <AskDialog dialog={dialog} onDone={close} />}
+      {lb && <Lightbox images={lb.images} start={lb.start} onClose={() => setLb(null)} />}
       {toastText && <div className="toast">{toastText}</div>}
     </Ctx.Provider>
   );
