@@ -182,7 +182,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
       {step === "analyzing" && (
         <div className="empty">
           <div className="pbusy">
-            {progress && progress[1] ? `ИИ смотрит фото: лист ${progress[0]} из ${progress[1]}…` : "Готовлю фото…"}
+            {progress && progress[1] ? `ИИ раскладывает фото: шаг ${progress[0]} из ${progress[1]}…` : "Готовлю фото…"}
           </div>
           <div className="progress wide"><i style={{ width: `${progress && progress[1] ? (progress[0] / progress[1]) * 100 : 3}%` }} /></div>
         </div>

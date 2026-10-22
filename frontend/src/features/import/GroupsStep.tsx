@@ -73,14 +73,8 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
   return (
     <>
       <div className="hint mb10">
-        Фото: <b>{view.photos.length}</b> · товаров: <b>{real.length}</b> · бирок: <b>{labels}</b>
-        {view.cost > 0 && <> · стоимость анализа: <b>{rub(view.cost)}</b></>}
-      </div>
-      <div className="hint mb10">
-        Чтобы перенести фото в другой товар, перетащите его или выберите кликом (можно несколько) и укажите, куда
-        перенести. Метка внизу фото меняет роль: товар → бирка → не брать. «Бирка» — отдельное фото этикетки: с неё
-        берутся артикул и состав, в генерацию оно не идёт; фото товара с наклеенной биркой (например, подошва) оставьте
-        «товаром». Если ИИ разложил неверно — отметьте «ошибка раскладки», это поможет улучшить раскладку.
+        Фото переносятся перетаскиванием или кликом (можно несколько) → «перенести в…». Метка на фото меняет роль:
+        товар → бирка → не брать. Фото товара с наклейкой (подошва) оставьте «товаром» — артикул с наклейки всё равно прочитается.
       </div>
       {picked.size > 0 && (
         <div className="ig-movebar">
@@ -117,10 +111,8 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                           {allArts.filter((a) => !g.articles.includes(a)).map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>}
                       </select>
                     )}
-                    {g.article ? null
-                      : g.photos.some((n) => roles[n] === "label")
-                        ? <span className="tag">{labelMode === "read" ? "артикул на бирке не прочитан" : "бирка отмечена"}</span>
-                        : <span className="tag bad">бирки нет</span>}
+                    {!g.article && !g.warn && labelMode === "read" && g.photos.some((n) => roles[n] === "label") &&
+                      <span className="tag">артикул на бирке не прочитан</span>}
                     {g.exists && <span className="tag">товар уже есть — фото добавятся</span>}
                     {g.warn && <span className="tag warn" title="По правилам раскладки эту группу стоит проверить">⚠ {g.warn}</span>}
                     {(g.articles?.length || 0) > 1 && <span className="tag bad">на бирках разные артикулы: {g.articles.join(", ")} — проверьте</span>}
@@ -166,7 +158,8 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
         <div className={`ig newg ${over === "__new" ? "over" : ""}`} {...dropProps("__new")}>＋ Перетащите сюда фото, чтобы создать новую группу</div>
       </div>
       <div className="row mt12 import-actions">
-        <span className="hint">товаров: <b>{real.length}</b> · фото: <b>{view.photos.length}</b></span>
+        <span className="hint">товаров: <b>{real.length}</b> · фото: <b>{view.photos.length}</b> · бирок: <b>{labels}</b>
+          {view.cost > 0 && <> · анализ: <b>{rub(view.cost)}</b></>}</span>
         <button onClick={onBack}>← Загрузить ещё</button>
         <button onClick={onRestart}>Начать заново</button>
         <span className="spacer" />

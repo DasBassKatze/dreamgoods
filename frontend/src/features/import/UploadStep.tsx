@@ -8,7 +8,7 @@ export const DEFAULT_RULES: ImportRules = {
 };
 
 const IGNORE: [ImportRules["ignore"][number], string][] = [
-  ["price", "цены и ценники"], ["barcode", "цифры штрихкода"], ["size", "размер"], ["packaging", "коробки и пакеты — не брать в товар"],
+  ["price", "цену"], ["barcode", "цифры штрихкода"], ["size", "размер"],
 ];
 
 export interface ImportOptions {
@@ -38,7 +38,6 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
   const [over, setOver] = useState(false);
   const filesRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
-  const sheets = Math.max(1, Math.ceil(Math.max(total - 4, 1) / 16));
 
   const analysis = o.ai_sort || o.read_labels;
   return (
@@ -66,17 +65,15 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
         <div className="ch">
           <label className="check"><input type="checkbox" checked={o.ai_sort} onChange={(e) => onOptions({ ...o, ai_sort: e.target.checked })} />
             {" "}разложить по товарам с помощью ИИ</label>
-          <div className="hint">{o.ai_sort ? "ИИ смотрит порядок съёмки и сами фото, где один и тот же товар; артикул — с бирок"
-            : "без ИИ: одна папка = один товар, фото без папки — один товар. Группы можно поправить на следующем шаге"}</div>
+          {!o.ai_sort && <div className="hint">без ИИ: одна папка — один товар, фото без папки — один товар</div>}
         </div>
-        {analysis && <Nomenclature rules={o.rules} aiSort={o.ai_sort} onChange={(rules) => onOptions({ ...o, rules })} />}
         <label className="form-label">Бирки и этикетки</label>
         <div className="ch">
           <label className="check"><input type="checkbox" checked={o.read_labels} onChange={(e) => onOptions({ ...o, read_labels: e.target.checked })} />
             {" "}прочитать бирки: артикул, состав, цвет <span className="tag">рекомендуем</span></label>
-          <div className="hint">фото бирок не идут в генерацию, текст с них попадёт в профиль товара. На следующем шаге можно
-            отметить бирку вручную и описать товар словами</div>
+          <div className="hint">текст бирок — в профиль товара; отдельные фото бирок в генерацию не идут</div>
         </div>
+        {analysis && <Nomenclature rules={o.rules} aiSort={o.ai_sort} onChange={(rules) => onOptions({ ...o, rules })} />}
         <label className="form-label">После загрузки</label>
         <label className="check"><input type="checkbox" checked={o.auto_profile} onChange={(e) => onOptions({ ...o, auto_profile: e.target.checked })} />
           {" "}сразу составить профиль товара и промпты для новых товаров</label>
@@ -86,7 +83,7 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
         <span className="spacer" />
         <button className="primary" disabled={!total || uploading > 0} onClick={onAnalyze}>
           {!analysis ? (total ? `Загрузить ${total} фото` : "Загрузить")
-            : total ? `Анализировать ${total} фото (≈ ${sheets} запрос(ов) к модели)` : "Анализировать"}
+            : total ? `Анализировать ${total} фото` : "Анализировать"}
         </button>
       </div>
     </>
@@ -135,13 +132,19 @@ function Nomenclature({ rules: r, aiSort, onChange }: { rules: ImportRules; aiSo
                 {" "}разные размеры одной модели — один товар</label>
             </div>
           </>}
-          <span>Игнорировать</span>
-          <div className="ch">
-            {IGNORE.filter(([k]) => aiSort || k !== "packaging").map(([k, name]) => (
+          <span>Не принимать за артикул</span>
+          <div className="row">
+            {IGNORE.map(([k, name]) => (
               <label key={k} className="check"><input type="checkbox" checked={r.ignore.includes(k)}
                 onChange={(e) => set("ignore", e.target.checked ? [...r.ignore, k] : r.ignore.filter((x) => x !== k))} /> {name}</label>
             ))}
           </div>
+          {aiSort && <>
+            <span>Упаковка</span>
+            <label className="check"><input type="checkbox" checked={r.ignore.includes("packaging")}
+              onChange={(e) => set("ignore", e.target.checked ? [...r.ignore, "packaging"] : r.ignore.filter((x) => x !== "packaging"))} />
+              {" "}фото коробок и пакетов не брать в товар</label>
+          </>}
           {aiSort && <>
             <span>Своё правило</span>
             <textarea className="short" maxLength={1000} value={r.rule}

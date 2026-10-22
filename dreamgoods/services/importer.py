@@ -17,6 +17,7 @@ from ..core.settings import effective
 from ..db.models import (Asset, Generation, ImportFile, ImportSession, Organization, PersonaPhoto, Product, ProductPhoto,
                          Project, StyleRefPhoto)
 from ..workers.queue import enqueue, set_note
+from . import import_ai as AI
 from . import import_rules as R
 from .common import write_usage
 
@@ -44,6 +45,8 @@ For EACH photo decide:
   (e.g. "ankle boots", "sneakers", "bag"). Else "".
 - color: for product photos, the main color of the product in 1–2 English words (e.g. "black", "beige"); for a close-up
   of a part (sole, lining) give the color of the whole product if you can tell it from neighbors. Else "".
+- has_label: true if a sticker, tag or printed label with text/codes is visible on this photo (also a small sticker on a
+  sole or insole), even if you cannot read it at this size. Else false.
 - codes: for label photos, EVERY code printed on the label as a list (article, model, color code, size), except the
   barcode digits. Else [].
 - article: for label photos AND product photos with a readable label on them — the model/article code exactly as printed
@@ -52,7 +55,7 @@ For EACH photo decide:
 - text: for the same photos, other useful printed info briefly (brand, size, color, composition). Else "".
 
 Reply with ONLY one JSON object, no markdown:
-{"photos":[{"id":1,"role":"product","group":"A","product":"...","kind":"...","color":"...","article":"","codes":[],"text":""}]}"""
+{"photos":[{"id":1,"role":"product","group":"A","product":"...","kind":"...","color":"...","article":"","codes":[],"has_label":false,"text":""}]}"""
 
 
 def _safe_name(name):
@@ -155,6 +158,16 @@ def _split_by_articles(g, order="auto"):
     return out
 
 
+def info_pre(answers, rows):
+    """Предварительное слияние ответов листов: {id: данные фото} (последний лист уточняет)."""
+    info = {r["id"]: {} for r in rows}
+    for _, got in answers:
+        for pid, ph in got.items():
+            if pid in info:
+                info[pid] = {**info[pid], **{k: v for k, v in ph.items() if v not in (None, "")}}
+    return info
+
+
 def _group_warn(g, rules):
     """Подсказка пользователю, что группу стоит проверить (по правилам продавца)."""
     n_prod = sum(1 for r in g if r["role"] == "product")
@@ -232,7 +245,8 @@ def analyze(session_id, job_id=None):
                  "по папкам" if group_mode == "folders" else "автоматически" + (" + правила продавца" if rules != R.DEFAULTS else ""))
         step = SORT_CHUNK - SORT_OVERLAP
         starts = [] if no_ai else (list(range(0, max(len(rows) - SORT_OVERLAP, 1), step)) or [0])
-        _update(session_id, status="analyzing", progress=[0, len(starts)])
+        steps = len(starts) + (2 if starts else 0)      # листы + бирки крупно + проверка групп
+        _update(session_id, status="analyzing", progress=[0, steps])
         answers, total_cost = [], 0.0
         for c, a in enumerate(starts):
             part = rows[a:a + SORT_CHUNK]
@@ -247,12 +261,32 @@ def analyze(session_id, job_id=None):
             got, cost, secs = _sort_chunk(st, model, items, trace, R.prompt_section(rules) if group_mode == "auto" else "")
             total_cost += cost
             answers.append((c, got))
-            _update(session_id, progress=[c + 1, len(starts)], cost_rub=total_cost)
+            _update(session_id, progress=[c + 1, steps], cost_rub=total_cost)
             log.info("%s лист %d/%d (фото %d–%d) за %.1f с, %.2f ₽", tag, c + 1, len(starts),
                      part[0]["id"], part[-1]["id"], secs, cost)
-        if starts:
-            with db.session() as s:
-                write_usage(s, ids["org"], ids["project"], None, None, trace, f"import:{session_id}")
+        by_id = {r["id"]: r for r in rows}
+        if starts and label_mode != "skip":
+            # дочитываем бирки крупно: на листе из 20 фото мелкая наклейка (подошва, стелька) не читается
+            need = []
+            for pid, ph in info_pre(answers, rows).items():
+                art = R.pick_article(str(ph.get("article") or "").strip(), ph.get("codes"), art_rx, rules["ignore"])
+                role = str(ph.get("role") or "")
+                if not art and role != "junk" and (role == "label" or ph.get("has_label") in (True, "true", 1)):
+                    need.append(by_id[pid])
+            if need:
+                _update(session_id, progress=[len(starts), steps])
+                if job_id:
+                    set_note(job_id, f"бирки крупно: {len(need)}")
+                read, cost = AI.read_labels(st, model, need, trace)
+                total_cost += cost
+                _update(session_id, cost_rub=total_cost)
+                got_n = 0
+                for pid, ph in read.items():
+                    if pid in by_id:
+                        answers.append((len(starts), {pid: {"article": ph.get("article") or "", "codes": ph.get("codes") or [],
+                                                             **({"text": ph["text"]} if ph.get("text") else {})}}))
+                        got_n += bool(ph.get("article") or ph.get("codes"))
+                log.info("%s бирки крупно: фото %d, прочитано %d, %.2f ₽", tag, len(need), got_n, cost)
         # объединение групп между листами через перекрывающиеся фото (union-find)
         parent = {}
 
@@ -382,6 +416,37 @@ def analyze(session_id, job_id=None):
                 groups[nk] = part
                 split_order.append(nk)
         order = split_order
+        if group_mode == "auto" and starts:
+            # проверка групп: каждую группу модель смотрит отдельно и крупнее — «это один товар?»
+            cand = [k for k in order if k != "_junk" and sum(1 for r in groups[k] if r["role"] == "product") >= 2]
+            if cand:
+                _update(session_id, progress=[len(starts) + 1, steps])
+                if job_id:
+                    set_note(job_id, f"проверка групп: {len(cand)}")
+                checked, cost = AI.verify_groups(st, model, [groups[k] for k in cand], trace,
+                                                 R.prompt_section(rules) if rules != R.DEFAULTS else "")
+                total_cost += cost
+                _update(session_id, cost_rub=total_cost)
+                new_order, n_split = [], 0
+                res_of = dict(zip(cand, checked))
+                for k in order:
+                    if k not in res_of:
+                        new_order.append(k)
+                        continue
+                    letters, reason = res_of[k]
+                    parts = AI.split_by_letters(groups[k], letters)
+                    if len(parts) > 1:
+                        n_split += 1
+                        log.info("%s проверка группы: разделена на %d товара — %s", tag, len(parts), reason or "без пояснения")
+                    for i, part in enumerate(parts):
+                        nk = k if i == 0 else (k, "v", i)
+                        groups[nk] = part
+                        new_order.append(nk)
+                order = new_order
+                log.info("%s проверка групп: %d, разделено %d, %.2f ₽", tag, len(cand), n_split, cost)
+        if total_cost:
+            with db.session() as s:
+                write_usage(s, ids["org"], ids["project"], None, None, trace, f"import:{session_id}")
         out, noname, used = [], 0, set()
         for k in order:
             if k == "_junk":
