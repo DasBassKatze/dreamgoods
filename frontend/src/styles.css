@@ -1411,3 +1411,11 @@ html:has(.site) { scroll-behavior: smooth; }
 }
 .notify-btn { width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
 .notify-btn.on { color: var(--accent); border-color: #cbbdfb; background: var(--accent-soft); }
+/* шапка товара в раскладке: всё в одну строку, галочки и списки не растягиваются */
+.ig-h { flex-wrap: wrap; row-gap: 6px; }
+.ig-h > select { width: auto; min-width: 0; max-width: 240px; }
+.ig-h .check { display: inline-flex; align-items: center; gap: 6px; flex: none; margin: 0; cursor: pointer; }
+.ig-h .check input { width: auto; margin: 0; flex: none; }
+.ig-flag { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
+.ig-flag.on { border-color: #f3b3ad; background: #fff1f0; }
+.ig-desc { min-height: 56px; height: auto; }

@@ -60,6 +60,8 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
   const rename = (id: string, name: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, name } : g)));
   const describe = (id: string, description: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, description } : g)));
   const flag = (id: string, sort_error: boolean) => onGroups(groups.map((g) => (g.id === id ? { ...g, sort_error } : g)));
+  // все артикулы, которые ИИ прочитал на бирках этой загрузки, — для выбора названия товара
+  const allArts = [...new Set(view.photos.map((p) => (p.article || "").trim()).filter(Boolean))].sort();
   const targets = groups.filter((g) => !g.junk && (g.photos.length || g.id.startsWith("n")));
 
   const dropProps = (id: string) => ({
@@ -92,6 +94,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
           <button onClick={() => setPicked(new Set())}>Снять выбор</button>
         </div>
       )}
+      <datalist id="ig-arts">{allArts.map((a) => <option key={a} value={a} />)}</datalist>
       <div className="igroups">
         {groups.filter((g) => g.photos.length || !g.junk).map((g) => {
           const products = g.photos.filter((n) => roles[n] !== "label" && roles[n] !== "junk").length;
@@ -102,13 +105,24 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
                   <><b>Не использовать</b><span className="hint">размытые, случайные и лишние фото — в товары не попадут</span></>
                 ) : (
                   <>
-                    <input type="text" value={g.name} title="Артикул товара" onChange={(e) => rename(g.id, e.target.value)} />
-                    {g.article ? <span className="tag">артикул с бирки: {g.articles.join(", ")}</span>
+                    <input type="text" value={g.name} title="Артикул товара — впишите или выберите из распознанных"
+                      list="ig-arts" onChange={(e) => rename(g.id, e.target.value)} />
+                    {allArts.length > 0 && (
+                      <select className="ig-art" value="" title="Выбрать артикул из прочитанных ИИ на бирках"
+                        onChange={(e) => e.target.value && rename(g.id, e.target.value)}>
+                        <option value="">артикул из распознанных…</option>
+                        {g.articles.length > 0 && <optgroup label="с бирок этого товара">
+                          {g.articles.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>}
+                        {allArts.some((a) => !g.articles.includes(a)) && <optgroup label="другие в этой загрузке">
+                          {allArts.filter((a) => !g.articles.includes(a)).map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>}
+                      </select>
+                    )}
+                    {g.article ? null
                       : g.photos.some((n) => roles[n] === "label")
                         ? <span className="tag">{labelMode === "read" ? "артикул на бирке не прочитан" : "бирка отмечена"}</span>
                         : <span className="tag bad">бирки нет</span>}
                     {g.exists && <span className="tag">товар уже есть — фото добавятся</span>}
-                    {(g.articles?.length || 0) > 1 && <span className="tag bad">на бирках разные артикулы — проверьте</span>}
+                    {(g.articles?.length || 0) > 1 && <span className="tag bad">на бирках разные артикулы: {g.articles.join(", ")} — проверьте</span>}
                     <span className="hint">{g.product}{g.text ? " · " + g.text : ""}</span>
                     <span className="spacer" />
                     <span className="hint">товар: {products}</span>
