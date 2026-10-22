@@ -27,8 +27,7 @@ def get_import(sid: int = Depends(session_id)):
 
 @router.delete("/{import_id}")
 def cancel_import(sid: int = Depends(session_id)):
-    importer.cancel(sid)
-    return {"ok": True}
+    return {"ok": True, **importer.cancel(sid)}
 
 
 @router.post("/{import_id}/files")

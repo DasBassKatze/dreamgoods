@@ -164,7 +164,8 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
         })}
         <div className={`ig newg ${over === "__new" ? "over" : ""}`} {...dropProps("__new")}>＋ Перетащите сюда фото, чтобы создать новую группу</div>
       </div>
-      <div className="row mt12">
+      <div className="row mt12 import-actions">
+        <span className="hint">товаров: <b>{real.length}</b> · фото: <b>{view.photos.length}</b></span>
         <button onClick={onBack}>← Загрузить ещё</button>
         <button onClick={onRestart}>Начать заново</button>
         <span className="spacer" />

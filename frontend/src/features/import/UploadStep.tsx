@@ -75,7 +75,7 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
         <label className="check"><input type="checkbox" checked={o.auto_profile} onChange={(e) => onOptions({ ...o, auto_profile: e.target.checked })} />
           {" "}сразу составить профиль товара и промпты для новых товаров</label>
       </div>
-      <div className="row mt16">
+      <div className="row mt16 import-actions">
         {onRestart && <button onClick={onRestart} disabled={uploading > 0}>Начать заново</button>}
         <span className="spacer" />
         <button className="primary" disabled={!total || uploading > 0} onClick={onAnalyze}>

@@ -210,6 +210,25 @@ def upload_local_to_s3():
     log.info("Перенос в S3 завершён: загружено %d, уже были %d. Теперь поставьте в .env STORAGE=s3", done, skipped)
 
 
+def remove(key):
+    """Удаляет файл из хранилища (и из кэшей). Вызывающий сам проверяет, что на файл больше никто не ссылается."""
+    global _cache_size
+    with _cache_lock:
+        v = _cache.pop(key, None)
+        if v is not None:
+            _cache_size -= len(v)
+    with _thumb_lock:
+        for k in [k for k in _thumbs if k[0] == key]:
+            _thumbs.pop(k, None)
+    if config.STORAGE != "s3":
+        try:
+            _local(key).unlink()
+        except FileNotFoundError:
+            pass
+        return
+    s3().delete_object(Bucket=config.S3_BUCKET, Key=key)
+
+
 _thumbs, _thumb_lock = OrderedDict(), threading.Lock()
 
 

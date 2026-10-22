@@ -1419,3 +1419,9 @@ html:has(.site) { scroll-behavior: smooth; }
 .ig-flag { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
 .ig-flag.on { border-color: #f3b3ad; background: #fff1f0; }
 .ig-desc { min-height: 56px; height: auto; }
+/* кнопки загрузки всегда внизу экрана — не нужно прокручивать длинную раскладку */
+.import-actions { position: sticky; bottom: 0; z-index: 4; margin: 12px -18px -18px; padding: 12px 18px; background: rgba(255,255,255,.96);
+  backdrop-filter: blur(6px); border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; box-shadow: 0 -8px 20px rgba(23,23,42,.06); }
+.import-actions .hint { margin-right: 4px; }
+.page-body .igroups, .igroups { max-height: none; overflow: visible; }
+@media (max-width: 700px) { .import-actions { bottom: 58px; } }

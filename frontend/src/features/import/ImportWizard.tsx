@@ -44,7 +44,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
 
   const restart = async () => {
     if (sid == null) return;
-    if (!(await ui.confirm({ title: "Начать загрузку заново?", text: `Загруженные фото (${total}) не попадут в товары — их нужно будет загрузить снова.`, ok: "Начать заново" }))) return;
+    if (!(await ui.confirm({ title: "Начать загрузку заново?", text: `Загруженные фото (${total}) будут удалены из хранилища и не попадут в товары. Фото, которые уже есть у товаров, останутся.`, ok: "Удалить и начать заново" }))) return;
     try {
       await api.cancelImport(sid);
     } catch (e) {

@@ -14,7 +14,8 @@ from ..core import storage
 from ..core.events import say
 from ..core.logs import Trace, log
 from ..core.settings import effective
-from ..db.models import ImportFile, ImportSession, Organization, Product, ProductPhoto, Project
+from ..db.models import (Asset, Generation, ImportFile, ImportSession, Organization, PersonaPhoto, Product, ProductPhoto,
+                         Project, StyleRefPhoto)
 from ..workers.queue import enqueue, set_note
 from .common import write_usage
 
@@ -554,15 +555,55 @@ def analyze_request(session_id, group_mode, label_mode, sort_rule=""):
 
 
 def cancel(session_id):
-    """Отказ от незавершённой загрузки: фото этой сессии больше не предлагаются (в товары они не попали)."""
+    """Отказ от незавершённой загрузки: загруженные фото удаляются из базы и хранилища, чтобы не занимать место.
+    Файл остаётся, если он нужен где-то ещё (то же фото уже есть у товара, в другой загрузке, у модели или оформления)."""
     with db.session() as s:
         sess = s.get(ImportSession, int(session_id))
         if not sess:
             raise LookupError("сессия импорта не найдена")
         if sess.status in ("analyzing", "applying"):
             raise ValueError("сессия импорта сейчас занята — дождитесь окончания анализа")
-        if sess.status != "done":
-            sess.status = "cancelled"
+        if sess.status == "done":
+            return {"deleted": 0, "freed": 0}
+        files = s.scalars(select(ImportFile).where(ImportFile.session_id == sess.id)).all()
+        asset_ids = {f.asset_id for f in files}
+        for f in files:
+            s.delete(f)
+        sess.status, sess.groups, sess.result = "cancelled", [], {}
+        s.flush()
+        keys, freed, deleted = set(), 0, 0
+        for a in s.scalars(select(Asset).where(Asset.id.in_(asset_ids or {None}))).all():
+            if _asset_used(s, a.id):
+                continue
+            keys.add(a.storage_key)
+            freed += a.bytes or 0
+            deleted += 1
+            s.delete(a)
+        s.flush()
+        # одинаковые файлы хранятся один раз — удаляем файл, только если на него не ссылается ни одна запись
+        still = set(s.scalars(select(Asset.storage_key).where(Asset.storage_key.in_(keys or {""}))).all())
+        project_id = sess.project_id
+    removed = 0
+    for k in keys - still:
+        try:
+            storage.remove(k)
+            removed += 1
+        except Exception as e:          # файл не удалился — место освободится при следующей уборке, загрузка всё равно отменена
+            log.warning("[импорт %s] файл %s не удалён: %s", session_id, k, e)
+    log.info("[импорт %s] загрузка отменена: удалено фото %d (файлов %d, %.1f МБ)", session_id, deleted, removed, freed / 1e6)
+    say("info", f"🗑 Загрузка отменена: удалено фото {deleted}", project_id)
+    from .projects import _storage_cache
+    _storage_cache.clear()
+    return {"deleted": deleted, "freed": freed}
+
+
+def _asset_used(s, asset_id):
+    """На файл ссылается что-то кроме отменённой загрузки."""
+    for col in (ProductPhoto.asset_id, PersonaPhoto.asset_id, StyleRefPhoto.asset_id, Generation.output_asset_id,
+                ImportFile.asset_id):
+        if s.scalar(select(func.count()).select_from(col.class_).where(col == asset_id)):
+            return True
+    return False
 
 
 def apply_request(session_id, groups, label_mode, auto_profile):
