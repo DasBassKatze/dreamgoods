@@ -14,8 +14,8 @@ from ..core import storage
 from ..core.events import say
 from ..core.logs import Trace, log
 from ..core.settings import effective
-from ..db.models import (Asset, Generation, ImportFile, ImportSession, Organization, PersonaPhoto, Product, ProductPhoto,
-                         Project, StyleRefPhoto)
+from ..db.models import (Asset, Generation, ImportFile, ImportSession, Job, Organization, PersonaPhoto, Product,
+                         ProductPhoto, Project, StyleRefPhoto)
 from ..workers.queue import enqueue, set_note
 from . import import_ai as AI
 from . import import_rules as R
@@ -646,11 +646,29 @@ def get_session(session_id, project_id=None):
         return sess.status, sess.project_id
 
 
+STALE_ERROR = "анализ прерван (сервер перезапускался) — нажмите «Анализировать» ещё раз, загруженные фото на месте"
+
+
+def _unstick(s, sess):
+    """«Анализ идёт», а задания анализа уже нет (сервер перезапустили посреди анализа) — сессия снова доступна:
+    статус «ошибка», можно запустить анализ заново или начать загрузку с начала."""
+    if sess.status != "analyzing":
+        return False
+    jobs = s.scalars(select(Job).where(Job.kind == "import", Job.project_id == sess.project_id,
+                                       Job.status.in_(("queued", "running", "cancelling")))).all()
+    if any(int((j.payload or {}).get("session") or 0) == sess.id for j in jobs):
+        return False
+    sess.status, sess.error = "error", STALE_ERROR
+    log.warning("[импорт %s] анализ без задания (прерван перезапуском) — сессия разблокирована", sess.id)
+    return True
+
+
 def view(session_id):
     with db.session() as s:
         sess = s.get(ImportSession, int(session_id))
         if not sess:
             raise LookupError("сессия импорта не найдена")
+        _unstick(s, sess)
         count = s.scalar(select(func.count(ImportFile.id)).where(ImportFile.session_id == sess.id))
         return {"id": sess.id, "project_id": sess.project_id, "status": sess.status, "progress": sess.progress,
                 "error": sess.error, "photos": (sess.result or {}).get("photos", []), "groups": sess.groups or [],
@@ -670,6 +688,7 @@ def analyze_request(session_id, group_mode, label_mode, rules=None):
         sess = s.get(ImportSession, int(session_id))
         if not sess:
             raise LookupError("сессия импорта не найдена")
+        _unstick(s, sess)
         if sess.status == "analyzing":
             raise ValueError("анализ уже идёт")
         if not s.scalar(select(func.count(ImportFile.id)).where(ImportFile.session_id == sess.id)):
@@ -684,6 +703,7 @@ def cancel(session_id):
         sess = s.get(ImportSession, int(session_id))
         if not sess:
             raise LookupError("сессия импорта не найдена")
+        _unstick(s, sess)
         if sess.status in ("analyzing", "applying"):
             raise ValueError("сессия импорта сейчас занята — дождитесь окончания анализа")
         if sess.status == "done":

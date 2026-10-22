@@ -107,6 +107,12 @@ def recover(quiet=False):
         dead = [j for j in s.scalars(select(Job).where(Job.status.in_(("running", "cancelling")))).all()
                 if (j.worker or "").split("/")[0] not in alive]
         for j in dead:
+            if j.kind == "import":          # анализ загрузки: сессия снова доступна — его можно запустить ещё раз
+                from ..db.models import ImportSession
+                from ..services.importer import STALE_ERROR
+                sess = s.get(ImportSession, int((j.payload or {}).get("session") or 0))
+                if sess is not None and sess.status == "analyzing":
+                    sess.status, sess.error = "error", STALE_ERROR
             j.status, j.finished_at = "error", utcnow()
             j.error = ("прервано: сервер, выполнявший задание, остановился; повтор не делался, чтобы не заплатить "
                        "дважды. Если Polza успела принять задачу — результат дозагрузится автоматически")
