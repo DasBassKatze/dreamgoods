@@ -3,6 +3,10 @@
 data/
 logs/
 exports/
+data-dev-gpt/
+logs-dev-gpt/
+exports-dev-gpt/
+backups-dev-gpt/
 *.log
 
 # Python

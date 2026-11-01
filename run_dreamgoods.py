@@ -96,7 +96,7 @@ def main():
     src = None
     if "--import-legacy" in sys.argv:
         src = sys.argv[sys.argv.index("--import-legacy") + 1]
-    else:
+    elif config.app_env("DISABLE_LEGACY_IMPORT", "").strip().lower() not in ("1", "true", "yes", "on"):
         with db.session() as s:
             empty = not s.scalar(select(func.count(Product.id)))
             done = (s.scalars(select(Organization).order_by(Organization.id)).first().settings or {}).get("legacy_imported")
@@ -134,3 +134,4 @@ def main():
 if __name__ == "__main__":
     _limit_malloc_arenas()
     main()
+
