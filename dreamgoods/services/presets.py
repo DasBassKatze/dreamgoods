@@ -9,9 +9,9 @@ from .. import db
 from ..core import presets as P
 from ..core.events import say
 from ..core.logs import log
-from ..db.models import GenerationPreset, Product, ProductProfile, Project
+from ..db.models import GenerationPreset, Job, Product, ProductPhoto, ProductProfile, Project
 from ..workers.queue import enqueue
-from .common import org_of_project, rebuild_frames
+from .common import LIVE, context, org_of_project, rebuild_frames
 
 
 def seed(org_id):
@@ -43,7 +43,8 @@ def _view(p, default_id, used):
     return {"id": p.id, "name": p.name, "shared": p.client_id is None, "description": p.description, "quality": p.quality, "custom": p.custom or {},
             "plan": P.clean_plan(p.plan), "total": P.preset_total(p), "is_default": p.id == default_id,
             "plan_mode": p.plan_mode or "auto", "manual": P.clean_manual(p.manual), "block_models": P.clean_block_models(p.block_models),
-            "products": used.get(p.id, 0), "market": P.clean_market(p.market), "strictness": p.strictness or "normal"}
+            "products": used.get(p.id, 0), "market": P.clean_market(p.market), "strictness": p.strictness or "normal",
+            "brief": p.brief or ""}
 
 
 def listing(project_id):
@@ -78,7 +79,7 @@ def listing(project_id):
                 "no_subcategory": no_sub,
                 "markets": [{"key": k, **{x: v[x] for x in ("name", "aspect", "min_side", "hint", "cover_bg", "cover_fill", "cover_extra")}}
                             for k, v in P.MARKETS.items()],
-                "aspects": list(P.ASPECTS),
+                "aspects": list(P.ASPECTS), "aspect_names": P.ASPECT_NAMES,
                 "strictness": [{"key": k, **v} for k, v in P.STRICTNESS.items()],
                 "model_stats": model_stats(s, org.id)}
 
@@ -108,27 +109,43 @@ def model_stats(s, org_id):
 
 
 def save(project_id, preset_id, data, master=False):
-    """Создать (preset_id=None) или изменить пресет. Пресет пользователя — свой у его клиента;
-    мастер создаёт общие пресеты (видны всем)."""
+    """Создать (preset_id=None) или изменить пресет. Пресет хранится в кабинете проекта (данные пользователя отдельно
+    от данных сервиса). Пресетом студии — общим для всех кабинетов и видимым на сайте — его делает только мастер,
+    явной отметкой shared=True."""
     quality = data.get("quality") if data.get("quality") in P.QUALITY else "standard"
     with db.session() as s:
+        if not master:                       # свой пресет клиента — в пределах тарифа
+            from .plans import check_preset, client_of_project
+            check_preset(s, client_of_project(s, project_id), data, new=not preset_id)
+        own = s.get(Project, project_id).client_id
         if preset_id:
             p = _get(s, project_id, preset_id, edit=True, master=master)
+            if master and data.get("shared") is not None and (data["shared"] is True) != (p.client_id is None):
+                if data["shared"]:
+                    p.client_id = None
+                else:                        # пресет студии → в кабинет; нельзя, если им снимают другие кабинеты
+                    other = s.scalar(select(func.count(Product.id)).join(Project, Project.id == Product.project_id)
+                                     .where(Product.preset_id == p.id, Project.client_id != own))
+                    if other:
+                        raise ValueError(f"этим пресетом снимают товары других кабинетов ({other}) — сначала смените им "
+                                         "пресет или оставьте его пресетом студии")
+                    p.client_id = own
         else:
-            shared = master and data.get("shared", True) is not False
             p = GenerationPreset(org_id=org_of_project(s, project_id).id,
-                                 client_id=None if shared else s.get(Project, project_id).client_id)
+                                 client_id=None if (master and data.get("shared") is True) else own)
             s.add(p)
         p.name = (str(data.get("name") or "").strip() or "Новый пресет")[:120]
         p.description = str(data.get("description") or "").strip()
         p.quality = quality
-        p.custom = P.clean_custom(data.get("custom")) if quality == "custom" else {}
+        # основная модель пресета задаётся на любом уровне качества; остальные свои значения — только у «Своего»
+        p.custom = P.clean_custom(data.get("custom")) if quality == "custom" else P.clean_main_model(data.get("custom"))
         p.plan = P.clean_plan(data.get("plan"))
         p.plan_mode = "manual" if data.get("plan_mode") == "manual" else "auto"
         p.manual = P.clean_manual(data.get("manual"))
         p.block_models = P.clean_block_models(data.get("block_models"))
         p.market = P.clean_market(data.get("market"))
         p.strictness = data.get("strictness") if data.get("strictness") in P.STRICTNESS else "normal"
+        p.brief = str(data.get("brief") or "").strip()[:1500]
         cover = p.market.get("cover") and p.market["key"] != "none"
         if cover and p.plan_mode == "manual" and p.manual and p.manual[0]["block"] != "studio":
             raise ValueError("для обложки площадки первым методом съёмки должен идти тип «товар» — он станет обложкой")
@@ -193,6 +210,12 @@ def apply(project_id, preset_id, product_ids=None, categories=None, everything=F
     """Назначает пресет товарам и пересобирает их кадры. dry_run — только посчитать, что произойдёт."""
     with db.session() as s:
         preset = _get(s, project_id, preset_id) if preset_id else None
+        from .plans import check_flag, check_quality, client_of_project
+        client = client_of_project(s, project_id)
+        if categories:
+            check_flag(s, client, "category_apply", "применение пресета по категориям")
+        if preset is not None and not dry_run:
+            check_quality(s, client, preset.quality)
         manual = preset is not None and preset.plan_mode == "manual"
         plan = (P.manual_plan(P.clean_manual(preset.manual)) if manual else P.clean_plan(preset.plan)) if preset else None
         targets = _targets(s, project_id, product_ids, categories, everything)
@@ -221,12 +244,61 @@ def apply(project_id, preset_id, product_ids=None, categories=None, everything=F
             for p in need_ai:
                 if enqueue(s, "profile", project_id, product_id=p.id, payload={"build": True}, priority=20):
                     queued += 1
-        name = preset.name if preset else "без пресета"
+        name = preset.name if preset else ""
     summary.update(rebuilt=rebuilt, queued=queued)
-    say("ok", f"🎛 Пресет «{name}» назначен товарам: {len(targets)}"
+    say("ok", (f"🎛 Пресет «{name}» назначен товарам: {len(targets)}" if name
+               else f"🎛 Товары снова на пресете проекта: {len(targets)}")
         + (f"; промпты пересобраны сразу: {rebuilt}" if rebuilt else "")
         + (f"; ИИ составляет профиль заново: {queued}" if queued else ""), project_id)
     return summary
+
+
+def sync_for_generation(project_id, product_ids=None, dry_run=False, limit=0):
+    """Перед генерацией кадры товаров приводятся к действующему пресету (свой у товара или пресет проекта).
+    Изменившиеся кадры пересобираются (готовая картинка уходит в историю); если в профиле не хватает
+    кадров нужного вида — ИИ составляет профиль заново, а генерация начнётся сама, когда промпты будут готовы.
+    dry_run — посчитать то же самое и откатить: сколько кадров встанет в очередь, сколько переснимется."""
+    from .common import frames_differ, plan_rows
+    from .frames import missing_frames
+    out = {"products": 0, "frames": 0, "reshoot": 0, "need_profile": 0, "queued_profiles": 0, "count": 0}
+    with db.session() as s:
+        q = select(Product).where(Product.project_id == project_id)
+        if product_ids:
+            q = q.where(Product.id.in_(product_ids))
+        for p in s.scalars(q).all():
+            if s.scalar(select(Job.id).where(Job.product_id == p.id, Job.kind == "profile", Job.status.in_(LIVE))):
+                continue                      # профиль уже составляется — генерация начнётся после него
+            st = context(s, p)[2]
+            prof = s.get(ProductProfile, p.current_profile_id).data if p.current_profile_id else None
+            manual = st.get("plan_mode") == "manual"
+            if not prof or (not manual and _needs_profile(prof, P.plan_of(st))):
+                if not s.scalar(select(ProductPhoto.id).where(ProductPhoto.product_id == p.id,
+                                                              ProductPhoto.is_reference.is_(True)).limit(1)):
+                    continue                  # без фото профиль не составить — товар просто пропускаем
+                out["need_profile"] += 1
+                if not dry_run and enqueue(s, "profile", project_id, product_id=p.id,
+                                           payload={"build": True, "generate": True}, priority=20):
+                    out["queued_profiles"] += 1
+                continue
+            changed, redo = frames_differ(s, p, plan_rows(s, p, prof))
+            if not changed:
+                continue
+            out["products"] += 1
+            out["frames"] += changed
+            out["reshoot"] += redo
+            rebuild_frames(s, p, prof, keep_edited=True)
+            if not dry_run:
+                log.info("[%s] кадры приведены к пресету перед генерацией: изменено %d, переснимутся %d", p.sku, changed, redo)
+        s.flush()
+        out["count"] = len(missing_frames(project_id, product_ids, limit, s))
+        if dry_run:
+            s.rollback()
+    if not dry_run and (out["products"] or out["queued_profiles"]):
+        say("info", "🎛 Кадры приведены к пресету: " + ", ".join(x for x in [
+            f"товаров {out['products']}" if out["products"] else "",
+            f"переснимется готовых кадров {out['reshoot']}" if out["reshoot"] else "",
+            f"ИИ составит профиль для {out['queued_profiles']}" if out["queued_profiles"] else ""] if x), project_id)
+    return out
 
 
 def _fallback_plan(s, project_id):

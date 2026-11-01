@@ -56,16 +56,28 @@ def overview(project_id):
         weak = any(auth.check_password("admin", h) for h in s.scalars(select(User.password_hash)
                                                                        .where(User.role == "master", User.active.is_(True))).all())
         stats = model_stats(s, org.id)
+        running_jobs = s.scalar(select(func.count(Job.id)).where(Job.status.in_(("running", "cancelling"))))
+        queued_jobs = s.scalar(select(func.count(Job.id)).where(Job.status == "queued"))
     b = polza.balance(st.get("api_key"))
     return {"balance": b["value"], "balance_error": b["error"],
             "spent": {"session": round(session, 2), "project": round(spent_all, 2), "org": round(org_all, 2)},
             "by_kind": by_kind, "by_model": by_model, "by_day": by_day,
             "generations": {"count": gens[0], "avg_cost": round(float(gens[1]), 2), "avg_seconds": round(float(gens[2]))},
             "model_stats": stats, "pending": pending or 0, "errors_24h": errors_24h or 0, "metrics": met,
-            "queue": {"parallel": queue.parallel(), "max": queue.MAX_WORKERS},
+            "queue": {"parallel": queue.parallel(), "max": queue.MAX_WORKERS, "waiting_polza": polza.poller().inflight(),
+                      "running": running_jobs, "queued": queued_jobs, "limits": _limits(st.get("api_key"))},
             "model": {"model": st.get("model"), "providers": st.get("providers"), "resolution": st.get("resolution"),
                       "aspect": st.get("aspect"), "qc_model": st.get("qc_model")},
             "default_password": weak}
+
+
+def _limits(key):
+    """Текущая скорость к Polza по ключу проекта: отправка задач и опрос статусов."""
+    from ..ai import throttle
+    mine = throttle.stats().get((key or "")[-12:], {})
+    sub, poll = mine.get("submit") or {}, mine.get("poll") or {}
+    return {"submit_rate": sub.get("rate"), "submitted": sub.get("sent", 0), "throttled_hour": sub.get("throttled_hour", 0),
+            "poll_rate": poll.get("rate")}
 
 
 def log_tail(lines=300, level=""):

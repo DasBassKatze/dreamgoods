@@ -1,11 +1,9 @@
-name: Dev-GPT validation
+name: Dev-GPT checks
 on:
   push:
-    branches: [Dev-GPT]
+    branches: [Dev-GPT, dev-gpt]
   pull_request:
-    branches: [main]
-permissions:
-  contents: read
+    branches: [dev-ui, main]
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -13,41 +11,33 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: studio
-          POSTGRES_PASSWORD: studio
           POSTGRES_DB: dreamgoods_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U studio -d dreamgoods_test"
-          --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd 'pg_isready -U postgres'
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      DATABASE_URL: postgresql+psycopg://studio:studio@127.0.0.1:5432/dreamgoods_test
-      TEST_DATABASE_URL: postgresql+psycopg://studio:studio@127.0.0.1:5432/dreamgoods_test
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dreamgoods_test
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dreamgoods_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: pip
+          python-version: '3.12'
       - run: pip install -r requirements-dev.txt
-      - run: python -m compileall -q dreamgoods scripts migrations
-      - run: python -m alembic upgrade head
-      - run: pip install pgserver==0.1.4
-      - name: Locate bundled PostgreSQL 16 client tools
-        run: python -c "import importlib.util,pathlib; print('DREAMGOODS_PG_BIN=' + str(pathlib.Path(importlib.util.find_spec('pgserver').origin).parent / 'pginstall' / 'bin'))" >> "$GITHUB_ENV"
+      - run: python -m compileall -q dreamgoods migrations tests
       - run: python -m pytest -q
-      - run: python -m alembic downgrade 0012 && python -m alembic upgrade head
   frontend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+        working-directory: frontend
       - run: npm run build
+        working-directory: frontend
+      - run: git diff --exit-code -- dreamgoods/web

@@ -87,7 +87,7 @@ def _generate(st, prompt, refs, trace):
         raise RuntimeError("в ответе Polza нет картинки")
     usage = data.get("usage") or {}
     cost = polza._num(usage.get("cost_rub")) or polza._num(usage.get("cost")) or 0.0
-    trace.add("persona", st["model"], cost, provider=data.get("provider", ""), operation_id=data.get("_billing_operation"))
+    trace.add("persona", st["model"], cost, provider=data.get("provider", ""))
     return img, cost
 
 
@@ -121,15 +121,20 @@ def _candidates(job_id, pid, org_id, project_id, st, trace, count):
     with db.session() as s:
         p = s.get(Persona, pid)
         brief = p.brief or p.description or "молодая женщина, естественная внешность"
-    set_note(job_id, "ИИ продумывает образы")
-    specs, _ = P.specs_from_brief(st, brief, count, trace)
+        ref_assets = [x.asset for x in _photos(s, pid, ("ref",))]
+    refs_raw = [storage.get(a) for a in ref_assets]
+    set_note(job_id, "ИИ продумывает образы" + (f" по референсам ({len(refs_raw)})" if refs_raw else ""))
+    specs, _ = P.specs_from_brief(st, brief, count, trace, refs_raw)
     with db.session() as s:
         p = s.get(Persona, pid)
         if specs[0]["name_ru"] and p.name.startswith("Новая модель"):
             p.name = specs[0]["name_ru"]
         name = p.name
         write_usage(s, org_id, project_id, None, None, trace, f"persona:{pid}")
-    made, total = _variants(job_id, pid, org_id, project_id, st, trace, specs, P.candidate_prompt, [], "вариант")
+    side = int(st.get("ref_side") or 1536)
+    refs = [ref_payload(x, side) for x in refs_raw]
+    made, total = _variants(job_id, pid, org_id, project_id, st, trace, specs,
+                            lambda spec: P.candidate_prompt(spec, len(refs)), refs, "вариант")
     say("ok", f"👤 Модель «{name}»: готово вариантов образа {made} · {total:.2f} ₽ — выберите один", project_id)
 
 
@@ -181,4 +186,3 @@ def _sheet(job_id, pid, org_id, project_id, st, trace, views):
         total += cost
         made += 1
     say("ok", f"👤 Модель «{name}»: готово ракурсов {made} · {total:.2f} ₽", project_id)
-

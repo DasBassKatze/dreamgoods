@@ -101,7 +101,7 @@ export function PresetApply({ listing, preset, onBack, onDone, onRefresh }: {
               {listing.no_subcategory > 0 && (
                 <div className="row">
                   <span className="hint">У {listing.no_subcategory} товаров нет подраздела (профиль составлен раньше).</span>
-                  <button disabled={detecting} onClick={detect}>{detecting ? "Определяю…" : "🗂 Определить подразделы ИИ"}</button>
+                  <button disabled={detecting} onClick={detect}>{detecting ? "Определяю…" : "Определить подразделы ИИ"}</button>
                   <span className="hint">один текстовый запрос, копейки</span>
                 </div>
               )}

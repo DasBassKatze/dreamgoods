@@ -5,35 +5,7 @@ import io
 import re
 
 from PIL import Image, ImageFilter, ImageOps, ImageStat
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from typing import Literal
-
-
-class Defect(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    text: str = Field(min_length=1, strict=True)
-    category: Literal["identity", "quantity", "anatomy", "text", "composition", "technical"]
-    severity: Literal["critical", "major", "minor"]
-
-
-class QCResponse(BaseModel):
-    defects: list[Defect | str]
-
-
-def validated_defects(res):
-    try:
-        data = QCResponse.model_validate(res, strict=True)
-    except ValidationError as e:
-        raise ValueError("ИИ-проверка не состоялась: неверная структура ответа") from e
-    out = []
-    for d in data.defects:
-        if isinstance(d, str):
-            if not d.strip():
-                raise ValueError("ИИ-проверка не состоялась: пустое описание дефекта")
-            d = Defect(text=d.strip(), category="identity", severity="major")
-        out.append(d.model_dump())
-    return out
-
+from sqlalchemy.exc import IntegrityError
 
 from .. import db
 from ..core.logs import log, mb
@@ -53,6 +25,12 @@ def _aspect_value(a):
 
 def tech_check(img, st, tag=""):
     """Слой 1: быстрые проверки кодом. Возвращает (список проблем, сведения)."""
+    from .images import DECODE_SLOTS
+    with DECODE_SLOTS:
+        return _tech_check(img, st, tag)
+
+
+def _tech_check(img, st, tag=""):
     issues = []
     with Image.open(io.BytesIO(img)) as im:
         w, h = im.size
@@ -72,6 +50,8 @@ def tech_check(img, st, tag=""):
     return issues, {"w": w, "h": h, "sharp": round(sharp, 1)}
 
 
+from ..core.moderation import PROHIBITED_FIELD, PROHIBITED_RULE
+
 QC_SYSTEM = """You are a quality-control inspector for marketplace product photos of ANY product category.
 Compare the GENERATED image with the REFERENCE photos of the real product and the TASK given to the image generator.
 
@@ -83,6 +63,7 @@ List ONLY defects that make the photo unusable for a product card. Check, in thi
    visible hand; no extra, merged, disconnected or floating limbs; the product is worn or held naturally.
 4. Text and logos: not distorted, not invented, no garbled letters.
 5. Task: shot type, background and framing as in the TASK; no watermarks, captions, collages or grids; no obvious generation artifacts.
+6. Prohibited content — see the rule below; it is always a defect.
 
 MISSING DETAILS — the most common false alarm, follow strictly:
 - The references show the product from several sides; the generated image shows only ONE side. Details that are on the other side
@@ -99,11 +80,11 @@ Do NOT report:
 - price stickers, tags and labels visible in the references;
 - background, scene, person and pose choices allowed by the TASK.
 
+""" + PROHIBITED_RULE + """
+
 Reply with ONLY this JSON, nothing else:
-{"defects": [{"text":"короткая причина брака по-русски", "category":"identity", "severity":"major"}]}
-category: identity | quantity | anatomy | text | composition | technical.
-severity: critical (different/broken product), major (unusable photo), minor (small deviation).
-An empty list means the photo is good."""
+{"defects": ["короткая причина брака по-русски", "..."], """ + PROHIBITED_FIELD + """}
+An empty defects list and an empty prohibited string mean the photo is good."""
 
 STRICTNESS_RULES = {
     "strict": """
@@ -145,12 +126,13 @@ def vlm_check(st, task, refs, img, trace):
         desc = f"Reference {n}" + (f" — view: {r['view']}" if r.get("view") else "") \
             + (f"; visible here: {r['note']}" if r.get("note") else "") + (f". {labels[r['tag']]}" if r.get("tag") else "") + ":"
         content.append({"type": "text", "text": desc})
-        content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(r["data"], 768)}})
+        content.append({"type": "image_url", "image_url": {"url": r.get("url") or jpeg_data_url(r["data"], 768)}})
     shot = (f"\n\nThe generated image is a {view.upper()} shot of the product. Judge only the side of the product that faces "
             f"the camera; details that exist only on other sides are hidden in this shot and are not defects.") if view else ""
     content.append({"type": "text", "text": "TASK given to the image generator:\n" + task + shot + "\n\nGENERATED IMAGE to inspect:"})
     # кадр целиком в высоком разрешении: нарезка на части разрезала товар, и модель «не находила» детали на краях кусков
-    content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}})
+    content.append({"type": "image_url", "image_url": {"url": img if isinstance(img, str) else
+                                                       jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}})
     size = sum(len(c["image_url"]["url"]) for c in content if c["type"] == "image_url")
     log.info("%s → сверка: %s · строгость: %s · ракурс кадра: %s · референсы: %s · запрос %s", tag, st.get("qc_model"),
              {"strict": "строго", "critical": "только критичное"}.get(st.get("qc_strictness"), "обычно"),
@@ -158,10 +140,28 @@ def vlm_check(st, task, refs, img, trace):
              ", ".join(f"{VIEW_RU.get(r.get('view'), r.get('view') or '?')}{'*' if r.get('tag') == 'same' else ''}" for r in chosen),
              mb(size))
     res, cost, secs = chat(st, st.get("qc_model"), qc_system(st), content, trace, "сверка", 1500, st.get("qc_reasoning"))
-    defects = validated_defects(res)
-    reasons = [d["text"] for d in defects]
+    reasons = []
+    if not isinstance(res, dict) or not isinstance(res.get("defects"), list):
+        raise ValueError("ИИ-проверка вернула неверный ответ: нужен список defects")
+    raw = res["defects"]
+    for item in raw:
+        if not isinstance(item, (str, dict)) or (isinstance(item, dict) and not isinstance(item.get("text", item.get("reason")), str)):
+            raise ValueError("ИИ-проверка вернула неверное описание дефекта")
+    if "prohibited" in res and not isinstance(res["prohibited"], str):
+        raise ValueError("ИИ-проверка вернула неверное поле prohibited")
+    if isinstance(raw, str):        # модель вернула строку вместо списка
+        raw = [x for x in re.split(r";\s*|\n+", raw) if x.strip()]
+    for x in raw if isinstance(raw, list) else []:
+        t = (x.get("text") or x.get("reason") or "") if isinstance(x, dict) else str(x)
+        if t.strip():
+            reasons.append(t.strip())
+    prohibited = str(res.get("prohibited") or "").strip()
+    if prohibited.lower() in ("none", "нет", "-", "—", "no", "null"):
+        prohibited = ""
+    if prohibited:
+        reasons.insert(0, f"запрещённое содержание: {prohibited}")
     log.info("%s сверка: %s", tag, ("БРАК — " + "; ".join(reasons)) if reasons else "без замечаний")
-    return {"reasons": reasons, "cost": cost, "defects": defects}
+    return {"reasons": reasons, "cost": cost, "prohibited": prohibited}
 
 
 SPEC_PROMPT = """You read a task for an AI image generator (a product photo for a marketplace, any category) and write down
@@ -207,8 +207,12 @@ def task_spec(st, task, trace):
             return hit.data, 0.0
     tag = str(trace)
     res, cost, secs = chat(st, model, SPEC_PROMPT, "TASK:\n" + task, trace, "ожидания", 800, "none")
-    if not isinstance(res, dict) or not {"people", "entities", "forbidden"}.issubset(res) or not isinstance(res["entities"], list) or not isinstance(res["forbidden"], list):
-        raise ValueError("ИИ-проверка не состоялась: неверная структура ожиданий")
+    if not isinstance(res, dict) or not all(k in res for k in ("people", "entities", "forbidden")):
+        raise ValueError("ИИ вернул неполное описание ожидаемых объектов")
+    if not isinstance(res["entities"], list) or not isinstance(res["forbidden"], list):
+        raise ValueError("ИИ вернул неверные списки ожидаемых объектов")
+    if res["people"] is not None and (type(res["people"]) is not int or res["people"] < 0):
+        raise ValueError("ИИ вернул неверное число людей")
     people = _int(res.get("people"))
     ents = []
     for e in res.get("entities") or []:
@@ -226,8 +230,13 @@ def task_spec(st, task, trace):
              "?" if people is None else people, ", ".join(f"{e['name']} ×{e['expected']}" for e in spec["entities"]) or "—",
              f" · запрещено: {', '.join(spec['forbidden'])}" if spec["forbidden"] else "")
     with db.session() as s:
-        if not s.get(SpecCache, h):
-            s.add(SpecCache(hash=h, data=spec))
+        try:
+            with s.begin_nested():
+                if not s.get(SpecCache, h):
+                    s.add(SpecCache(hash=h, data=spec))
+                    s.flush()
+        except IntegrityError:
+            pass  # другой воркер успел сохранить те же ожидания
     return spec, cost
 
 
@@ -253,15 +262,24 @@ def count_check(st, task, img, trace):
         "Count the product units visible in the image (entity name: product)."
     # увеличенные четверти нужны, чтобы разглядеть пальцы и ноги; для предметных кадров хватает общего вида
     content = [{"type": "text", "text": ask + "\n\nIMAGE:"},
-               {"type": "image_url", "image_url": {"url": jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}}]
+               {"type": "image_url", "image_url": {"url": img if isinstance(img, str) else
+                                                   jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}}]
     log.info("%s → подсчёт: %s · считаем: людей, части тела%s · %s · рассуждения %s", tag, model,
              (", " + ", ".join(names)) if names else "", "кадр целиком",
              st.get("qc_count_reasoning") or "auto")
     res, c2, secs = chat(st, model, COUNT_PROMPT, content, trace, "подсчёт", 1500, st.get("qc_count_reasoning"))
     cost += c2
+    if not isinstance(res, dict) or not all(isinstance(res.get(k), list) for k in ("people", "entities", "anomalies")):
+        raise ValueError("ИИ-подсчёт вернул неполный ответ")
+    if not isinstance(res.get("problems"), str):
+        raise ValueError("ИИ-подсчёт вернул неверное поле problems")
+    if any(not isinstance(p, dict) or not all(type(p.get(k)) is int and p[k] >= 0 for k in ("heads", "arms", "hands", "legs", "feet")) for p in res["people"]):
+        raise ValueError("ИИ-подсчёт вернул неверные числа частей тела")
+    if any(not isinstance(e, dict) or not isinstance(e.get("name"), str) or type(e.get("count")) is not int or e["count"] < 0 for e in res["entities"]):
+        raise ValueError("ИИ-подсчёт вернул неверное число объектов")
+    if any(not any(_same(e["name"], name) for e in res["entities"]) for name in names):
+        raise ValueError("ИИ-подсчёт пропустил запрошенный объект")
 
-    if not isinstance(res, dict) or not {"people", "entities", "anomalies", "problems"}.issubset(res) or any(not isinstance(res[k], list) for k in ("people", "entities", "anomalies")):
-        raise ValueError("ИИ-проверка не состоялась: неверная структура подсчёта")
     issues = []
     people = [p for p in (res.get("people") or []) if isinstance(p, dict)]
     # 1) число людей по заданию
@@ -315,33 +333,41 @@ def count_check(st, task, img, trace):
                                 for p in people]}}
 
 
+def prepare(img, st, tag=""):
+    """Всё, что нужно проверке от картинки: техпроверка и JPEG для модели. Дальше оригинал (до десятков МБ при 4K)
+    можно не держать в памяти, пока идёт запрос к модели проверки."""
+    issues, info = tech_check(img, st, tag)
+    return {"issues": issues, "info": info, "url": jpeg_data_url(img, int(st.get("qc_image_side") or 2048))}
+
+
 def run_qc(st, task, refs, img, trace):
     """Проверка кадра: технический фильтр → одна сверка (только причины брака) → по желанию отдельный подсчёт.
-    Кадр принят, если причин брака нет."""
+    Кадр принят, если причин брака нет. img — байты картинки или результат prepare()."""
     tag = str(trace)
-    defects = []
-    issues, info = tech_check(img, st, tag)
+    if not isinstance(img, dict):
+        img = prepare(img, st, tag)
+    issues, info = img["issues"], img["info"]
+    img = img["url"]
+    prohibited = ""
     if issues and st.get("qc_cascade", True):
         log.info("%s каскад: техпроверка провалена — модель не вызываю", tag)
         reasons, cost, counts = list(issues), 0.0, None
     else:
         res = vlm_check(st, task, refs, img, trace)
         reasons, cost, counts = issues + res["reasons"], res["cost"], None
-        defects = res["defects"]
+        prohibited = res.get("prohibited") or ""
         if st.get("qc_count") and not (reasons and st.get("qc_cascade", True)):
             c = count_check(st, task, img, trace)
             cost += c["cost"]
             counts = c["counts"]
             reasons += c["issues"]
     ok = not reasons
-    weight = sum({"critical": 100, "major": 10, "minor": 1}[d["severity"]] for d in defects) + 100 * len(issues)
-    info["defects"] = defects
-    info["weighted_penalty"] = weight
-    score = round(1 / (1 + weight + max(0, len(reasons) - len(defects) - len(issues)) * 100), 5)      # для выбора лучшей из неудачных попыток: меньше причин — лучше
+    score = round(1 / (1 + len(reasons)), 2)      # для выбора лучшей из неудачных попыток: меньше причин — лучше
     log.info("%s итог проверки: %s%s · %.2f ₽", tag, "ПРИНЯТ" if ok else "БРАК",
              "" if ok else " — " + "; ".join(reasons), cost)
     return {"pass": ok, "scores": {}, "min": score, "defects": "; ".join(reasons), "fix": "; ".join(reasons),
-            "tech": issues, "info": info, "cost": cost, "qc_model": st.get("qc_model"), "counts": counts}
+            "tech": issues, "info": info, "cost": cost, "qc_model": st.get("qc_model"), "counts": counts,
+            "prohibited": prohibited}
 
 
 def correction(prompt, fix):

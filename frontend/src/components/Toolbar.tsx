@@ -1,18 +1,17 @@
 import { useActions } from "../hooks/useActions";
 import { useProject } from "../ProjectContext";
 import { useUI } from "./ui";
+import { Icon } from "../layout/Icon";
 
 export type Filter = "all" | "todo" | "review" | "err";
 
 /** Статус проекта + поиск + фильтры. */
-export function Toolbar({ filter, onFilter, query, onQuery }: {
-  filter: Filter; onFilter: (f: Filter) => void; query: string; onQuery: (q: string) => void;
-}) {
+export function Toolbar({ filter, onFilter }: { filter: Filter; onFilter: (f: Filter) => void }) {
   const { state } = useProject();
   const { totals: t, runner: r } = state;
-  const todo = state.pagination.todo_products;
+  const todo = state.products.filter((p) => p.done < p.total).length;
   const FILTERS: [Filter, string, number | null][] = [
-    ["all", "Все", state.pagination.catalog_total],
+    ["all", "Все", state.products.length],
     ["todo", "Недоделанные", todo],
     ["review", "На проверке", t.review],
     ["err", "С ошибками", r.errors],
@@ -24,7 +23,6 @@ export function Toolbar({ filter, onFilter, query, onQuery }: {
         <div className="progress"><i style={{ width: `${t.total ? (t.done / t.total) * 100 : 0}%` }} /></div>
       </div>
       <span className="spacer" />
-      <input className="search" type="search" placeholder="🔎 Артикул или название…" value={query} onChange={(e) => onQuery(e.target.value)} />
       <span className="seg">
         {FILTERS.map(([k, name, n]) => (
           <button key={k} className={`${filter === k ? "on" : ""} ${k === "err" && n ? "has-err" : ""}`} onClick={() => onFilter(k)}>
@@ -38,7 +36,7 @@ export function Toolbar({ filter, onFilter, query, onQuery }: {
 
 /** Строка над списком: выбор товаров и групповые действия. */
 export function ListBar() {
-  const { state, api, reload, run, selected, setSelected, limit, setLimit } = useProject();
+  const { state, api, reload, run, selected, setSelected, pickedFrames, setPicked } = useProject();
   const { checkReady, profiles } = useActions();
   const ui = useUI();
   const s = state.settings;
@@ -53,7 +51,7 @@ export function ListBar() {
     });
 
   const newProfiles = async () => {
-    const n = state.pagination.no_prompts;
+    const n = state.products.filter((p) => !p.total).length;
     if (!n) {
       ui.toast("У всех товаров уже есть промпты");
       return;
@@ -67,16 +65,18 @@ export function ListBar() {
     <div className="listbar">
       <label className="check">
         <input type="checkbox" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? allIds : [])} />
-        {selected.size ? <>выбрано <b>{selected.size}</b></> : "выбрать страницу"}
+        {selected.size ? <>выбрано <b>{selected.size}</b></> : "выбрать все"}
       </label>
       {selected.size > 0 && <button className="link" onClick={() => setSelected([])}>снять выбор</button>}
-      <label className="check" title="Сколько кадров максимум поставить за один запуск; 0 — все">
-        лимит <input type="number" min={0} value={limit} style={{ width: 60 }}
-          onChange={(e) => setLimit(Math.max(0, +e.target.value || 0))} />
-      </label>
+      {pickedFrames.size > 0 && (
+        <span className="hint" title="Выделенные кадры можно скачать отдельно: «Скачать ZIP» → «Выделенные кадры»">
+          кадров выделено <b>{pickedFrames.size}</b>{" "}
+          <button className="link" onClick={() => setPicked([])}>снять</button>
+        </span>
+      )}
       <span className="spacer" />
-      <button title="Прогнать ИИ-проверку по уже сгенерированным кадрам без новой генерации" onClick={checkReady}>🔍 Проверить готовые</button>
-      <button title="Для товаров без промптов: ИИ составит профиль товара по фото и промпты кадров" onClick={newProfiles}>✨ Промпты для новых</button>
+      <button title="Прогнать ИИ-проверку по уже сгенерированным кадрам без новой генерации" onClick={checkReady}><Icon name="search" size={15} /> Проверить готовые</button>
+      <button title="Для товаров без промптов: ИИ составит профиль товара по фото и промпты кадров" onClick={newProfiles}><Icon name="spark" size={15} /> Промпты для новых</button>
       <span className="toggles">
         <label className="switch" title="Проверять каждый кадр ИИ">
           <input type="checkbox" checked={s.qc_enabled}
@@ -93,4 +93,3 @@ export function ListBar() {
     </div>
   );
 }
-

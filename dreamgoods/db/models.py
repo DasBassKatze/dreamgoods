@@ -66,6 +66,8 @@ class User(TS, Base):
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # почта подтверждена (регистрация на сайте); у учётных записей, заведённых мастером, — время создания
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Session(Base):
@@ -78,18 +80,81 @@ class Session(Base):
     agent: Mapped[str] = mapped_column(String(300), default="")
 
 
+class EmailToken(Base):
+    """Одноразовые ссылки из писем: подтверждение почты (verify). В базе — только sha256 токена."""
+    __tablename__ = "email_tokens"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="verify")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LegalDocument(TS, Base):
+    """Юридический документ сервиса (политика, согласия, соглашение) — версии. Текущая — наибольшая version по kind.
+    Новая версия обязательного документа — пользователи принимают её заново при входе."""
+    __tablename__ = "legal_documents"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(30))                    # privacy | pd_consent | terms | cross_border | marketing | persona_photo
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    required: Mapped[bool] = mapped_column(Boolean, default=True)     # без согласия пользоваться сервисом нельзя
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (UniqueConstraint("org_id", "kind", "version"),)
+
+
+class Consent(TS, Base):
+    """Журнал согласий (только добавление): кто, на что, какой версии документа, когда, откуда. Отзыв — новая запись
+    с granted=False. Действующее согласие — последняя запись по (пользователь, kind, ref)."""
+    __tablename__ = "consents"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+    email: Mapped[str] = mapped_column(String(200), default="")      # логин на момент согласия (запись живёт и без учётки)
+    kind: Mapped[str] = mapped_column(String(30))
+    doc_version: Mapped[int] = mapped_column(Integer, default=0)
+    granted: Mapped[bool] = mapped_column(Boolean, default=True)      # False — отзыв
+    source: Mapped[str] = mapped_column(String(20), default="")      # register | login | account | persona | master
+    subject: Mapped[str] = mapped_column(String(300), default="")    # чьё согласие подтверждено (для фото людей — имя модели)
+    ref: Mapped[str] = mapped_column(String(120), default="")        # к чему относится: persona:12
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    agent: Mapped[str] = mapped_column(String(300), default="")
+    __table_args__ = (Index("ix_consents_user_kind", "user_id", "kind"),)
+
+
 class Client(TS, Base):
     __tablename__ = "clients"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(200))
-    parallel_limit: Mapped[int] = mapped_column(Integer, default=2)
     contact: Mapped[str] = mapped_column(String(300), default="")
-    balance_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)   # внутренний баланс клиента, ₽
+    balance_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)   # внутренний баланс клиента, ₽
     billing: Mapped[bool] = mapped_column(Boolean, default=False)     # True — генерации списываются с баланса
-    markup: Mapped[float | None] = mapped_column(Numeric(18, 4, asdecimal=False), nullable=True)  # наценка; None — общая из настроек мастера
+    markup: Mapped[float | None] = mapped_column(Numeric(18, 6, asdecimal=False), nullable=True)  # наценка; None — общая из настроек мастера
     key_id: Mapped[int | None] = mapped_column(ForeignKey("polza_keys.id", ondelete="SET NULL"), nullable=True)
+    plan: Mapped[str] = mapped_column(String(20), default="start")      # тариф (core/plans.py)
+    plan_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # до какого дня действует
     __table_args__ = (UniqueConstraint("org_id", "name"),)
+
+
+class TopupRequest(TS, Base):
+    """Заявка пользователя на пополнение баланса (пока нет онлайн-оплаты: мастер зачисляет вручную после оплаты)."""
+    __tablename__ = "topup_requests"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    amount_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False))
+    bonus_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
+    method: Mapped[str] = mapped_column(String(20), default="card")       # card | sbp | invoice
+    status: Mapped[str] = mapped_column(String(20), default="new")        # new | paid | cancelled
+    note: Mapped[str] = mapped_column(Text, default="")                    # пожелания / реквизиты для счёта
+    plan: Mapped[str] = mapped_column(String(20), default="")              # заявка на тариф: какой
+    months: Mapped[int] = mapped_column(Integer, default=0)                # и на сколько месяцев
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class BalanceEntry(TS, Base):
@@ -100,9 +165,9 @@ class BalanceEntry(TS, Base):
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     kind: Mapped[str] = mapped_column(String(20))                       # topup | charge | adjust
-    amount_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False))
-    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
-    balance_after: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    amount_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False))
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
+    balance_after: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
     what: Mapped[str] = mapped_column(String(200), default="")
     ref: Mapped[str] = mapped_column(String(120), default="")
 
@@ -133,6 +198,7 @@ class GenerationPreset(TS, Base):
     plan_mode: Mapped[str] = mapped_column(String(10), default="auto")     # auto — блоки по профилю | manual — свои методы
     manual: Mapped[list] = mapped_column(JSONT, default=list)              # [{title, prompt, block, count, model}]
     block_models: Mapped[dict] = mapped_column(JSONT, default=dict)        # {studio: модель, …} — модель на блок
+    brief: Mapped[str] = mapped_column(Text, default="", server_default="")  # пожелания к генерации (режим «Авто»), по-русски
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=True)  # None — общий
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -215,7 +281,7 @@ class PersonaPhoto(TS, Base):
     kind: Mapped[str] = mapped_column(String(20), default="photo")   # candidate | main | sheet | photo (загружено)
     view: Mapped[str] = mapped_column(String(40), default="")        # portrait | full front | three-quarter | side
     position: Mapped[int] = mapped_column(Integer, default=0)
-    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
     spec: Mapped[dict] = mapped_column(JSONT, default=dict)          # паспорт образа этого варианта (внешность + стиль + наряд)
     asset: Mapped["Asset"] = relationship()
 
@@ -265,7 +331,7 @@ class ProductProfile(TS, Base):
     data: Mapped[dict] = mapped_column(JSONT, default=dict)
     source: Mapped[str] = mapped_column(String(20), default="ai")      # ai | manual | legacy
     model: Mapped[str] = mapped_column(String(120), default="")
-    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
 
 
 # ───────────── кадры, генерации, проверки, разметка ─────────────
@@ -304,9 +370,8 @@ class Generation(TS, Base):
     error: Mapped[str] = mapped_column(Text, default="")
     output_asset_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"), nullable=True)
     outcome: Mapped[str] = mapped_column(String(20), default="")       # current | rejected | archived
-    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
     seconds: Mapped[float] = mapped_column(Float, default=0.0)
-    billing_operation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     external_id: Mapped[str] = mapped_column(String(120), default="")  # id задачи Polza
     instruction: Mapped[str] = mapped_column(Text, default="")         # правка: что просили изменить на фото
     source_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # правка: исходная версия кадра
@@ -325,7 +390,7 @@ class QCCheck(TS, Base):
     tech: Mapped[list] = mapped_column(JSONT, default=list)
     counts: Mapped[dict | None] = mapped_column(JSONT, nullable=True)
     info: Mapped[dict] = mapped_column(JSONT, default=dict)            # размер, резкость, токены
-    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
     source: Mapped[str] = mapped_column(String(20), default="gen")    # gen | check | legacy
 
 
@@ -340,6 +405,24 @@ class Review(TS, Base):
     ai_verdict: Mapped[str] = mapped_column(String(10), default="")    # pass | fail | ""
     comment: Mapped[str] = mapped_column(Text, default="")
     note_kind: Mapped[str] = mapped_column(String(20), default="")    # false_alarm | missed | note
+
+
+class ModerationEvent(TS, Base):
+    """Запрещённое содержание, которое сервис остановил: запрос пользователя, готовый кадр или загруженное фото.
+    Журнал для мастера — показывает, что сервис фильтрует запрещённое."""
+    __tablename__ = "moderation_events"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    org_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    frame_id: Mapped[int | None] = mapped_column(ForeignKey("frames.id", ondelete="SET NULL"), nullable=True)
+    source: Mapped[str] = mapped_column(String(20))                   # text | frame | photo
+    where: Mapped[str] = mapped_column(String(60), default="")        # пожелания к запуску, правка кадра, профиль товара…
+    category: Mapped[str] = mapped_column(String(30), default="")     # lgbt | nazi | drugs | nudity | minors | army | …
+    excerpt: Mapped[str] = mapped_column(Text, default="")            # что именно найдено
+    action: Mapped[str] = mapped_column(String(20), default="blocked")  # blocked | rejected | hidden
 
 
 class SpecCache(TS, Base):
@@ -366,7 +449,6 @@ class Job(TS, Base):
     worker: Mapped[str] = mapped_column(String(60), default="")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    run_id: Mapped[int | None] = mapped_column(ForeignKey("generation_runs.id"), nullable=True, index=True)
     __table_args__ = (
         Index("ix_jobs_queue", "status", "priority", "id"),
         Index("uq_jobs_active_frame", "frame_id", unique=True,
@@ -399,7 +481,7 @@ class UsageEntry(TS, Base):
     kind: Mapped[str] = mapped_column(String(20))      # generation | qc | count | spec | profile | sort
     model: Mapped[str] = mapped_column(String(120), default="")
     provider: Mapped[str] = mapped_column(String(80), default="")
-    amount_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    amount_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
     tokens: Mapped[dict] = mapped_column(JSONT, default=dict)
     ref: Mapped[str] = mapped_column(String(120), default="")
 
@@ -414,7 +496,7 @@ class ImportSession(TS, Base):
     groups: Mapped[list] = mapped_column(JSONT, default=list)
     result: Mapped[dict] = mapped_column(JSONT, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
-    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
 
 
 class ImportFile(TS, Base):
@@ -427,30 +509,3 @@ class ImportFile(TS, Base):
     asset: Mapped["Asset"] = relationship()
     __table_args__ = (UniqueConstraint("session_id", "rel_path"),)
 
-
-
-class GenerationRun(TS, Base):
-    __tablename__ = "generation_runs"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    budget_rub: Mapped[float | None] = mapped_column(Numeric(18, 4, asdecimal=False), nullable=True)
-    retry_budget_rub: Mapped[float | None] = mapped_column(Numeric(18, 4, asdecimal=False), nullable=True)
-
-
-class BillingOperation(TS, Base):
-    __tablename__ = "billing_operations"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
-    run_id: Mapped[int | None] = mapped_column(ForeignKey("generation_runs.id"), nullable=True, index=True)
-    kind: Mapped[str] = mapped_column(String(20))
-    model: Mapped[str] = mapped_column(String(120), default="")
-    status: Mapped[str] = mapped_column(String(20), default="reserved", index=True)
-    external_id: Mapped[str] = mapped_column(String(120), default="")
-    reserved_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0)
-    charged_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0)
-    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0)
-    markup: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=1)
-    billable: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_retry: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -3,43 +3,69 @@ import { useUI } from "../components/ui";
 import { pad, rub } from "../lib/format";
 import { useProject } from "../ProjectContext";
 
+/** Пожелания к одному запуску: текст, площадка и формат поверх пресета. */
+export interface RunOptions {
+  brief?: string;
+  market?: string;
+  aspect?: string;
+}
+
 /** Действия запуска с подтверждением и оценкой цены — общие для шапки, карточек и просмотра кадра. */
 export function useActions() {
   const { api, state, reload, selected, run } = useProject();
   const ui = useUI();
 
-  const generate = (productIds: number[] | null, limit = 0) =>
+  const generate = (productIds: number[] | null, limit = 0, opts: RunOptions = {}) =>
     run(async () => {
-      const p = await api.previewGenerate({ product_ids: productIds, limit });
-      if (!p.count) {
-        ui.toast("Всё уже сгенерировано");
+      const p = await api.previewGenerate({ product_ids: productIds, limit, ...opts });
+      const ps = p.preset;
+      if (!p.count && !ps?.need_profile) {
+        const wishes = !!(opts.brief?.trim() || opts.market || opts.aspect);
+        const ids = state.products.filter((x) => !productIds || productIds.includes(x.id))
+          .flatMap((x) => x.frames.filter((f) => f.asset && f.state !== "queued" && f.state !== "running").map((f) => f.id))
+          .slice(0, limit || undefined);
+        if (!wishes || !ids.length) {
+          ui.toast("Все кадры уже готовы и соответствуют пресету");
+          return;
+        }
+        const avg = state.totals.avg_cost;
+        const ok = await ui.confirm({
+          title: "Переснять готовые кадры?",
+          text: <>Все кадры уже готовы. Переснять {ids.length} кадр(ов) с новыми пожеланиями{avg ? ` (≈ ${rub(ids.length * avg)})` : ""}?
+            <p className="hint">Прежние варианты останутся в истории кадра — к ним можно вернуться.</p></>,
+          ok: "Переснять",
+        });
+        if (!ok) return;
+        const r = await api.generate({ frame_ids: ids, ...opts });
+        ui.toast(r.added ? `В очереди кадров: ${r.added}` : "Кадры уже в очереди");
+        await reload();
         return;
       }
       const s = state.settings;
+      const avg = state.totals.avg_cost;
+      const est = avg && p.count ? ` (≈ ${rub(p.count * avg)})` : "";
       const qc = !s.qc_enabled
         ? ""
         : s.qc_autoregen && s.qc_retries > 0
-          ? `ИИ-проверка и автоперегенерация включены: брак переделывается до ${s.qc_retries} раз(а), поэтому в худшем случае расход вырастет до ×${1 + s.qc_retries}.`
-          : "ИИ-проверка включена, автоперегенерация выключена: брак не переделывается, а сразу попадает в «На проверке».";
+          ? `Брак переделывается автоматически до ${s.qc_retries} раз(а) — в худшем случае расход до ×${1 + s.qc_retries}.`
+          : "Брак не переделывается автоматически, а попадает в «На проверке».";
+      const notes = [
+        ps?.products ? `Кадры ${ps.products} товар(ов) приведены к пресету` + (ps.reshoot
+          ? `: ${ps.reshoot} готовых кадр(ов) снимутся заново, прежние варианты останутся в истории.` : ".") : "",
+        opts.brief?.trim() ? `Пожелания к запуску: «${opts.brief.trim().slice(0, 140)}${opts.brief.trim().length > 140 ? "…" : ""}»` : "",
+        ps?.need_profile ? `Для ${ps.need_profile} товар(ов) ИИ сначала составит профиль по фото — их кадры встанут в очередь сами.` : "",
+      ].filter(Boolean);
       const ok = await ui.confirm({
         title: "Запуск генерации",
-        text: <>Сгенерировать {p.count} кадр(ов) для {p.products} товаров?
-          <p>Генерация ≈ {rub(p.generation)}, проверки ≈ {rub(p.checking)}. С переделками до ≈ {rub(p.upper)}.</p>
-          <p className="hint">{p.note} {p.groups.some((g) => g.source === "fallback") && "Часть оценок задана резервным тарифом: истории пока мало."}</p>
-          {p.cost_per_accepted != null && <p>Фактическая цена принятого кадра ≈ {rub(p.cost_per_accepted)}; готового комплекта: {rub(p.cost_per_complete)}.</p>}
-          {qc && <p className="hint">{qc}</p>}</>,
-        ok: "Запустить",
+        text: <>{p.count ? <>Сгенерировать {p.count} кадр(ов){est}?</> : "Запустить подготовку кадров?"}
+          {notes.map((n) => <p key={n}>{n}</p>)}{qc && <p className="hint">{qc}</p>}</>,
+        ok: "Сгенерировать",
       });
       if (!ok) return;
-      const budget = await ui.ask({ title: "Бюджет запуска", ok: "Запустить", fields: [
-        { key: "total", label: `Общий бюджет, ₽ (оценка ${rub(p.expected)}, с переделками до ≈ ${rub(p.upper)})`, value: String(p.upper || 100) },
-        { key: "retry", label: "Из него на автоматические переделки, ₽ (0 — запретить)", value: String(Math.max(0, Math.round(p.upper - p.expected))) },
-      ] });
-      if (!budget) return;
-      const total = Number(budget.total.replace(",", ".")), retry = Number(budget.retry.replace(",", "."));
-      if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(retry) || retry < 0 || retry > total) throw new Error("Проверьте бюджеты: общий больше нуля, переделки — от 0 до общего");
-      const r = await api.generate({ product_ids: productIds, limit, budget_rub: total, retry_budget_rub: retry });
-      ui.toast(`В очередь добавлено: ${r.added}`);
+      const r = await api.generate({ product_ids: productIds, limit, ...opts });
+      ui.toast(r.added || r.preset?.queued_profiles
+        ? `В очереди кадров: ${r.added}${r.preset?.queued_profiles ? ` · профилей: ${r.preset.queued_profiles}` : ""}`
+        : "Нечего запускать");
       await reload();
     });
 
@@ -83,6 +109,23 @@ export function useActions() {
       await reload();
     });
 
-  return { generate, regenerate, checkReady, profiles };
-}
+  /** «Улучшить до 4K» и «Удалить фон» — новая версия кадра правкой, прежняя остаётся в истории. */
+  const quick = (product: Product, frame: Frame, action: "upscale" | "remove_bg") =>
+    run(async () => {
+      if (!frame.asset) return;
+      const avg = state.totals.avg_cost;
+      const what = action === "upscale" ? "Улучшить кадр до 4K" : "Удалить фон (чистый белый)";
+      const ok = await ui.confirm({
+        title: what,
+        text: <>{what} — кадр {pad(frame.i)} товара {product.sku}{avg ? ` (≈ ${rub(avg)})` : ""}?
+          <p className="hint">Получится новая версия кадра; текущая останется в «Вариациях».</p></>,
+        ok: action === "upscale" ? "Улучшить" : "Удалить фон",
+      });
+      if (!ok) return;
+      await api.quick(frame.id, action);
+      ui.toast("Кадр поставлен в очередь");
+      await reload();
+    });
 
+  return { generate, regenerate, checkReady, profiles, quick };
+}

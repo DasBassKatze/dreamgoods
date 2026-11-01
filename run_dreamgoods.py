@@ -1,19 +1,42 @@
-"""Запуск DreamGoods:  python run_dreamgoods.py [--debug] [--no-browser] [--import-legacy ПАПКА]
+"""Запуск DreamGoods:  python run_dreamgoods.py [--debug] [--no-browser] [--import-legacy ПАПКА] [--reset-master]
 
 Перед первым запуском поднимите PostgreSQL:  docker compose up -d
 """
+import os
 import sys
 import threading
 import webbrowser
 
+
+
+def _limit_malloc_arenas():
+    """Linux (сервер): сотни потоков заданий × по арене памяти glibc на поток = гигабайты «занятой» памяти после
+    обработки картинок. Две арены + периодический malloc_trim держат процесс компактным. Переменная читается только
+    при старте процесса, поэтому перезапускаем себя с ней. На Windows не нужно."""
+    if sys.platform.startswith("linux") and "MALLOC_ARENA_MAX" not in os.environ:
+        os.environ["MALLOC_ARENA_MAX"] = "2"
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
 from dreamgoods.core import config
 from dreamgoods.core.logs import log, setup_logging
+
+
+def _has(module):
+    import importlib.util
+    return importlib.util.find_spec(module) is not None
 
 
 def main():
     setup_logging()
     where = f"S3 {config.S3_ENDPOINT}/{config.S3_BUCKET}" if config.STORAGE == "s3" else f"папка {config.STORAGE_DIR}"
     log.info("DreamGoods %s · база %s · файлы: %s", __import__("dreamgoods").__version__, config.DATABASE_URL.split("@")[-1], where)
+    # 0. библиотеки Python — иначе ошибка выглядит как «нет базы»
+    missing = [m for m in ("sqlalchemy", "psycopg", "alembic", "fastapi", "uvicorn", "PIL", "requests", "boto3", "multipart")
+               if not _has(m)]
+    if missing:
+        log.error("Не установлены библиотеки Python: %s", ", ".join(missing))
+        log.error("Запустите «Установка.bat» (или: python -m pip install -r requirements.txt) и повторите запуск")
+        sys.exit(1)
     # 1. база данных
     try:
         from sqlalchemy import text
@@ -63,12 +86,17 @@ def main():
     org_id = projects.bootstrap()
     from dreamgoods.services import presets
     presets.seed(org_id)
+    from dreamgoods.services import consents as consents_svc
+    consents_svc.seed(org_id)
     from dreamgoods.core import auth
+    if "--reset-master" in sys.argv:
+        auth.reset_master(org_id)
     auth.bootstrap_master(org_id)
+    auth.ensure_master_cabinets(org_id)
     src = None
     if "--import-legacy" in sys.argv:
         src = sys.argv[sys.argv.index("--import-legacy") + 1]
-    elif config.app_env("DISABLE_LEGACY_IMPORT", "false").lower() != "true":
+    else:
         with db.session() as s:
             empty = not s.scalar(select(func.count(Product.id)))
             done = (s.scalars(select(Organization).order_by(Organization.id)).first().settings or {}).get("legacy_imported")
@@ -95,8 +123,6 @@ def main():
     workers.recover()
     workers.start_workers()
     workers.resume.start()
-    from dreamgoods.services import backups
-    backups.start()
     import uvicorn
     url = f"http://{config.HOST}:{config.PORT}"
     log.info("DreamGoods запущен: %s  (остановить: Ctrl+C)", url)
@@ -106,5 +132,5 @@ def main():
 
 
 if __name__ == "__main__":
+    _limit_malloc_arenas()
     main()
-

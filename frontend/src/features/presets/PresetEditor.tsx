@@ -16,6 +16,10 @@ export interface Draft {
   plan_mode: "auto" | "manual";
   manual: ManualItem[];
   block_models: Partial<Record<BlockKey, string>>;
+  /** только мастер: пресет студии — виден всем кабинетам и на сайте */
+  shared?: boolean;
+  /** пожелания к генерации (режим «Авто») */
+  brief?: string;
 }
 
 // подсказка «не стрелять из пушки по воробьям»: где обычно хватает модели попроще
@@ -53,7 +57,11 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
   }, [api]);
   const manual = d.plan_mode === "manual";
   const total = manual ? d.manual.reduce((a, b) => a + (b.count || 0), 0) : Object.values(d.plan).reduce((a, b) => a + (b || 0), 0);
-  const baseModel = String(d.quality === "custom" && d.custom.model ? d.custom.model : state.settings.model);
+  // модель уровня (у «Премиума» — своя) важнее модели проекта; своя модель пресета — важнее всех
+  const levelModel = d.quality === "custom" ? "" : listing.quality.find((x) => x.key === d.quality)?.settings.model;
+  const baseModel = String(d.custom.model || levelModel || state.settings.model);
+  const resolution = String(d.quality === "custom" ? d.custom.resolution || state.settings.resolution
+    : listing.quality.find((x) => x.key === d.quality)?.settings.resolution || state.settings.resolution);
   const stats = (b: BlockKey) => listing.model_stats.filter((x) => x.block === b);
   const q = listing.quality.find((x) => x.key === d.quality);
   const retries = d.quality === "custom" ? Number(d.custom.qc_retries ?? state.settings.qc_retries) : Number(q?.settings.qc_retries ?? 0);
@@ -73,6 +81,17 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         <input type="text" value={d.name} placeholder="например, Обувь — маркетплейс" onChange={(e) => setD({ ...d, name: e.target.value })} />
         <label className="form-label">Описание</label>
         <input type="text" value={d.description} placeholder="для кого и зачем этот пресет" onChange={(e) => setD({ ...d, description: e.target.value })} />
+        {state.admin && (
+          <>
+            <label className="form-label">Где хранится</label>
+            <div>
+              <label className="check"><input type="checkbox" checked={!!d.shared} onChange={(e) => setD({ ...d, shared: e.target.checked })} />
+                {" "}пресет студии — виден всем кабинетам и на сайте в «Цены и оплата»</label>
+              <div className="hint">{d.shared ? "Пользователи могут применять его и делать свои копии."
+                : `Хранится только в кабинете «${state.project.client}» — другие пользователи и сайт его не видят.`}</div>
+            </div>
+          </>
+        )}
 
         <h4>Качество</h4>
         <label className="form-label">Уровень</label>
@@ -87,24 +106,45 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         </div>
         {d.quality === "custom" && (
           <>
-            <label className="form-label">Модель генерации</label>
-            <input type="text" value={String(d.custom.model ?? "")} placeholder={`пусто — как в настройках (${state.settings.model})`}
-              onChange={(e) => setCustom("model", e.target.value)} />
             <label className="form-label">Разрешение · перегенераций</label>
-            <div className="row nowrap">
-              <select value={String(d.custom.resolution ?? "")} onChange={(e) => setCustom("resolution", e.target.value)}>
-                <option value="">как в настройках</option>{["1K", "2K", "4K"].map((r) => <option key={r}>{r}</option>)}
-              </select>
-              <select value={String(d.custom.qc_retries ?? "")} onChange={(e) => setCustom("qc_retries", e.target.value === "" ? "" : +e.target.value)}>
-                <option value="">перегенераций — как в настройках</option>{[0, 1, 2, 3].map((n) => <option key={n} value={n}>до {n} перегенераций</option>)}
-              </select>
-              <label className="check"><input type="checkbox" checked={!!d.custom.qc_count} onChange={(e) => setCustom("qc_count", e.target.checked)} /> подсчёт</label>
+            <div>
+              <div className="row nowrap">
+                <select value={String(d.custom.resolution ?? "")} onChange={(e) => setCustom("resolution", e.target.value)}>
+                  <option value="">как в настройках</option>
+                  {[["1K", 900], ["2K", 1800], ["4K", 3600]].map(([r, px]) => <option key={r} value={r}>{r} · {px} px</option>)}
+                </select>
+                <input type="number" min={0} max={6000} step={100} value={Number(d.custom.out_side || 0) || ""} style={{ width: 110 }}
+                  placeholder="своё, px" title="Своё разрешение: короткая сторона готового кадра, px. Пусто — по уровню 1K/2K/4K"
+                  onChange={(e) => setCustom("out_side", +e.target.value || 0)} />
+                <select value={String(d.custom.qc_retries ?? "")} onChange={(e) => setCustom("qc_retries", e.target.value === "" ? "" : +e.target.value)}>
+                  <option value="">перегенераций — как в настройках</option>{[0, 1, 2, 3].map((n) => <option key={n} value={n}>до {n} перегенераций</option>)}
+                </select>
+                <label className="check"><input type="checkbox" checked={!!d.custom.qc_count} onChange={(e) => setCustom("qc_count", e.target.checked)} /> подсчёт</label>
+              </div>
+              <div className="hint mt6">разрешение — короткая сторона готового кадра. Если модель вернёт меньше (некоторые модели
+                умеют только 1K), кадр увеличивается до него без перегенерации. Своё значение в px главнее уровня.</div>
             </div>
             <label className="form-label">Модель проверки</label>
             <input type="text" value={String(d.custom.qc_model ?? "")} placeholder={`пусто — ${state.settings.qc_model}`}
               onChange={(e) => setCustom("qc_model", e.target.value)} />
           </>
         )}
+
+        {/* список моделей позже будет ограничиваться тарифом кабинета */}
+        <h4>Модель для генерации</h4>
+        <label className="form-label">Основная модель</label>
+        <div className="fld">
+          <ModelSelect value={String(d.custom.model ?? "")} onChange={(m) => setCustom("model", m)} models={models}
+            emptyLabel="по умолчанию" fallback={state.settings.model} baseModel={baseModel} resolution={resolution} />
+          <div className="hint mt4">Снимает все кадры, для которых ниже не выбрана своя модель.</div>
+        </div>
+        <label className="form-label">Модель по видам кадров</label>
+        <div className="fld hint pt6">Необязательно. Простые кадры можно снимать быстрой недорогой моделью, а сильную оставить
+          для кадров с человеком.{manual ? " Модель, выбранная у метода съёмки, главнее." : ""}</div>
+        {listing.blocks.map((b) => (
+          <BlockModel key={b.key} label={b.name} tip={MODEL_TIP[b.key]} value={d.block_models[b.key] || ""} models={models} baseModel={baseModel}
+            resolution={resolution} stats={stats(b.key)} onChange={(m) => setD({ ...d, block_models: { ...d.block_models, [b.key]: m } })} />
+        ))}
 
         <h4>Площадка</h4>
         <label className="form-label">Для какой площадки</label>
@@ -115,7 +155,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
                 onClick={() => setD({ ...d, market: { key: m.key, cover: m.key !== "none" } })}>{m.name}</button>
             ))}
           </div>
-          <div className="hint mt6">{market.hint}</div>
+          <div className="fld hint mt6">{market.hint}</div>
         </div>
         {d.market.key !== "none" && (
           <>
@@ -123,16 +163,15 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
             {d.market.key === "custom" ? (
               <div className="row nowrap">
                 <select value={d.market.aspect || market.aspect} onChange={(e) => setMarket({ aspect: e.target.value })}>
-                  {listing.aspects.map((a) => <option key={a}>{a}</option>)}
+                  {listing.aspects.map((a) => <option key={a} value={a}>{listing.aspect_names?.[a] || a}</option>)}
                 </select>
                 <input type="number" min={0} max={4096} step={100} value={d.market.min_side ?? market.min_side} style={{ width: 110 }}
                   onChange={(e) => setMarket({ min_side: +e.target.value || 0 })} /> <span className="hint">px — меньше считается браком техпроверки</span>
               </div>
             ) : <div className="hint pt6">{market.aspect} · кадр меньше {market.min_side} px по короткой стороне считается браком техпроверки</div>}
             <label className="form-label">Обложка</label>
-            <div>
-              <label className="check"><input type="checkbox" checked={d.market.cover} onChange={(e) => setMarket({ cover: e.target.checked })} /> первый
-                кадр «на белом фоне» делать главным фото карточки по правилам площадки</label>
+            <div className="fld">
+              <div className="hint pt6">Первый кадр «на белом фоне» станет главным фото карточки по правилам площадки.</div>
               {coverOn && d.market.key === "custom" && (
                 <div className="ch-col mt6">
                   <input type="text" value={d.market.cover_bg ?? market.cover_bg} placeholder="фон обложки (англ.), например a pure white background"
@@ -174,20 +213,23 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         {manual ? (
           <>
             <label className="form-label">Методы съёмки</label>
-            <ManualPlan listing={listing} items={d.manual} onChange={(m) => setD({ ...d, manual: m })} models={models} baseModel={baseModel} />
+            <ManualPlan listing={listing} items={d.manual} onChange={(m) => setD({ ...d, manual: m })} models={models} baseModel={baseModel}
+              blockModels={d.block_models} resolution={resolution} />
           </>
-        ) : listing.blocks.map((b) => (
-          <PlanRow key={b.key} label={b.name} hint={BLOCK_HINT[b.key]} max={b.max} value={d.plan[b.key] || 0} onChange={(v) => setPlan(b.key, v)} />
-        ))}
+        ) : (
+          <>
+            {listing.blocks.map((b) => (
+              <PlanRow key={b.key} label={b.name} hint={BLOCK_HINT[b.key]} max={b.max} value={d.plan[b.key] || 0} onChange={(v) => setPlan(b.key, v)} />
+            ))}
+            <label className="form-label">Пожелания к съёмке</label>
+            <div className="fld">
+              <textarea rows={3} maxLength={1500} value={d.brief || ""} onChange={(e) => setD({ ...d, brief: e.target.value })}
+                placeholder="Например: тёплый осенний свет, бежевый фон, акцент на замше. Пусто — ИИ подберёт стиль сам" />
+              <div className="hint mt4">Учитываются во всех кадрах этого пресета. Товар при этом остаётся точно таким, как на фото.</div>
+            </div>
+          </>
+        )}
 
-        <h4>Модель генерации по блокам</h4>
-        <label className="form-label">Зачем</label>
-        <div className="hint pt6">Простые кадры (белый фон, детали) можно делать дешёвой быстрой моделью, а сильную оставить для
-          кадров с человеком. Пусто — модель пресета ({baseModel}). {manual ? "У ручного метода можно выбрать свою модель — она главнее." : ""}</div>
-        {listing.blocks.map((b) => (
-          <BlockModel key={b.key} label={b.name} tip={MODEL_TIP[b.key]} value={d.block_models[b.key] || ""} models={models} baseModel={baseModel}
-            stats={stats(b.key)} onChange={(m) => setD({ ...d, block_models: { ...d.block_models, [b.key]: m } })} />
-        ))}
         <label className="form-label">Итого</label>
         <div>
           <b>{total} кадр(ов) на товар</b>
@@ -208,19 +250,25 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
   );
 }
 
-function BlockModel({ label, tip, value, models, baseModel, stats, onChange }: {
-  label: string; tip: string; value: string; models: CatalogModel[] | null; baseModel: string;
+function BlockModel({ label, tip, value, models, baseModel, resolution, stats, onChange }: {
+  label: string; tip: string; value: string; models: CatalogModel[] | null; baseModel: string; resolution: string;
   stats: PresetListing["model_stats"]; onChange: (v: string) => void;
 }) {
   return (
     <>
       <label className="form-label">{label}</label>
-      <div>
-        <ModelSelect value={value} onChange={onChange} models={models} emptyLabel="как в пресете" baseModel={baseModel} />
-        <div className="hint mt4">{tip}
-          {stats.length > 0 && <> · по вашим кадрам: {stats.map((x) => `${x.model.split("/").pop()} — ${x.n} кадр., `
-            + `${x.first_pass == null ? "без проверки" : x.first_pass + "% с 1-й попытки"}, ${x.avg_cost} ₽`).join("; ")}</>}
-        </div>
+      <div className="fld">
+        <ModelSelect value={value} onChange={onChange} models={models} emptyLabel="основная" fallback={baseModel} baseModel={baseModel}
+          resolution={resolution} />
+        <div className="hint mt4">{tip}</div>
+        {stats.length > 0 && (
+          <ul className="model-stats">
+            {stats.slice(0, 3).map((x) => (
+              <li key={x.model}>{models?.find((m) => m.id === x.model)?.name || x.model.split("/").pop()}: {x.n} кадр.,{" "}
+                {x.first_pass == null ? "без проверки" : `${x.first_pass}% с 1-й попытки`}, ≈ {x.avg_cost} ₽</li>
+            ))}
+          </ul>
+        )}
       </div>
     </>
   );

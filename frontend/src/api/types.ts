@@ -5,6 +5,8 @@ export interface ProjectRef {
   name: string;
   client: string;
   client_id?: number;
+  products?: number;
+  thumb?: string | null;
 }
 
 export type FrameState = "missing" | "queued" | "running" | "checking" | "error" | "done";
@@ -70,6 +72,7 @@ export interface Settings {
   max_refs: number;
   ref_side: number;
   upload_refs: boolean;
+  series: boolean;
   qc_enabled: boolean;
   qc_autoregen: boolean;
   qc_retries: number;
@@ -119,10 +122,13 @@ export interface Metrics {
 }
 
 export interface ProjectState {
-  pagination: { page: number; page_size: number; total: number; catalog_total: number; todo_products: number; no_prompts: number };
   /** true — мастер-аккаунт (видны себестоимость, баланс Polza, метрики) */
   admin: boolean;
-  account: { balance: number; billing: boolean };
+  account: { balance: number; billing: boolean; client?: string };
+  /** незавершённая загрузка фото: фото загружены, но товары из них ещё не созданы */
+  open_import?: { id: number; status: string; count: number } | null;
+  /** номенклатура загрузки, сохранённая в проекте (подставляется в следующую загрузку) */
+  import_rules?: ImportRules;
   project: ProjectRef;
   persona: { id: number; name: string; asset: string | null } | null;
   style_ref: { id: number; name: string; asset: string | null } | null;
@@ -143,6 +149,8 @@ export interface ProjectState {
   };
   log: LogLine[];
   totals: { done: number; total: number; review: number; spent_all: number | null; avg_cost: number | null };
+  /** готовые модели и оформления кабинета — для настроек товара */
+  options?: { personas: { id: number; name: string }[]; styles: { id: number; name: string }[] };
   metrics: Metrics | null;
   balance: number | null;
   balance_error: string;
@@ -153,6 +161,8 @@ export interface CatalogModel {
   name: string;
   price: string;
   refs?: boolean;
+  note?: string;                 // чем хороша модель и где слабее
+  max_res?: string | null;       // наибольшее разрешение, которое модель реально отдаёт (1K/2K/4K)
   providers: { name: string; price?: string }[];
 }
 
@@ -184,6 +194,18 @@ export interface ImportPhoto {
   text?: string;
 }
 
+/** Номенклатура загрузки: как продавец снимает товары и как устроены его бирки. */
+export interface ImportRules {
+  order: "auto" | "label_after" | "label_before" | "no_label";
+  photos_per_product: number;      // 0 — не знаю
+  labels_per_product: number;      // -1 — не знаю
+  article_example: string;
+  colors_separate: boolean;
+  sizes_together: boolean;
+  ignore: ("price" | "barcode" | "size" | "packaging")[];
+  rule: string;
+}
+
 export interface ImportGroup {
   id: string;
   name: string;
@@ -194,6 +216,12 @@ export interface ImportGroup {
   photos: string[];
   exists: boolean;
   junk?: boolean;
+  /** описание товара словами от пользователя (необязательно) */
+  description?: string;
+  /** пользователь отметил, что ИИ разложил этот товар неверно */
+  sort_error?: boolean;
+  /** подсказка «проверьте группу» по правилам раскладки */
+  warn?: string;
 }
 
 export interface ImportView {
@@ -215,7 +243,7 @@ export interface ImportResult {
   merged: string[];
 }
 
-export type PersonaPhotoKind = "main" | "photo" | "sheet" | "candidate";
+export type PersonaPhotoKind = "main" | "photo" | "sheet" | "candidate" | "ref";
 
 export interface PersonaPhoto {
   id: number;
@@ -264,11 +292,35 @@ export interface PresetRef {
   total: number;
   quality: string;
   plan_mode?: "auto" | "manual";
+  /** площадка и формат пресета — для плашки «Wildberries · 3:4» */
+  market?: MarketKey;
+  market_name?: string;
+  aspect?: string;
+}
+
+/** Запись вкладки «История»: одна генерация или правка кадра. */
+export interface HistoryItem {
+  id: number;
+  frame_id: number;
+  product_id: number;
+  sku: string;
+  position: number;
+  title: string;
+  asset: string | null;
+  status: "ok" | "pending" | "error";
+  current: boolean;
+  edit: string;
+  attempt: number;
+  created: string | null;
+  qc: "pass" | "fail" | null;
+  error: string;
+  model?: string;
+  cost?: number;
 }
 
 export type BlockKey = "studio" | "detail" | "worn" | "full" | "lifestyle";
 export type QualityKey = "draft" | "standard" | "premium" | "custom";
-export type MarketKey = "none" | "wb" | "ozon" | "ymarket" | "custom";
+export type MarketKey = "none" | "wb" | "ozon" | "ymarket" | "avito" | "custom";
 export type StrictnessKey = "strict" | "normal" | "critical";
 
 export interface PresetMarket {
@@ -298,6 +350,7 @@ export interface Preset {
   total: number;
   is_default: boolean;
   products: number;
+  brief?: string;
 }
 
 export interface PresetListing {
@@ -309,6 +362,7 @@ export interface PresetListing {
   no_subcategory: number;
   markets: { key: MarketKey; name: string; aspect: string; min_side: number; hint: string; cover_bg: string; cover_fill: string; cover_extra: string }[];
   aspects: string[];
+  aspect_names?: Record<string, string>;
   strictness: { key: StrictnessKey; name: string; hint: string }[];
   model_stats: { block: BlockKey; model: string; n: number; avg_cost: number; first_pass: number | null }[];
 }
@@ -378,7 +432,8 @@ export interface AdminOverview {
   pending: number;
   errors_24h: number;
   metrics: Metrics;
-  queue: { parallel: number; max: number };
+  queue: { parallel: number; max: number; waiting_polza: number; running: number; queued: number;
+    limits: { submit_rate: number | null; submitted: number; throttled_hour: number; poll_rate: number | null } };
   model: { model: string; providers: string; resolution: string; aspect: string; qc_model: string };
   default_password: boolean;
 }
@@ -388,7 +443,38 @@ export interface Me {
   email: string;
   name: string;
   role: "master" | "user";
-  client: { id: number; name: string; balance: number; billing: boolean } | null;
+  client: { id: number; name: string; balance: number; billing: boolean; plan: MyPlan | null } | null;
+  /** обязательные документы, новые версии которых пользователь ещё не принял */
+  consents_required?: LegalDocBrief[];
+}
+
+export type LegalKind = "terms" | "privacy" | "pd_consent" | "cross_border" | "marketing" | "persona_photo";
+
+/** Документ сервиса (текущая версия): название, обязательный ли, где спрашивается, подпись у галочки ({link}). */
+export interface LegalDocBrief {
+  kind: LegalKind;
+  title: string;
+  version: number;
+  required: boolean;
+  where: "register" | "persona";
+  label: string;
+  updated: string | null;
+}
+
+export interface LegalDoc extends LegalDocBrief { body: string }
+
+/** Моё согласие по документу. */
+export interface MyConsent extends LegalDocBrief { granted: boolean; granted_version: number; at: string | null }
+
+export interface LegalAdmin {
+  registration_open: boolean;
+  mail: boolean;
+  docs: (LegalDoc & { consents: number; versions: { version: number; at: string | null }[] })[];
+}
+
+export interface ConsentRow {
+  id: number; at: string | null; email: string; user_id: number | null; kind: LegalKind; title: string; version: number;
+  granted: boolean; source: string; subject: string; ref: string; ip: string; agent: string;
 }
 
 export interface LedgerEntry {
@@ -405,10 +491,11 @@ export interface LedgerEntry {
 }
 
 export interface AccountBalance {
-  reserved: number; available: number;
   balance: number | null;
   billing: boolean;
   spent_month: number;
+  /** средняя цена операций за 90 дней — для вкладки «Тарифы» */
+  prices?: { what: string; count: number; avg: number }[];
   entries: LedgerEntry[];
 }
 
@@ -418,11 +505,14 @@ export interface SiteUser {
   name: string;
   role: "master" | "user";
   active: boolean;
+  /** почта подтверждена (регистрация на сайте); заведённые мастером — всегда да */
+  verified?: boolean;
   last_login: string | null;
   created: string | null;
   client: {
     id: number; name: string; balance: number; billing: boolean; markup: number | null; markup_effective: number;
     key_id: number | null; key_name: string; projects: number; charged_month: number; cost_month: number;
+    plan: PlanKey; plan_until: string | null; plan_effective: PlanKey;
   } | null;
 }
 
@@ -456,17 +546,88 @@ export interface FinanceView {
   entries: LedgerEntry[];
 }
 
+/** Отчёт сервиса за период (мастер). */
+export interface ServiceReport {
+  from: string;
+  to: string;
+  client_id: number | null;
+  summary: {
+    topups: number; adjust: number; charged: number; charged_cost: number; margin: number; markup: number | null;
+    polza: number; polza_unbilled: number; result: number; balances_end: number;
+    images: number; edits: number; checks: number; errors: number; clients_paying: number; usn_rate: number; usn_tax: number;
+  };
+  clients: { client_id: number | null; client: string; billing: boolean; topup: number; adjust: number; charged: number;
+    charged_cost: number; margin: number; polza: number; images: number; edits: number; balance_end: number | null }[];
+  by_kind: { kind: string; name: string; calls: number; cost: number }[];
+  by_model: { model: string; calls: number; cost: number; avg: number }[];
+  by_day: { day: string; topup: number; charge: number; cost: number; images: number }[];
+  client_list: { id: number; name: string }[];
+  client_name: string;
+  catalog: ReportCatalog;
+}
 
-export interface GenerationEstimate {
-  count: number; products: number; generation: number; checking: number; expected: number; upper: number;
-  reserved: number; available: number; accepted_frames: number; complete_products: number;
-  cost_per_accepted: number | null; cost_per_complete: number | null;
-  groups: { model: string; block: string; category: string; frames: number; samples: number; source: string }[];
-  note: string;
+export interface ReportCatalog {
+  metrics: { key: string; label: string; type: "rub" | "num" }[];
+  sections: { key: string; label: string }[];
+  cols: { key: string; label: string; type: "rub" | "num" }[];
+  general: { metrics: string[]; sections: string[]; cols: string[] };
 }
-export interface ReviewItem {
-  id: number; product_id: number; sku: string; position: number; generation: number; asset: string;
-  status: string; references: string[]; defects: string[];
-  details: { text: string; category: string; severity: string }[];
+
+/** Что включить в настраиваемый отчёт. */
+export interface ReportSelection { metrics: string[]; sections: string[]; cols: string[] }
+
+/** Публичный прайс сайта. */
+export type PlanKey = "start" | "seller" | "business" | "agency";
+export type QualityLevel = "draft" | "standard" | "premium" | "custom";
+
+/** Тариф: цена в месяц (зачисляется на баланс) и лимиты; null в числовых лимитах — без ограничений. */
+export interface PricePlan {
+  key: PlanKey; name: string; price: number; who: string; qualities: QualityLevel[];
+  block_models: boolean; manual_plan: boolean; custom_market: boolean; strictness: boolean; category_apply: boolean;
+  presets: number | null; personas: number | null; styles: number | null; projects: number | null; users: number | null;
+  storage_gb: number; parallel: number; support: string; popular?: boolean;
 }
-export interface ReviewListing { items: ReviewItem[]; total: number; page: number; page_size: number }
+
+export interface MyPlan {
+  key: PlanKey; effective: PlanKey; name: string; until: string | null; limited: boolean; limits: PricePlan;
+}
+
+export interface PriceList {
+  tiers: { key: string; name: string; model: string; resolution: string; side: number; qc: boolean; retries: number; note: string; price: number; from: boolean }[];
+  markets: { key: string; name: string; aspect: string; min_side: number; hint: string }[];
+  presets: { name: string; description: string; quality: string; quality_name: string; frames: number; frame_price: number; market: string; price: number }[];
+  ops: { key: string; name: string; note: string; resolution: string; price: number }[];
+  packages: { amount: number; bonus_rate: number; bonus: number; frames: number }[];
+  models: { key: string; name: string; note: string }[];
+  plans: PricePlan[];
+  features: [keyof PricePlan, string][];
+  common: string[];
+  year_pay_months: number;
+  quality_names: Record<QualityLevel, string>;
+  my_plan: MyPlan | null;
+  min_topup: number;
+  max_topup: number;
+  billing: boolean;
+  balance: number | null;
+  signed_in: boolean;
+}
+
+export interface TopupRequest {
+  id: number; client_id: number; client: string; user: string; amount: number; bonus: number;
+  method: "card" | "sbp" | "invoice"; method_name: string; status: "new" | "paid" | "cancelled"; note: string;
+  created: string | null; resolved: string | null; plan: PlanKey | ""; months: number; plan_name: string;
+}
+
+export interface ModerationEvent {
+  id: number; created: string | null; client: string; project: string; user: string; source: "text" | "frame" | "photo";
+  where: string; category: string; category_name: string; excerpt: string; action: "blocked" | "rejected" | "hidden";
+  frame_id: number | null; product_id: number | null;
+}
+
+export interface PlansAdmin {
+  plans: PricePlan[];
+  features: [keyof PricePlan, string][];
+  quality_names: Record<QualityLevel, string>;
+  defaults: Record<PlanKey, PricePlan>;
+  overrides: Partial<Record<PlanKey, Partial<PricePlan>>>;
+}

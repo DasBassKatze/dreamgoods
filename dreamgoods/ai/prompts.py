@@ -104,7 +104,11 @@ Rules:
   lifestyle_shots — the product alone in a styled setting that fits its audience (interior, still life), no people.
   If a list must have 0 items, return an empty list.
 - check_items: what an inspector can verify from the outside, with the view where it is visible.
-- All fields in English except those ending with _ru.
+- prohibited: Russian text, empty if nothing. Fill it ONLY if the product or the photos clearly show content prohibited by
+  Russian law: the LGBT rainbow pride flag or its variants (as a print, patch, badge or flag), LGBT slogans or symbols,
+  Nazi symbols (swastika, SS runes), symbols of terrorist organizations, drug symbols, nudity. A simply multicolored or
+  striped product is NOT prohibited. Never invent prohibited content.
+- All fields in English except those ending with _ru and "prohibited".
 
 EXAMPLE (black over-the-knee stocking boots):
 {{"category": "footwear", "category_ru": "Обувь", "subcategory_ru": "Ботфорты", "summary_ru": "Чёрные ботфорты-чулки на шпильке со стразами на носке",
@@ -129,7 +133,8 @@ EXAMPLE (black over-the-knee stocking boots):
  "scene_shots": ["three-quarter front view, standing, weight on one leg, strong hip shift, a pose that emphasizes the legs and the boots"],
  "detail_shots": ["macro of the rhinestone straps over the toe, three-quarter front angle"],
  "lifestyle_shots": ["the pair standing on a dark marble floor next to a velvet armchair, warm evening light"],
- "check_items": ["zip on the inner side of each boot — visible in inner side and back views", "rhinestone straps over the toe — visible in front and side views"]}}
+ "check_items": ["zip on the inner side of each boot — visible in inner side and back views", "rhinestone straps over the toe — visible in front and side views"],
+ "prohibited": ""}}
 
 Reply with ONLY one JSON object with exactly these fields, no markdown. Exact number of items: studio_shots: {n_studio},
 detail_shots: {n_detail}, usage_shots: {n_worn}, scene_shots: {n_full}, lifestyle_shots: {n_lifestyle}."""
@@ -141,7 +146,7 @@ TAIL_PRINTED = ("Photorealistic, high resolution. One single photo: no grid, no 
 
 PROFILE_TEXT = ("category", "category_ru", "subcategory_ru", "summary_ru", "object", "noun", "unit", "description", "identity_parts", "fastenings",
                 "asymmetric_details", "shadow", "usage", "person_noun", "body_focus", "close_up", "person", "outfit",
-                "outfit_visibility", "location", "mood", "bold_pose", "style")
+                "outfit_visibility", "location", "mood", "bold_pose", "style", "prohibited")
 PROFILE_LISTS = ("key_details", "ignore", "check_items", "studio_shots", "detail_shots", "usage_shots", "scene_shots",
                  "lifestyle_shots")
 
@@ -374,8 +379,9 @@ def make_profile(st, sku, refs, categories, label_hint, trace, person_hint="", s
     plan = plan_of(st)
     system = PROFILE_PROMPT.format(categories=", ".join(categories), **{f"n_{k}": plan[k] for k in BLOCK_ORDER})
     content = [{"type": "text", "text": f"Reference photos of the product (SKU '{sku}'):"
-                + (f"\nText read from the product's label/tag photos (use it for brand, article, color and material names; "
-                   f"do NOT draw the label): {label_hint}" if label_hint else "")
+                + (f"\nInformation about the product — text read from its label/tag photos and the client's own description "
+                   f"(use it for brand, article, color, material and what the product is; do NOT draw the label): {label_hint}"
+                   if label_hint else "")
                 + (f"\nThe client's model (the person in all usage and scene shots) is fixed: {person_hint}. "
                    "If the product is worn or held, write this exact person into \"person\" and \"person_noun\", "
                    "and choose the outfit, location, mood and poses that suit this person and the product." if person_hint else "")

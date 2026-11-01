@@ -14,20 +14,36 @@ BLOCKS = {
 }
 BLOCK_ORDER = tuple(BLOCKS)
 
+# Модель уровня «Премиум» — Nano Banana Pro (самая точная по деталям товара).
+PRO_MODEL = "google/gemini-3-pro-image-preview"
+# ИИ-проверка (детектор брака) уровня «Премиум» — Gemini 2.5 Pro вместо быстрой Flash / Flash Lite:
+# точнее замечает мелкие отличия от товара и ошибки в руках, ногах и количестве.
+PRO_QC_MODEL = "google/gemini-2.5-pro"
+
 # Уровни качества. Пока это набор настроек генерации и проверки; дальше — автоподбор модели по метрикам
 # (первая попытка, доля брака, цена принятого кадра) под нужный порог качества.
 QUALITY = {
-    "draft": {"name": "Черновик", "hint": "быстро и дёшево: 1K, без перегенераций — прикинуть идеи и позы",
+    "draft": {"name": "Черновик", "hint": "быстро и дёшево: 1K (900 px по короткой стороне), без перегенераций — прикинуть идеи и позы",
               "settings": {"resolution": "1K", "qc_enabled": True, "qc_autoregen": False, "qc_retries": 0, "qc_count": False}},
-    "standard": {"name": "Стандарт", "hint": "для карточек: 2K, проверка ИИ и до 2 перегенераций брака",
+    "standard": {"name": "Стандарт", "hint": "для карточек: 2K (1800 px по короткой стороне), проверка ИИ и до 2 перегенераций брака",
                  "settings": {"resolution": "2K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 2, "qc_count": False}},
-    "premium": {"name": "Премиум", "hint": "максимум качества: 4K, до 3 перегенераций, отдельный подсчёт ног/рук и товара",
-                "settings": {"resolution": "4K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 3, "qc_count": True}},
-    "custom": {"name": "Свой", "hint": "свои значения: модель, разрешение, число перегенераций", "settings": {}},
+    "premium": {"name": "Премиум", "hint": "максимум качества: Nano Banana Pro, 4K (3600 px по короткой стороне), до 3 перегенераций, "
+                                          "проверка брака на Gemini 2.5 Pro и отдельный подсчёт ног/рук и товара",
+                "settings": {"model": PRO_MODEL, "resolution": "4K", "qc_enabled": True, "qc_autoregen": True, "qc_retries": 3,
+                             "qc_count": True, "qc_model": PRO_QC_MODEL, "qc_count_model": "", "qc_reasoning": "low",
+                             "qc_count_reasoning": "low"}},
+    "custom": {"name": "Свой", "hint": "свои значения: модель, разрешение (в том числе своё в px), число перегенераций",
+               "settings": {}},
 }
+
+# Разрешение пресета → короткая сторона готового кадра, px (при 3:4: 900×1200, 1800×2400, 3600×4800).
+# Модель получает уровень 1K/2K/4K; если она вернула меньше (например, Nano Banana умеет только 1K — 896×1200),
+# кадр увеличивается до этого размера у нас, бесплатно и без перегенерации: перегенерация разрешение не исправит.
+RESOLUTION_SIDE = {"1K": 900, "2K": 1800, "4K": 3600}
+OUT_SIDE_MAX = 6000
 # что можно переопределить в «Своём» уровне
 CUSTOM_KEYS = {"model": str, "providers": str, "resolution": str, "qc_retries": int, "qc_count": bool, "qc_model": str,
-               "qc_autoregen": bool}
+               "qc_autoregen": bool, "out_side": int}
 
 # Профили площадок: формат кадра, минимальная сторона (для техпроверки) и правила главного фото (обложки).
 # Источник: требования площадок по состоянию на сентябрь 2026 (selsup.ru). Площадки их меняют — значения
@@ -53,10 +69,21 @@ MARKETS = {
                 "cover_bg": "a pure white background (#FFFFFF)",
                 "cover_fill": "at least two thirds of the frame",
                 "cover_extra": "no extraneous people or animals, no watermarks, no store logos"},
+    "avito": {"name": "Авито", "aspect": "4:3", "min_side": 960,
+              "hint": "горизонтальные 4:3 (так фото показываются в объявлении и в выдаче), рекомендуют от 1600×1200 px; "
+                      "главное фото — товар целиком и крупно, без телефонов, ссылок, надписей и водяных знаков",
+              "cover_bg": "a clean, bright, uncluttered neutral background",
+              "cover_fill": "about 70% of the frame, centered, with even margins on all sides (the cover is also shown cropped to a square)",
+              "cover_extra": "the whole product is visible and sharp; no phone numbers, links, text, logos or watermarks"},
     "custom": {"name": "Своя", "aspect": "3:4", "min_side": 1000, "hint": "свои формат и правила обложки",
                "cover_bg": "a pure white background (#FFFFFF)", "cover_fill": "about 80% of the frame", "cover_extra": ""},
 }
-ASPECTS = ("3:4", "4:5", "9:16", "1:1", "2:3", "16:9")
+# Форматы кадра. Если модель какой-то формат не умеет, кадр генерируется в ближайшем и обрезается (ai/polza.py).
+ASPECTS = ("3:4", "4:5", "2:3", "9:16", "1:1", "4:3", "5:4", "3:2", "16:9", "21:9")
+ASPECT_NAMES = {"3:4": "3:4 — вертикальный, WB/Ozon/Маркет", "4:5": "4:5 — вертикальный, соцсети", "2:3": "2:3 — вертикальный",
+                "9:16": "9:16 — сторис, Reels", "1:1": "1:1 — квадрат", "4:3": "4:3 — горизонтальный, Авито",
+                "5:4": "5:4 — горизонтальный", "3:2": "3:2 — горизонтальный", "16:9": "16:9 — широкий, баннер",
+                "21:9": "21:9 — сверхширокий баннер"}
 
 # Строгость ИИ-проверки: что считать браком
 STRICTNESS = {
@@ -70,7 +97,7 @@ STRICTNESS = {
 def clean_market(m):
     m = m or {}
     key = m.get("key") if m.get("key") in MARKETS else "none"
-    out = {"key": key, "cover": bool(m.get("cover", key != "none"))}
+    out = {"key": key, "cover": key != "none"}      # обложка по правилам площадки — всегда, если площадка выбрана
     if key == "custom":
         base = MARKETS["custom"]
         out["aspect"] = m.get("aspect") if m.get("aspect") in ASPECTS else base["aspect"]
@@ -152,10 +179,29 @@ def clean_custom(values):
         v = (values or {}).get(k)
         if v in (None, ""):
             continue
+        if k == "out_side":
+            out[k] = max(0, min(OUT_SIDE_MAX, int(float(v))))
+            continue
         out[k] = max(0, min(3, int(v))) if t is int else bool(v) if t is bool else str(v).strip()
     if out.get("resolution") not in (None, "1K", "2K", "4K"):
         out.pop("resolution")
+    if not out.get("out_side"):
+        out.pop("out_side", None)
+    elif not out.get("resolution"):     # своё разрешение в px — модели заказываем ближайший уровень не меньше него
+        out["resolution"] = next((r for r, side in RESOLUTION_SIDE.items() if side >= out["out_side"]), "4K")
     return out
+
+
+def clean_main_model(values):
+    """Основная модель генерации пресета (для уровней «Черновик», «Стандарт», «Премиум»)."""
+    m = str((values or {}).get("model") or "").strip()[:120]
+    return {"model": m} if m else {}
+
+
+def out_side(st):
+    """Короткая сторона готового кадра, px: своё значение пресета → уровень разрешения; не меньше минимума площадки."""
+    side = int(st.get("out_side") or 0) or RESOLUTION_SIDE.get(str(st.get("resolution") or ""), 0)
+    return max(side, int(st.get("qc_min_side") or 0))
 
 
 def plan_from_settings(st):
@@ -175,14 +221,21 @@ def apply(st, preset):
     q = QUALITY.get(preset.quality) or QUALITY["standard"]
     out = dict(st)
     out.update(q["settings"])
-    if preset.quality == "custom":
-        out.update(clean_custom(preset.custom))
+    if q["settings"].get("model") and q["settings"]["model"] != st.get("model"):
+        out["providers"] = ""           # провайдер из настроек может не поддерживать модель уровня — выберет Polza
+    out.pop("out_side", None)           # своё разрешение из настроек проекта не переносим в уровень пресета
+    custom = clean_custom(preset.custom) if preset.quality == "custom" else clean_main_model(preset.custom)
+    if custom.get("model") and custom["model"] != st.get("model") and not custom.get("providers"):
+        out["providers"] = ""           # провайдер из настроек может не поддерживать модель пресета — выберет Polza
+    out.update(custom)
     out["plan_mode"] = "manual" if preset.plan_mode == "manual" else "auto"
     out["manual"] = clean_manual(preset.manual) if out["plan_mode"] == "manual" else []
     out["plan"] = manual_plan(out["manual"]) if out["plan_mode"] == "manual" else clean_plan(preset.plan)
     out["block_models"] = clean_block_models(preset.block_models)
     out["preset_id"], out["preset_name"] = preset.id, preset.name
     out["qc_strictness"] = preset.strictness if preset.strictness in STRICTNESS else "normal"
+    # пожелания к генерации — для режима «Авто» (в ручном режиме у каждого метода свой промпт)
+    out["preset_brief"] = (getattr(preset, "brief", "") or "").strip() if out["plan_mode"] != "manual" else ""
     rules = market_rules(preset.market)
     out["market"] = rules
     if rules["aspect"]:

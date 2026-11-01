@@ -1,284 +1,333 @@
-from concurrent.futures import ThreadPoolExecutor
-from decimal import Decimal
+import hashlib
 import io
-import json
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+import requests
 from PIL import Image
-from sqlalchemy import select, func
-from fastapi.testclient import TestClient
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from dreamgoods import db
-from dreamgoods.ai import qc, polza
+from dreamgoods.ai import polza, qc
 from dreamgoods.core import auth, storage
+from dreamgoods.core.events import utcnow
 from dreamgoods.core.logs import Trace
-from dreamgoods.db.models import (BillingOperation, BalanceEntry, Client, Frame, Generation, GenerationRun,
-    Job, Product, Project, QCCheck, UsageEntry)
-from dreamgoods.services import payments, billing, board, frames, estimates, review_board, backups, export
+from dreamgoods.core.money import money
+from dreamgoods.db.models import (Asset, BalanceEntry, Client, EmailToken, Frame, Generation, Job,
+                                 Organization, Product, Project, TopupRequest, UsageEntry, User)
+from dreamgoods.services import access, billing, registration, topups
 from dreamgoods.workers import queue, resume
 
 
-def job(ids, run_id=None):
+@pytest.fixture(autouse=True)
+def billing_context():
+    token = billing.by_master.set(False)
+    yield
+    billing.by_master.reset(token)
+
+
+def master(ids):
+    return SimpleNamespace(id=None, org_id=ids['org'], master=True, client_id=None)
+
+
+def request_id(ids, bonus=10):
     with db.session() as s:
-        j = Job(project_id=ids['project'], product_id=ids['product'], frame_id=ids['frame'],
-            kind='generate', status='running', run_id=run_id)
-        s.add(j); s.flush(); return j.id
-
-@pytest.mark.parametrize('response', [{}, {'defects':None}, {'defects':'ok'}, {'defects':[2]}, {'defects':['']}, {'defects':[{'text':'bad'}]}])
-def test_invalid_qc_never_passes(response):
-    with pytest.raises(ValueError): qc.validated_defects(response)
-
-def test_qc_valid_and_critical_weight(monkeypatch):
-    assert qc.validated_defects({'defects':[]}) == []
-    assert qc.validated_defects({'defects':['wrong shape']})[0]['severity'] == 'major'
-    monkeypatch.setattr(qc, 'tech_check', lambda *a: ([], {}))
-    monkeypatch.setattr(qc, 'vlm_check', lambda *a: {'cost':1, 'reasons':['broken'],
-        'defects':[{'text':'broken','category':'identity','severity':'critical'}]})
-    result = qc.run_qc({}, '', [], b'', Trace('test'))
-    assert not result['pass'] and result['info']['weighted_penalty'] == 100
+        r = TopupRequest(client_id=ids['client'], amount_rub=100, bonus_rub=bonus)
+        s.add(r); s.flush()
+        return r.id
 
 
-def test_reservation_settlement_is_once(database):
+@pytest.mark.parametrize('value', ['NaN', 'Infinity', '-Infinity', '1e100', 'not a number'])
+def test_invalid_money(value):
+    with pytest.raises(ValueError): money(value)
+
+
+def test_money_rounds_half_up():
+    assert money('1.005') == 1.01
+    assert money('-1.005') == -1.01
+
+
+def test_topup_is_atomic_and_cannot_be_repeated(database):
     _, ids = database
-    token = payments.job_context.set(job(ids))
-    try:
-        oid = payments.reserve('generation','test')
-        with db.session() as s:
-            assert payments.held(s, ids['client']) > 0
-        payments.settle(oid, Decimal('12.3456'))
-        payments.settle(oid, 99)
-        with db.session() as s:
-            assert payments.money(s.get(Client,ids['client']).balance_rub) == Decimal('187.65')
-            assert s.scalar(select(func.count(BalanceEntry.id))) == 1
-            assert s.scalar(select(func.count(UsageEntry.id))) == 1
-            assert payments.held(s, ids['client']) == 0
-            assert s.get(BillingOperation, oid).cost_rub == pytest.approx(12.3456)
-    finally: payments.job_context.reset(token)
+    rid = request_id(ids)
+    topups.resolve(master(ids), rid, 'paid')
+    with pytest.raises(ValueError): topups.resolve(master(ids), rid, 'paid')
+    with db.session() as s:
+        assert s.get(Client, ids['client']).balance_rub == 310
+        assert s.scalar(select(func.count(BalanceEntry.id))) == 2
 
 
-def test_reserve_blocks_low_balance_and_budget(database):
+def test_topup_rolls_back_status_balance_and_bonus(database, monkeypatch):
+    _, ids = database
+    rid = request_id(ids)
+    original = billing.credit
+    def broken(s, c, amount, user_id, note):
+        if 'бонус' in note: raise RuntimeError('simulated failure')
+        return original(s, c, amount, user_id, note)
+    monkeypatch.setattr(billing, 'credit', broken)
+    with pytest.raises(RuntimeError): topups.resolve(master(ids), rid, 'paid')
+    with db.session() as s:
+        assert s.get(TopupRequest, rid).status == 'new'
+        assert s.get(Client, ids['client']).balance_rub == 200
+        assert s.scalar(select(func.count(BalanceEntry.id))) == 0
+
+
+def test_charge_exact_rounding_and_master_bypass(database):
     _, ids = database
     with db.session() as s:
-        c = s.get(Client,ids['client']); c.balance_rub=1
-    t=payments.job_context.set(job(ids))
-    try:
-        with pytest.raises(billing.NoFunds): payments.reserve('generation','test')
-    finally: payments.job_context.reset(t)
+        assert billing.charge(s, ids['project'], [{'cost':'1.005', 'kind':'generation'}]) == 1.01
+    billing.by_master.set(True)
     with db.session() as s:
-        s.get(Client,ids['client']).balance_rub=200
-        old=s.scalar(select(Job)); old.status='done'
-        batch=GenerationRun(project_id=ids['project'],budget_rub=100,retry_budget_rub=0)
-        s.add(batch);s.flush();rid=batch.id
-    t=payments.job_context.set(job(ids,rid)); rt=payments.retry_context.set(True)
-    try:
-        with pytest.raises(billing.NoFunds,match='переделок'): payments.reserve('generation','test')
-    finally: payments.job_context.reset(t);payments.retry_context.reset(rt)
+        assert billing.charge(s, ids['project'], [{'cost':50}]) == 0
+        assert s.get(Client, ids['client']).balance_rub == 198.99
 
 
-def test_invalid_paid_response_still_accounted_and_no_double_charge(database):
-    _,ids=database
-    t=payments.job_context.set(job(ids)); trace=Trace('test')
-    def paid_invalid():
-        payments.submitted()
-        trace.add('qc','test',1.23)
-        raise ValueError('bad json')
-    try:
-        with pytest.raises(ValueError): payments.invoke('qc','test',paid_invalid,trace)
-        with db.session() as s:
-            from dreamgoods.services.common import write_usage
-            write_usage(s,ids['org'],ids['project'],ids['product'],ids['frame'],trace)
-        with db.session() as s:
-            assert s.scalar(select(func.count(UsageEntry.id))) == 1
-            assert s.scalar(select(func.count(BalanceEntry.id))) == 1
-    finally: payments.job_context.reset(t)
-
-
-def test_ambiguous_timeout_keeps_reserve(database):
-    _,ids=database;t=payments.job_context.set(job(ids))
-    def timeout():
-        payments.submitted('task-1'); raise TimeoutError()
-    try:
-        with pytest.raises(TimeoutError): payments.invoke('generation','test',timeout)
-        with db.session() as s:
-            op=s.scalar(select(BillingOperation))
-            assert op.status=='uncertain' and op.external_id=='task-1'
-            assert payments.held(s,ids['client']) > 0
-    finally: payments.job_context.reset(t)
-
-
-def test_catalog_pagination_search_global_counts_and_preview(database,monkeypatch):
-    _,ids=database
-    for i in range(5):
-        with db.session() as s:
-            s.add(Product(project_id=ids['project'],sku=f'NEW-{i}',name='Boots'))
-    data=board.state(ids['project'],page=2,page_size=2)
-    assert len(data['products'])==2 and data['pagination']['total']==6
-    assert data['totals']['total']==1
-    data=board.state(ids['project'],page_size=2,query='NEW-4')
-    assert [x['sku'] for x in data['products']]==['NEW-4']
-    assert board.progress(ids['project'])['version']
-    estimate=estimates.preview(ids['project'],[ids['frame']])
-    assert estimate['count']==1 and estimate['upper']>=estimate['expected']>0
-
-
-def add_generation(ids):
+def test_queue_duplicate_and_pending_guards(database):
+    _, ids = database
     with db.session() as s:
-        a=storage.put(s,ids['org'],png(),'output','test.png')
-        g=Generation(frame_id=ids['frame'],model='test',status='ok',output_asset_id=a.id)
-        s.add(g);s.flush()
-        f=s.get(Frame,ids['frame']);f.current_generation_id=g.id;f.status='review'
-        s.add(QCCheck(frame_id=f.id,generation_id=g.id,passed=False,info={'defects':[{'category':'identity','text':'color','severity':'major'}]},reasons=['color']))
-        return g.id
+        assert queue.enqueue(s, 'generate', ids['project'], product_id=ids['product'], frame_id=ids['frame'])
+        assert queue.enqueue(s, 'check', ids['project'], frame_id=ids['frame']) is None
+    with db.session() as s:
+        s.scalar(select(Job)).status = 'done'
+        s.add(Generation(frame_id=ids['frame'], status='pending', external_id='paid-task'))
+    with db.session() as s:
+        assert queue.enqueue(s, 'generate', ids['project'], frame_id=ids['frame']) is None
+
+
+def test_database_rejects_duplicate_active_job(database):
+    _, ids = database
+    with db.session() as s:
+        s.add(Job(project_id=ids['project'], frame_id=ids['frame'], kind='generate'))
+    with pytest.raises(IntegrityError):
+        with db.session() as s:
+            s.add(Job(project_id=ids['project'], frame_id=ids['frame'], kind='check'))
+
+
+@pytest.mark.parametrize('status', [500, 502, 503, 504])
+def test_paid_submit_is_not_repeated_on_ambiguous_error(status, monkeypatch):
+    response = SimpleNamespace(status_code=status, text='upstream failed', json=lambda:{}, headers={})
+    post = Mock(return_value=response)
+    monkeypatch.setattr(polza.http, 'post', post)
+    monkeypatch.setattr(polza.throttle, 'limiter', lambda *a: Mock())
+    with pytest.raises(RuntimeError): polza._submit({'Authorization':'Bearer fake'}, {}, 'test')
+    assert post.call_count == 1
+
+
+def test_paid_chat_read_timeout_is_not_repeated(monkeypatch):
+    post = Mock(side_effect=requests.ReadTimeout('possibly paid'))
+    monkeypatch.setattr(polza.http, 'post', post)
+    monkeypatch.setattr(polza, 'qc_endpoint', lambda st:('https://fake', 'fake'))
+    monkeypatch.setattr(polza.throttle, 'limiter', lambda *a: Mock())
+    with pytest.raises(RuntimeError): polza.chat({}, 'fake', '', '', Trace('test'), 'qc')
+    assert post.call_count == 1
+
+
+@pytest.mark.parametrize('reply', [{}, {'defects':None}, {'defects':{}}, {'defects':[None]}, {'defects':[{}]}, {'defects':[], 'prohibited':False}])
+def test_malformed_qc_never_passes(reply, monkeypatch):
+    monkeypatch.setattr(qc, 'chat', lambda *a:(reply, 0, 0))
+    with pytest.raises(ValueError): qc.vlm_check({'qc_model':'fake'}, '', [], 'data:image/png;base64,', Trace('test'))
+
+
+def test_old_verification_link_cannot_open_another_session(database):
+    _, ids = database
+    with db.session() as s:
+        u = User(org_id=ids['org'], email='verified@example.test', email_verified_at=utcnow())
+        s.add(u); s.flush()
+        s.add(EmailToken(id=hashlib.sha256(b'old-token').hexdigest(), user_id=u.id, kind='verify',
+                         expires_at=utcnow()+timedelta(hours=1)))
+    with pytest.raises(ValueError, match='уже подтверждена'):
+        registration.verify('old-token', '', '')
+
 
 def png():
-    data=io.BytesIO();Image.new('RGB',(100,150),'red').save(data,'PNG');return data.getvalue()
+    out = io.BytesIO(); Image.new('RGB', (64,64), 'white').save(out, 'PNG'); return out.getvalue()
 
 
-def test_review_filter_stale_guard_and_scoping(database,monkeypatch,tmp_path):
-    _,ids=database;monkeypatch.setattr(storage.config,'STORAGE_DIR',tmp_path)
-    gid=add_generation(ids)
-    listed=review_board.listing(ids['project'],defect='identity')
-    assert len(listed['items'])==1
-    with pytest.raises(ValueError,match='версия'): frames.review(ids['project'],ids['frame'],'ok','',False,expected_generation=gid+1)
-    frames.review(ids['project'],ids['frame'],'ok','',False,expected_generation=gid)
-    assert not review_board.listing(ids['project'])['items']
-
-
-def test_export_format_and_integrity(database,monkeypatch,tmp_path):
-    _,ids=database;monkeypatch.setattr(storage.config,'STORAGE_DIR',tmp_path/'files')
-    monkeypatch.setattr(export.config,'EXPORT_DIR',tmp_path/'export')
-    add_generation(ids)
-    path,count=export.export_zip(ids['project'],include='all',output_format='jpeg')
-    import zipfile
-    with zipfile.ZipFile(path) as z:
-        manifest=json.loads(z.read('manifest.json'))
-        assert count==1 and manifest[0]['file']=='SKU/01.jpg'
-        with Image.open(io.BytesIO(z.read('SKU/01.jpg'))) as im:
-            assert min(im.size)>=900 and abs(im.width/im.height-3/4)<.01
-        assert manifest[0]['warnings']
-    path,count=export.export_zip(ids['project'],include='all',require_complete=True)
-    assert count==0
-
-
-def test_backup_checksum_detects_corruption(tmp_path):
-    p=tmp_path/'database.dump';p.write_bytes(b'backup')
-    (tmp_path/'manifest.json').write_text(json.dumps({'checksums':{'database.dump':backups.sha_file(p)}}))
-    backups.verify_checksums(tmp_path)
-    p.write_bytes(b'broken')
-    with pytest.raises(ValueError):backups.verify_checksums(tmp_path)
-
-
-def test_api_user_cannot_read_other_project_or_review(database,monkeypatch):
-    _,ids=database
-    from dreamgoods.api.app import app
-    u=auth.CurrentUser(id=1,org_id=ids['org'],email='test',name='test',role='user',client_id=ids['client'])
-    monkeypatch.setattr(auth,'user_by_token',lambda t:u)
-    with TestClient(app) as c:
-        c.cookies.set(auth.COOKIE,'test')
-        assert c.get(f"/api/projects/{ids['project']}/state?page_size=2").status_code==200
-        assert c.get('/api/admin/payments/pending').status_code==403
-        assert c.get('/api/projects/999/review').status_code==404
-        assert c.post(f"/api/projects/{ids['project']}/generate/preview",json={}).status_code==200
-        assert c.get(f"/api/projects/{ids['project']}/state?page_size=999").status_code==422
+def test_moderated_asset_permission_is_revoked_immediately(database, monkeypatch, tmp_path):
+    _, ids = database
+    monkeypatch.setattr(storage.config, 'STORAGE_DIR', tmp_path)
+    with db.session() as s:
+        asset = storage.put(s, ids['org'], png(), 'output', 'test.png')
+        g = Generation(frame_id=ids['frame'], status='ok', output_asset_id=asset.id)
+        s.add(g); s.flush(); aid, gid = asset.id, g.id
+    user = SimpleNamespace(master=False, client_id=ids['client'], org_id=ids['org'])
+    assert access.asset_allowed(user, aid)
+    with db.session() as s: s.get(Generation, gid).status = 'blocked'
+    assert not access.asset_allowed(user, aid)
 
 
 @pytest.mark.postgres
-def test_parallel_settlements_and_reservations(database):
-    engine,ids=database
-    if engine.dialect.name!='postgresql': pytest.skip('requires PostgreSQL row locks')
-    jid=job(ids)
-    def reserve():
-        t=payments.job_context.set(jid)
-        try:
-            try:return payments.reserve('generation','test')
-            except billing.NoFunds:return None
-        finally:payments.job_context.reset(t)
-    with ThreadPoolExecutor(max_workers=8) as pool: ops=[x for x in pool.map(lambda _:reserve(),range(8)) if x]
-    assert len(ops)==3 # each hold 62.50, balance 200
-    with ThreadPoolExecutor(max_workers=8) as pool:list(pool.map(lambda _:payments.settle(ops[0],10),range(8)))
-    with db.session() as s:
-        assert s.scalar(select(func.count(BalanceEntry.id)))==1
-        assert payments.money(s.get(Client,ids['client']).balance_rub)==Decimal('190')
+def test_concurrent_enqueue(database):
+    engine, ids = database
+    if engine.dialect.name != 'postgresql': pytest.skip('PostgreSQL required')
+    def put(_):
+        with db.session() as s:
+            return bool(queue.enqueue(s, 'generate', ids['project'], frame_id=ids['frame']))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert sum(pool.map(put, range(4))) == 1
 
 
 @pytest.mark.postgres
-def test_queue_duplicate_concurrent_and_client_fairness(database):
-    engine,ids=database
-    if engine.dialect.name!='postgresql':pytest.skip('requires PostgreSQL')
-    def add():
-        with db.session() as s:return bool(queue.enqueue(s,'generate',ids['project'],product_id=ids['product'],frame_id=ids['frame']))
-    with ThreadPoolExecutor(max_workers=6) as pool: results=list(pool.map(lambda _:add(),range(6)))
-    assert sum(results)==1
-    assert queue._claim('test')
-    # Another project belonging to the same client still shares its concurrency limit.
+def test_parallel_limit_across_projects_and_process_claims(database, monkeypatch):
+    engine, ids = database
+    if engine.dialect.name != 'postgresql': pytest.skip('PostgreSQL required')
+    from dreamgoods.services import plans
+    monkeypatch.setattr(plans, 'parallel_for', lambda s, cid: 1)
     with db.session() as s:
-        s.get(Client,ids['client']).parallel_limit=1
-        p=Project(client_id=ids['client'],name='Second');s.add(p);s.flush()
-        queue.enqueue(s,'profile',p.id)
-    assert queue._claim('test2') is None
-
-
-def test_confirmed_rejection_releases_reserve(database):
-    _,ids=database; t=payments.job_context.set(job(ids))
-    def rejected():
-        payments.submitted(); payments.not_charged(); raise ValueError("400 bad request")
-    try:
-        with pytest.raises(ValueError):payments.invoke("generation","test",rejected)
-        with db.session() as s:assert payments.held(s,ids["client"]) == 0
-    finally:payments.job_context.reset(t)
-
-
-def test_incomplete_product_not_exported(database,monkeypatch,tmp_path):
-    _,ids=database;monkeypatch.setattr(storage.config,"STORAGE_DIR",tmp_path/"files")
-    monkeypatch.setattr(export.config,"EXPORT_DIR",tmp_path/"export")
-    add_generation(ids)
-    with db.session() as s:
-        s.get(Frame,ids["frame"]).status="accepted"
-        s.add(Frame(product_id=ids["product"],position=2,prompt="detail"))
-    _,count=export.export_zip(ids["project"],require_complete=True)
-    assert count == 0
-
-
-@pytest.mark.postgres
-def test_full_backup_restore(database,monkeypatch,tmp_path):
-    engine,ids=database
-    if engine.dialect.name != "postgresql":pytest.skip("requires PostgreSQL client tools and CREATEDB")
-    monkeypatch.setattr(storage.config,"STORAGE_DIR",tmp_path/"files")
-    monkeypatch.setenv("DREAMGOODS_BACKUP_DIR",str(tmp_path/"backups"))
-    add_generation(ids)
-    path=backups.create_backup(verify=True)
-    assert (path/"database.dump").is_file()
-    backups.verify_checksums(path)
-
-
-def test_benchmark_requires_complete_predictions():
-    from scripts.qc_benchmark import evaluate
-    truth=[{"generation_id":1,"accepted":False},{"generation_id":2,"accepted":True}]
-    result=evaluate(truth,[{"generation_id":1,"pass":True},{"generation_id":2,"pass":False}])
-    assert result["missed_defects"]==1 and result["false_rejections"]==1
-    with pytest.raises(ValueError):evaluate(truth,[])
-
-
-@pytest.mark.postgres
-def test_concurrent_resume_downloads_and_charges_once(database,monkeypatch,tmp_path):
-    engine,ids=database
-    if engine.dialect.name != "postgresql":pytest.skip("requires PostgreSQL locks")
-    monkeypatch.setattr(storage.config,"STORAGE_DIR",tmp_path/"files")
-    jid=job(ids); token=payments.job_context.set(jid)
-    try:oid=payments.reserve("generation","test")
-    finally:payments.job_context.reset(token)
-    with db.session() as s:
-        s.get(Job,jid).status="done"
-        s.get(Project,ids["project"]).settings={"qc_enabled":False}
-        g=Generation(frame_id=ids["frame"],job_id=jid,model="test",status="pending",external_id="task",billing_operation_id=oid)
-        s.add(g);s.flush();gid,created=g.id,g.created_at
-    monkeypatch.setattr(polza,"get_task",lambda *a,**k:{"id":"task","status":"completed","usage":{"cost_rub":10}})
-    monkeypatch.setattr(polza,"extract_image",lambda data:png())
+        p2 = Project(client_id=ids['client'], name='second'); s.add(p2); s.flush()
+        s.add_all([Job(project_id=ids['project'], kind='test'), Job(project_id=p2.id, kind='test')])
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results=list(pool.map(lambda _:resume._resume(gid,created),range(2)))
-    assert sorted(results)==[0,1]
+        results = list(pool.map(lambda i:queue._claim(str(i)), range(2)))
+    assert sum(r is not None for r in results) == 1
+
+
+@pytest.mark.postgres
+def test_concurrent_topup(database):
+    engine, ids = database
+    if engine.dialect.name != 'postgresql': pytest.skip('PostgreSQL required')
+    rid = request_id(ids)
+    def pay(_):
+        try: topups.resolve(master(ids), rid, 'paid'); return True
+        except ValueError: return False
+    with ThreadPoolExecutor(max_workers=2) as pool: assert sum(pool.map(pay, range(2))) == 1
+    with db.session() as s: assert s.get(Client, ids['client']).balance_rub == 310
+
+
+@pytest.mark.postgres
+def test_concurrent_resume_charges_once(database, monkeypatch, tmp_path):
+    engine, ids = database
+    if engine.dialect.name != 'postgresql': pytest.skip('PostgreSQL required')
+    monkeypatch.setattr(storage.config, 'STORAGE_DIR', tmp_path)
     with db.session() as s:
-        assert s.get(Frame,ids["frame"]).current_generation_id==gid
-        assert s.scalar(select(func.count(BalanceEntry.id)))==1
-        assert s.scalar(select(func.count(UsageEntry.id)))==1
+        j = Job(project_id=ids['project'], frame_id=ids['frame'], kind='generate', status='done')
+        s.add(j); s.flush()
+        g = Generation(frame_id=ids['frame'], job_id=j.id, model='test', status='pending', external_id='task')
+        s.add(g); s.flush(); gid, created = g.id, g.created_at
+        s.get(Project, ids['project']).settings = {'qc_enabled':False}
+    monkeypatch.setattr(polza, 'get_task', lambda *a, **k:{'id':'task','status':'completed','usage':{'cost_rub':10}})
+    monkeypatch.setattr(polza, 'extract_image', lambda data:png())
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(lambda _:resume._resume(gid, created), range(2))) == [0,1]
+    with db.session() as s:
+        assert s.scalar(select(func.count(BalanceEntry.id))) == 1
+        assert s.scalar(select(func.count(UsageEntry.id))) == 1
+        assert s.get(Client, ids['client']).balance_rub == 190
+
+
+def test_qc_failure_records_cost_and_clears_old_pass(database, monkeypatch):
+    _, ids = database
+    from dreamgoods.workers import check
+    with db.session() as s:
+        g = Generation(frame_id=ids['frame'], status='ok')
+        s.add(g); s.flush()
+        f = s.get(Frame,ids['frame']); f.current_generation_id, f.status = g.id, 'pass'
+        j = Job(project_id=ids['project'], frame_id=f.id, kind='check')
+        s.add(j); s.flush(); jid=j.id
+    monkeypatch.setattr(check, 'qc_refs', lambda *a:[])
+    monkeypatch.setattr(check.storage, 'get', lambda *a:png())
+    def broken(st, task, refs, img, trace):
+        trace.add('qc', 'fake', 1)
+        raise ValueError('malformed response')
+    monkeypatch.setattr(check.qc, 'run_qc', broken)
+    with pytest.raises(ValueError): check.handle(jid)
+    with db.session() as s:
+        assert s.get(Frame,ids['frame']).status == 'unchecked'
+        assert s.get(Client,ids['client']).balance_rub == 199
+        assert s.scalar(select(func.count(UsageEntry.id))) == 1
+
+
+def test_cyrillic_download_header_and_cross_project_access(database, monkeypatch):
+    _, ids = database
+    from fastapi.testclient import TestClient
+    from dreamgoods.api.app import create_app
+    from urllib.parse import unquote
+    with db.session() as s:
+        asset = Asset(org_id=ids['org'],kind='output',storage_key='fake',sha256='fake',mime='image/png',bytes=1)
+        s.add(asset); s.flush(); aid=asset.id
+    user = auth.CurrentUser(1,ids['org'],'test','test','user',ids['client'])
+    monkeypatch.setattr(auth,'user_by_token',lambda token:user)
+    monkeypatch.setattr(access,'asset_allowed',lambda *a:True)
+    monkeypatch.setattr(storage,'get',lambda *a:b'x')
+    with TestClient(create_app(),cookies={auth.COOKIE:'test'}) as client:
+        response = client.get(f'/api/assets/{aid}',params={'dl':'Ботинки'})
+        assert response.status_code == 200
+        assert 'Ботинки.png' in unquote(response.headers['content-disposition'])
+        with db.session() as s:
+            other = Client(org_id=ids['org'],name='Other'); s.add(other); s.flush()
+            project = Project(client_id=other.id,name='Other'); s.add(project); s.flush(); other_id=project.id
+        assert client.get(f'/api/projects/{other_id}/state').status_code == 403
+
+
+def test_unexpected_api_error_does_not_expose_secrets(monkeypatch):
+    from fastapi.testclient import TestClient
+    from dreamgoods.api.app import create_app
+    monkeypatch.setattr(auth,'user_by_token',lambda token:SimpleNamespace(master=True))
+    app = create_app()
+    @app.get('/api/test-error')
+    def broken(): raise RuntimeError('password=private-value')
+    app.router.routes.insert(0, app.router.routes.pop())
+    with TestClient(app,raise_server_exceptions=False,cookies={auth.COOKIE:'fake'}) as client:
+        response=client.get('/api/test-error')
+        assert response.status_code == 500
+        assert 'private-value' not in response.text
+
+
+@pytest.mark.postgres
+def test_saturated_client_does_not_starve_later_jobs(database,monkeypatch):
+    engine,ids=database
+    if engine.dialect.name != 'postgresql': pytest.skip('PostgreSQL required')
+    from dreamgoods.services import plans
+    monkeypatch.setattr(plans,'parallel_for',lambda s,cid:1)
+    with db.session() as s:
+        s.add(Job(project_id=ids['project'],kind='test',status='running'))
+        s.add_all([Job(project_id=ids['project'],kind='test') for _ in range(35)])
+        c=Client(org_id=ids['org'],name='Available');s.add(c);s.flush()
+        p=Project(client_id=c.id,name='Available');s.add(p);s.flush()
+        j=Job(project_id=p.id,kind='test');s.add(j);s.flush();jid=j.id
+    assert queue._claim('test')[0] == jid
+
+
+def test_failed_handler_keeps_known_paid_usage(database,monkeypatch):
+    _,ids=database
+    with db.session() as s:
+        j=Job(project_id=ids['project'],product_id=ids['product'],kind='fake')
+        s.add(j);s.flush();jid=j.id
+    def broken(job_id):
+        trace=Trace('failed profile')
+        trace.add('profile','fake',2)
+        raise ValueError('bad JSON after paid response')
+    monkeypatch.setitem(queue.HANDLERS,'fake',broken)
+    with pytest.raises(ValueError):queue._run_handler(jid,'fake')
+    with db.session() as s:
+        assert s.get(Client,ids['client']).balance_rub == 198
+        assert s.scalar(select(func.count(UsageEntry.id))) == 1
+
+
+def test_handler_does_not_charge_flushed_usage_twice(database,monkeypatch):
+    _,ids=database
+    from dreamgoods.services.common import write_usage
+    with db.session() as s:
+        j=Job(project_id=ids['project'],kind='fake');s.add(j);s.flush();jid=j.id
+    def successful(job_id):
+        trace=Trace('success');trace.add('profile','fake',3)
+        with db.session() as s:
+            write_usage(s,ids['org'],ids['project'],None,None,trace,'profile:test')
+    monkeypatch.setitem(queue.HANDLERS,'fake',successful)
+    queue._run_handler(jid,'fake')
+    with db.session() as s:
+        assert s.get(Client,ids['client']).balance_rub == 197
+        assert s.scalar(select(func.count(UsageEntry.id))) == 1
+
+
+@pytest.mark.parametrize('configured', ['', 'admin'])
+def test_local_bootstrap_keeps_default_login(database,monkeypatch,configured):
+    _,ids=database
+    monkeypatch.setattr(auth.config,'app_env',lambda name,default='':configured if name=='ADMIN_PASSWORD' else default)
+    auth.bootstrap_master(ids['org'])
+    with db.session() as s:
+        u=s.scalar(select(User).where(User.role=='master'))
+        assert u.email=='admin' and auth.check_password('admin',u.password_hash)

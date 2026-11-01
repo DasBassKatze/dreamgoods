@@ -9,8 +9,9 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import __version__
 from ..core import auth, storage
+from ..services.billing import by_master
 from ..core.logs import log
-from .routers import review, account, admin, auth as auth_routes, frames, generation, imports, media, personas, presets, products, projects, settings, styles
+from .routers import account, admin, auth as auth_routes, frames, generation, imports, media, personas, presets, products, projects, settings, styles
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 NO_BUILD = """<!doctype html><meta charset="utf-8"><title>DreamGoods</title><body style="font:15px system-ui;padding:40px">
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
             token = auth.token_of(request)
             u = await run_in_threadpool(auth.user_by_token, token) if token else None
             request.state.user = u
+            by_master.set(bool(u and u.master))
             if u is None and not path.startswith(auth.PUBLIC) and not path.startswith(("/api/docs", "/api/openapi")):
                 return JSONResponse({"error": "войдите на сайт", "auth": False}, 401)
         return await call_next(request)
@@ -60,10 +62,11 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def _err(request: Request, exc):
         log.exception("Ошибка обработки %s %s", request.method, request.url.path)
-        return JSONResponse({"error": "внутренняя ошибка сервера; подробности в журнале администратора"}, 500)
+        return JSONResponse({"error": "Внутренняя ошибка сервера. Подробности записаны в журнал."}, 500)
 
-    for r in (review, auth_routes, account, admin, projects, settings, generation, frames, products, personas, presets, styles, imports, media):
+    for r in (auth_routes, account, admin, projects, settings, generation, frames, products, personas, presets, styles, imports, media):
         app.include_router(r.router)
+    app.include_router(account.public)
 
     @app.get("/api/health", tags=["служебное"])
     def health():

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { authApi } from "../../api/client";
 import type { Me } from "../../api/types";
 import { useUI } from "../../components/ui";
+import { ConsentsSection } from "./ConsentsSection";
 
 /** Учётная запись: кто вошёл, смена пароля, выход. */
 export function AccountPage({ me, onLogout }: { me: Me; onLogout: () => void }) {
@@ -37,6 +38,7 @@ export function AccountPage({ me, onLogout }: { me: Me; onLogout: () => void }) 
         <div><button className="primary" disabled={!old || next.length < 6}>Сменить пароль</button>
           <span className="hint"> не короче 6 символов</span></div>
       </form>
+      {me.role !== "master" && <ConsentsSection />}
     </section>
   );
 }

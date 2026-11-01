@@ -5,7 +5,7 @@ import { useUI } from "../../components/ui";
 import { useProject } from "../../ProjectContext";
 import type { PickedFile } from "./files";
 import { GroupsStep } from "./GroupsStep";
-import { UploadStep, type ImportOptions } from "./UploadStep";
+import { DEFAULT_RULES, importModes, UploadStep, type ImportOptions } from "./UploadStep";
 
 type Step = "upload" | "analyzing" | "groups" | "done";
 
@@ -17,7 +17,9 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const [step, setStep] = useState<Step>("upload");
   const [total, setTotal] = useState(0);
   const [uploading, setUploading] = useState(0);
-  const [opts, setOpts] = useState<ImportOptions>({ group_mode: "auto", label_mode: "read", auto_profile: true });
+  const [opts, setOpts] = useState<ImportOptions>({ ai_sort: true, read_labels: true, auto_profile: true,
+    rules: { ...DEFAULT_RULES, ...(state.import_rules || {}) } });
+  const modes = importModes(opts);
   const [view, setView] = useState<ImportView | null>(null);
   const [groups, setGroups] = useState<ImportGroup[]>([]);
   const [roles, setRoles] = useState<Record<string, PhotoRole>>({});
@@ -25,6 +27,35 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const poll = useRef<number | undefined>(undefined);
 
   useEffect(() => () => window.clearTimeout(poll.current), []);
+
+  // незавершённая загрузка (окно закрыли, страницу обновили) — продолжаем с того же места
+  const resumed = useRef(false);
+  useEffect(() => {
+    const oi = state.open_import;
+    if (resumed.current || !open || sid != null || !oi) return;
+    resumed.current = true;
+    setSid(oi.id);
+    setTotal(oi.count);
+    if (oi.status === "analyzing" || oi.status === "ready") {
+      setStep("analyzing");
+      watch(oi.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, state.open_import]);
+
+  const restart = async () => {
+    if (sid == null) return;
+    if (!(await ui.confirm({ title: "Начать загрузку заново?", text: `Загруженные фото (${total}) будут удалены из хранилища и не попадут в товары. Фото, которые уже есть у товаров, останутся.`, ok: "Удалить и начать заново" }))) return;
+    try {
+      await api.cancelImport(sid);
+    } catch (e) {
+      ui.toast((e as Error).message);
+      return;
+    }
+    window.clearTimeout(poll.current);
+    setSid(null); setTotal(0); setView(null); setGroups([]); setRoles({}); setStep("upload");
+    await reload();
+  };
 
   const ensure = async () => {
     if (sid != null) return sid;
@@ -91,7 +122,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const analyze = async () => {
     if (sid == null) return;
     try {
-      await api.analyzeImport(sid, opts.group_mode, opts.label_mode);
+      await api.analyzeImport(sid, modes.group_mode, modes.label_mode, { ...opts.rules, rule: opts.rules.rule.trim() });
       setStep("analyzing");
       setView(null);
       watch(sid);
@@ -104,7 +135,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     if (sid == null) return;
     const real = groups
       .filter((g) => !g.junk && g.photos.length)
-      .map((g) => ({ name: g.name.trim(), photos: g.photos.map((n) => [n, roles[n] || "product"] as [string, PhotoRole]) }));
+      .map((g) => ({ name: g.name.trim(), photos: g.photos.map((n) => [n, roles[n] || "product"] as [string, PhotoRole]),
+        description: (g.description || "").trim(), sort_error: !!g.sort_error }));
     const names = real.map((g) => g.name.toLowerCase());
     if (names.some((n, i) => !n || names.indexOf(n) !== i)) {
       ui.toast("У групп должны быть разные непустые названия");
@@ -119,7 +151,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     });
     if (!ok) return;
     try {
-      const r = await api.applyImport(sid, real, opts.label_mode, opts.auto_profile);
+      // бирки (найденные ИИ или отмеченные вручную) сохраняются у товара отдельно и в генерацию не идут
+      const r = await api.applyImport(sid, real, "read", opts.auto_profile);
       setResult(r);
       setStep("done");
       setSid(null);
@@ -140,27 +173,28 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   if (!open) return null;
   const progress = view?.progress;
   return (
-    <Modal title={<>📥 Импорт фото{sid != null && <span className="hint"> · сессия {sid}</span>}</>} width={1280}
+    <Modal title={<>Загрузка фото{sid != null && <span className="hint"> · сессия {sid}</span>}</>} width={1280}
       onClose={step === "done" ? finish : onClose}>
       {step === "upload" && (
-        <UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze} />
+        <UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze}
+          onRestart={sid != null && total > 0 ? restart : undefined} />
       )}
       {step === "analyzing" && (
         <div className="empty">
           <div className="pbusy">
-            {progress && progress[1] ? `ИИ смотрит фото: лист ${progress[0]} из ${progress[1]}…` : "Готовлю фото…"}
+            {progress && progress[1] ? `ИИ раскладывает фото: шаг ${progress[0]} из ${progress[1]}…` : "Готовлю фото…"}
           </div>
           <div className="progress wide"><i style={{ width: `${progress && progress[1] ? (progress[0] / progress[1]) * 100 : 3}%` }} /></div>
         </div>
       )}
       {step === "groups" && view && (
-        <GroupsStep view={view} groups={groups} roles={roles} labelMode={opts.label_mode}
-          onGroups={setGroups} onRoles={setRoles} onBack={() => setStep("upload")} onApply={apply} />
+        <GroupsStep view={view} groups={groups} roles={roles} labelMode={modes.label_mode}
+          onGroups={setGroups} onRoles={setRoles} onBack={() => setStep("upload")} onApply={apply} onRestart={restart} />
       )}
       {step === "done" && result && (
         <>
           <div className="empty">
-            ✅ Добавлено <b>{result.photos}</b> фото в <b>{result.folders.length}</b> товаров
+            Добавлено <b>{result.photos}</b> фото в <b>{result.folders.length}</b> товаров
             {result.labels > 0 && <>, этикеток (в генерацию не идут): <b>{result.labels}</b></>}.
             {result.merged.length > 0 && <div>Дополнены существующие товары: {result.merged.join(", ")}</div>}
             {opts.auto_profile && <p>Для новых товаров ИИ составляет профиль и промпты — они появятся в списке через несколько секунд.</p>}

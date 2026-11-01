@@ -5,6 +5,7 @@
 генерация могла быть уже оплачена.
 """
 import os
+import random
 import socket
 import threading
 import time
@@ -12,15 +13,14 @@ import traceback
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, update, text
 from sqlalchemy.orm import aliased
-from sqlalchemy.exc import IntegrityError
 
 from .. import db
 from ..core import config
 from ..core.events import say, utcnow
 from ..core.logs import log
-from ..db.models import Frame, Instance, Job, Organization, Product, Project, Client
+from ..db.models import Frame, Generation, Instance, Job, Organization, Product
 
 ACTIVE = ("queued", "running", "cancelling")
 HANDLERS = {}          # kind → функция(job_id); заполняет workers/__init__.py
@@ -28,31 +28,34 @@ HANDLERS = {}          # kind → функция(job_id); заполняет wor
 _wake = threading.Event()
 
 
-def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, priority=100, run_id=None):
+def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, priority=100):
     """Ставит задание, если такого же активного ещё нет. Возвращает Job или None."""
     if frame_id is not None:
-        s.get(Frame, frame_id, with_for_update=True)
-        from ..db.models import Generation
-        if kind == "generate" and s.scalar(select(Generation.id).where(Generation.frame_id == frame_id, Generation.status == "pending")):
+        frame = s.get(Frame, frame_id, with_for_update=True)
+        product = s.get(Product, frame.product_id) if frame else None
+        if not product or product.project_id != project_id:
+            raise LookupError("кадр не найден в проекте")
+        if kind == "generate" and s.scalar(select(Generation.id).where(
+                Generation.frame_id == frame_id, Generation.status == "pending").limit(1)):
             return None
         dup = s.scalar(select(Job.id).where(Job.frame_id == frame_id, Job.status.in_(ACTIVE)))
         if dup:
             return None
     elif product_id is not None and kind == "profile":
+        product = s.get(Product, product_id, with_for_update=True)
+        if not product or product.project_id != project_id:
+            raise LookupError("товар не найден в проекте")
         dup = s.scalar(select(Job.id).where(Job.product_id == product_id, Job.kind == "profile", Job.status.in_(ACTIVE)))
         if dup:
             return None
-    j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload or {},
+    from ..services.billing import by_master
+    payload = dict(payload or {})
+    if by_master.get():
+        payload["by_master"] = True          # запустил мастер — оплата напрямую с Polza
+    j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload,
             priority=priority)
-    j.run_id = run_id
-    try:
-        with s.begin_nested():
-            s.add(j)
-            s.flush()
-    except IntegrityError as e:
-        if getattr(e.orig, "sqlstate", None) == "23505":
-            return None
-        raise
+    s.add(j)
+    s.flush()
     _wake.set()
     return j
 
@@ -81,9 +84,22 @@ def register_instance():
     threading.Thread(target=_heartbeat, daemon=True, name="heartbeat").start()
 
 
+def _trim_memory():
+    """Linux: вернуть системе память, освобождённую после обработки картинок (glibc держит её у себя).
+    При сотнях потоков без этого процесс «раздувается» до гигабайт. На Windows не нужно."""
+    try:
+        import ctypes
+        import sys
+        if sys.platform.startswith("linux"):
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
 def _heartbeat():
     while True:
         time.sleep(15)
+        _trim_memory()
         try:
             with db.session() as s:
                 s.execute(update(Instance).where(Instance.id == INSTANCE_ID).values(heartbeat_at=utcnow()))
@@ -101,14 +117,15 @@ def recover(quiet=False):
         dead = [j for j in s.scalars(select(Job).where(Job.status.in_(("running", "cancelling")))).all()
                 if (j.worker or "").split("/")[0] not in alive]
         for j in dead:
+            if j.kind == "import":          # анализ загрузки: сессия снова доступна — его можно запустить ещё раз
+                from ..db.models import ImportSession
+                from ..services.importer import STALE_ERROR
+                sess = s.get(ImportSession, int((j.payload or {}).get("session") or 0))
+                if sess is not None and sess.status == "analyzing":
+                    sess.status, sess.error = "error", STALE_ERROR
             j.status, j.finished_at = "error", utcnow()
             j.error = ("прервано: сервер, выполнявший задание, остановился; повтор не делался, чтобы не заплатить "
                        "дважды. Если Polza успела принять задачу — результат дозагрузится автоматически")
-        from ..db.models import BillingOperation
-        for j in dead:
-            for op in s.scalars(select(BillingOperation).where(BillingOperation.job_id == j.id,
-                    BillingOperation.status.in_(("reserved", "submitted")))).all():
-                op.status = "released" if op.status == "reserved" else "uncertain"
         s.execute(Instance.__table__.delete().where(Instance.heartbeat_at < utcnow() - timedelta(days=1)))
     if dead:
         log.warning("Прерванных заданий (сервер, который их выполнял, остановился): %d — помечены ошибкой без автоповтора",
@@ -120,24 +137,52 @@ def recover(quiet=False):
 def _claim(worker):
     """Честная очередь для многих пользователей: сначала задания проектов, у которых сейчас меньше всего
     запущенных заданий, — один большой запуск не займёт все потоки и не заставит остальных ждать."""
+    from ..db.models import Project
     other = aliased(Job)
     other_project = aliased(Project)
     busy = (select(func.count(other.id)).join(other_project, other_project.id == other.project_id)
             .where(other_project.client_id == Project.client_id, other.status.in_(("running", "cancelling")))
             .correlate(Project).scalar_subquery())
     with db.session() as s:
-        # Serialize admission decisions across server instances; execution remains parallel.
-        from sqlalchemy import text
-        s.execute(text("SELECT pg_advisory_xact_lock(840621)"))
-        j = s.scalars(select(Job).join(Project, Project.id == Job.project_id)
-                      .join(Client, Client.id == Project.client_id)
-                      .where(Job.status == "queued", busy < func.coalesce(Client.parallel_limit, 2))
-                      .order_by(busy, Job.priority, Job.id)
-                      .with_for_update(of=Job, skip_locked=True).limit(1)).first()
-        if not j:
-            return None
-        j.status, j.started_at, j.worker = "running", utcnow(), f"{INSTANCE_ID}/{worker}"
-        return j.id, j.kind
+        # Все процессы считают тарифные лимиты и переводят задание в running последовательно.
+        if s.bind.dialect.name == "postgresql":
+            s.execute(text("SELECT pg_advisory_xact_lock(7430019)"))
+        offset = 0
+        while True:
+            cands = s.scalars(select(Job).outerjoin(Project, Project.id == Job.project_id)
+                              .where(Job.status == "queued").order_by(Job.priority, busy, Job.id)
+                              .with_for_update(of=Job, skip_locked=True).offset(offset).limit(30)).all()
+            if not cands:
+                return None
+            j = _within_plan(s, cands)
+            if j:
+                j.status, j.started_at, j.worker = "running", utcnow(), f"{INSTANCE_ID}/{worker}"
+                return j.id, j.kind
+            offset += len(cands)
+
+
+def _within_plan(s, cands):
+    """Первое задание, у клиента которого не превышен лимит одновременных заданий по тарифу."""
+    if not cands:
+        return None
+    from ..db.models import Project
+    from ..services.plans import parallel_for
+    pids = {j.project_id for j in cands if j.project_id}
+    client_of = dict(s.execute(select(Project.id, Project.client_id).where(Project.id.in_(pids))).all()) if pids else {}
+    running = dict(s.execute(select(Project.client_id, func.count(Job.id)).join(Project, Project.id == Job.project_id)
+                             .where(Job.status.in_(("running", "cancelling")),
+                                    Project.client_id.in_(set(client_of.values()) or {0}))
+                             .group_by(Project.client_id)).all()) if client_of else {}
+    limit = {}
+    for j in cands:
+        cid = client_of.get(j.project_id)
+        if cid is None:
+            return j
+        if cid not in limit:
+            limit[cid] = parallel_for(s, cid)
+        if limit[cid] is None or running.get(cid, 0) < limit[cid]:
+            return j
+    return None
 
 
 def _finish(job_id, status, error=""):
@@ -170,7 +215,7 @@ def _where(s, j):
     return j.kind
 
 
-MAX_WORKERS = 12
+MAX_WORKERS = 200          # потоки дешёвые: ожидание Polza — сон на событии, опрос статусов общий (ai/throttle.py)
 _par = {"t": 0.0, "n": None}
 
 
@@ -200,11 +245,36 @@ def set_parallel(n):
 
 
 def _funds_ok(job_id):
-    """Задание из очереди не запускается, если у клиента закончились деньги (поставлено, пока они были)."""
+    """Задание из очереди не запускается, если у клиента закончились деньги (поставлено, пока они были).
+    Заодно выставляет «запустил мастер» для обработчика задания."""
     from ..services import billing
     with db.session() as s:
-        pid = s.scalar(select(Job.project_id).where(Job.id == job_id))
+        pid, payload = s.execute(select(Job.project_id, Job.payload).where(Job.id == job_id)).one()
+    billing.by_master.set(bool((payload or {}).get("by_master")))
     return not pid or billing.has_funds(pid)
+
+
+def _run_handler(job_id, kind):
+    """Сохраняем известные расходы даже при ошибке разбора ответа/скачивания/профиля."""
+    from ..core.logs import pending_traces
+    from ..db.models import Client, Project
+    from ..services.common import write_usage
+    traces = []
+    token = pending_traces.set(traces)
+    try:
+        HANDLERS[kind](job_id)
+    finally:
+        try:
+            if any(t.usage for t in traces):
+                with db.session() as s:
+                    j = s.get(Job, job_id)
+                    p = s.get(Project, j.project_id) if j and j.project_id else None
+                    c = s.get(Client, p.client_id) if p else None
+                    if c:
+                        for trace in traces:
+                            write_usage(s, c.org_id, p.id, j.product_id, j.frame_id, trace, f"job:{job_id}")
+        finally:
+            pending_traces.reset(token)
 
 
 def _worker(name, idx=1):
@@ -219,7 +289,7 @@ def _worker(name, idx=1):
             time.sleep(5)
             continue
         if not got:
-            _wake.wait(2)
+            _wake.wait(3 + random.uniform(0, 2))     # разброс — сотни простаивающих потоков не опрашивают базу строем
             _wake.clear()
             continue
         job_id, kind = got
@@ -227,13 +297,7 @@ def _worker(name, idx=1):
             if not _funds_ok(job_id):
                 _finish(job_id, "error", "баланс исчерпан — пополните баланс и запустите снова")
                 continue
-            from ..services.payments import job_context, retry_context
-            jt, rt = job_context.set(job_id), retry_context.set(False)
-            try:
-                HANDLERS[kind](job_id)
-            finally:
-                job_context.reset(jt)
-                retry_context.reset(rt)
+            _run_handler(job_id, kind)
             _finish(job_id, "done")
         except Exception as e:
             log.debug("Задание %s: трассировка\n%s", job_id, traceback.format_exc())
@@ -245,7 +309,7 @@ def _worker(name, idx=1):
 
 
 def start_workers(n=None):
-    n = n or max(config.WORKERS, MAX_WORKERS)
+    n = n or MAX_WORKERS
     for i in range(1, n + 1):
         threading.Thread(target=_worker, args=(f"worker-{i}", i), daemon=True, name=f"worker-{i}").start()
     log.info("Очередь: одновременных заданий %d (можно до %d — меняется в админ-панели)", parallel(), n)

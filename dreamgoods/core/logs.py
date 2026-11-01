@@ -1,5 +1,6 @@
 """Логирование: консоль (INFO, с --debug — DEBUG) + файл logs/dreamgoods.log (всегда DEBUG, 5 МБ × 3)."""
 import logging
+from contextvars import ContextVar
 import logging.handlers
 import os
 import sys
@@ -58,16 +59,21 @@ def setup_logging():
     return debug
 
 
+pending_traces = ContextVar("dg_pending_traces", default=None)
+
+
 class Trace:
     """Метка для логов + накопитель расходов операции (пишутся в журнал расходов одной транзакцией)."""
 
     def __init__(self, tag):
         self.tag = tag
         self.usage = []
+        traces = pending_traces.get()
+        if traces is not None:
+            traces.append(self)
 
-    def add(self, kind, model, cost, tokens=None, provider="", operation_id=None):
-        from ..services.payments import operation_context
-        self.usage.append({"managed": bool(operation_id or operation_context.get()), "kind": kind, "model": model or "", "cost": float(cost or 0), "tokens": tokens or {},
+    def add(self, kind, model, cost, tokens=None, provider=""):
+        self.usage.append({"kind": kind, "model": model or "", "cost": float(cost or 0), "tokens": tokens or {},
                            "provider": provider or ""})
 
     def __str__(self):

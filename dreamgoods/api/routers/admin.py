@@ -2,11 +2,14 @@
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Request
-from pydantic import BaseModel, Field
+from fastapi.responses import Response
+from pydantic import BaseModel
 
+from ... import db
 from ...core import auth
+from ...db.models import Organization
 from ...services import admin as svc
-from ...services import billing, users
+from ...services import billing, consents, moderation, plans, qc_export, registration, reports, topups, users
 from ...workers import queue, resume
 from ..deps import project_id
 from ..schemas import ParallelUpdate
@@ -100,73 +103,107 @@ def keys_delete(key_id: int, request: Request):
 
 # ───────── финансы ─────────
 
+@router.get("/report")
+def report(request: Request, date_from: str = "", date_to: str = "", client_id: int | None = None, usn_rate: float = 0.06,
+           format: str = "json", metrics: str = "", sections: str = "", cols: str = ""):
+    """Отчёт за период: деньги клиентов, себестоимость Polza, наценка, объём работы. format=csv — файл для Excel.
+    metrics, sections, cols — что включить в CSV (ключи через запятую; пусто — всё, «none» — ничего из группы)."""
+    rep = reports.build(auth.user(request), date_from or None, date_to or None, client_id, max(0.0, min(usn_rate, 0.2)))
+    if format == "csv":
+        name = f"dreamgoods_report_{rep['from']}_{rep['to']}.csv"
+        sel = lambda v, allowed: [] if v == "none" else reports.pick(v, allowed)
+        body = reports.to_csv(rep, sel(metrics, reports.METRICS), sel(sections, reports.SECTIONS), sel(cols, reports.CLIENT_COLS))
+        return Response(body, media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return rep
+
+
+@router.get("/topups")
+def topup_requests(request: Request, status: str = ""):
+    return {"items": topups.listing(auth.user(request), status)}
+
+
+@router.post("/topups/{request_id}/{action}")
+def topup_resolve(request_id: int, action: str, request: Request):
+    """action: paid — зачислить сумму с бонусом пакета, cancel — отклонить."""
+    return topups.resolve(auth.user(request), request_id, action)
+
+
+@router.get("/plans")
+def plans_get(request: Request):
+    with db.session() as s:
+        org = s.get(Organization, auth.user(request).org_id)
+        st = dict(org.settings or {})
+    return plans.public_plans(st) | {"defaults": plans.P.DEFAULTS, "overrides": st.get("plans") or {}}
+
+
+@router.put("/plans")
+def plans_put(request: Request, body: dict[str, Any] = Body(...)):
+    """Условия тарифов: {seller: {price, projects, …}, …}; хранятся только отличия от значений по умолчанию."""
+    plans.save_overrides(auth.user(request).org_id, body.get("plans") or {})
+    return plans_get(request)
+
+
+@router.get("/moderation")
+def moderation_log(request: Request):
+    """Журнал модерации: что сервис остановил (запросы, готовые кадры, загруженные фото)."""
+    return {"items": moderation.listing(auth.user(request).org_id)}
+
+
+@router.get("/qc-export")
+def qc_export_zip(request: Request, project_id: int | None = None, days: int | None = None, images: str = "disputed"):
+    """ZIP с данными ИИ-проверки для разбора: CSV проверок, ручных решений, профилей товаров и картинки спорных кадров."""
+    data, _ = qc_export.build(auth.user(request).org_id, project_id, days, images if images in ("none", "disputed", "all")
+                              else "disputed")
+    from datetime import date
+    name = f"dreamgoods_qc_{date.today().isoformat()}.zip"
+    return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @router.get("/finance")
 def finance(request: Request, client_id: int | None = None):
     return users.finance(auth.user(request), client_id)
 
 
+class LegalDocBody(BaseModel):
+    title: str = ""
+    body: str = ""
+    required: bool = True
 
-class ResolveOperation(BaseModel):
-    cost_rub: float = Field(ge=0, allow_inf_nan=False)
-    note: str = Field(min_length=5, max_length=500)
 
-@router.get("/payments/pending")
-def pending_payments():
-    from sqlalchemy import select
-    from ... import db
-    from ...db.models import BillingOperation
-    with db.session() as s:
-        rows = s.scalars(select(BillingOperation).where(BillingOperation.status.in_(("uncertain", "submitted")))
-            .order_by(BillingOperation.created_at).limit(200)).all()
-        return {"items": [{"id": x.id, "client_id": x.client_id, "project_id": x.project_id,
-            "reserved": x.reserved_rub, "task": x.external_id, "status": x.status, "created": x.created_at.isoformat()} for x in rows]}
+class RegistrationBody(BaseModel):
+    open: bool
 
-@router.post("/payments/{operation_id}/resolve")
-def resolve_payment(operation_id: str, body: ResolveOperation, request: Request):
-    from ... import db
-    from ...db.models import BillingOperation, Job
-    from ...services.payments import settle
-    from ...core.logs import log
-    with db.session() as s:
-        item = s.get(BillingOperation, operation_id)
-        if not item:
-            raise LookupError("операция не найдена")
-        if item.external_id:
-            from datetime import timedelta
-            from ...core.events import utcnow
-            if utcnow() - item.created_at < timedelta(days=1):
-                raise ValueError("у операции есть задача Polza — используйте дозагрузку; ручная сверка доступна через сутки")
-        job = s.get(Job, item.job_id) if item.job_id else None
-        if item.status != "uncertain" or (job and job.status in ("queued", "running", "cancelling")):
-            raise ValueError("операция ещё выполняется или уже сверена")
-    settle(operation_id, body.cost_rub)
-    log.warning("Сверка платежа %s мастером %s: стоимость %.2f; %s", operation_id, auth.user(request).id, body.cost_rub, body.note)
+
+@router.get("/legal")
+def legal_docs(request: Request):
+    """Документы (текущие версии с историей), открыта ли регистрация, настроена ли почта."""
+    return consents.admin_docs(auth.user(request))
+
+
+@router.put("/legal/{kind}")
+def legal_save(kind: str, body: LegalDocBody, request: Request):
+    """Сохранить документ — новая версия; обязательные пользователи примут заново при входе."""
+    return consents.admin_save(auth.user(request), kind, body.title, body.body, body.required)
+
+
+@router.put("/registration")
+def registration_toggle(body: RegistrationBody, request: Request):
+    return consents.set_registration(auth.user(request), body.open)
+
+
+@router.get("/consents")
+def consents_journal(request: Request, kind: str = "", q: str = "", format: str = ""):
+    """Журнал согласий; format=csv — файл для юриста."""
+    cu = auth.user(request)
+    if format == "csv":
+        return Response(consents.journal_csv(cu, kind, q), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="consents.csv"'})
+    return {"items": consents.journal(cu, kind, q)}
+
+
+@router.post("/users/{user_id}/verify")
+def verify_user(user_id: int, request: Request):
+    """Подтвердить почту пользователя вручную."""
+    registration.confirm_by_master(auth.user(request), user_id)
     return {"ok": True}
-
-class ClientLimit(BaseModel):
-    n: int = Field(ge=1, le=12)
-
-@router.put("/clients/{client_id}/parallel")
-def client_limit(client_id: int, body: ClientLimit):
-    from ... import db
-    from ...db.models import Client
-    with db.session() as s:
-        client = s.get(Client, client_id, with_for_update=True)
-        if not client:
-            raise LookupError("клиент не найден")
-        client.parallel_limit = body.n
-    return {"ok": True}
-
-
-class ReservePrices(BaseModel):
-    image: int = Field(ge=1, le=100000)
-    chat: int = Field(ge=1, le=100000)
-
-@router.put("/reserve-prices")
-def reserve_prices(body: ReservePrices, request: Request):
-    from ... import db
-    from ...db.models import Organization
-    with db.session() as s:
-        org = s.get(Organization, auth.user(request).org_id, with_for_update=True)
-        org.settings = {**(org.settings or {}), "reserve_image_rub":body.image, "reserve_chat_rub":body.chat}
-    return {"ok":True}

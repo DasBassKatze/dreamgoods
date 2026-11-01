@@ -9,10 +9,12 @@ from ..ai import polza, prompts
 from ..core import presets as presets_core
 from ..core.events import STARTED_AT, lines
 from ..core.settings import effective, public
-from ..db.models import (Frame, Generation, GenerationPreset, Job, Organization, Persona, PersonaPhoto, StyleRef,
+from ..db.models import (Frame, Generation, GenerationPreset, ImportFile, ImportSession, Job, Organization, Persona,
+                         PersonaPhoto, StyleRef,
                          StyleRefPhoto, Product, ProductPhoto, ProductProfile,
                          Project, QCCheck, UsageEntry)
 from . import billing
+from . import import_rules as import_rules_mod
 from .common import LIVE, persona_id_for
 from .metrics import metrics
 
@@ -38,32 +40,20 @@ def _plain(line):
     return {**line, "text": _MONEY.sub("", line["text"])}
 
 
-def state(project_id, admin=False, page=1, page_size=40, query="", status="all"):
+def _market_badge(market, st):
+    """Площадка и формат пресета для плашки на карточке товара: «Wildberries · 3:4»."""
+    r = presets_core.market_rules(market or {})
+    key = r.get("key") or "none"
+    return {"market": key, "market_name": "" if key == "none" else r.get("name", ""),
+            "aspect": r.get("aspect") or st.get("aspect") or "3:4"}
+
+
+def state(project_id, admin=False):
     with db.session() as s:
         project = s.get(Project, project_id)
         org = s.get(Organization, project.client.org_id)
         st = effective(org, project)
-        catalog = select(Product).where(Product.project_id == project_id)
-        catalog_total = s.scalar(select(func.count(Product.id)).where(Product.project_id == project_id)) or 0
-        if query.strip():
-            from sqlalchemy import or_, cast, String
-            term = "%" + query.strip().replace("%", "\\%").replace("_", "\\_") + "%"
-            catalog = catalog.where(or_(Product.sku.ilike(term, escape="\\"), Product.name.ilike(term, escape="\\"),
-                Product.id.in_(select(ProductProfile.product_id).where(cast(ProductProfile.data, String).ilike(term, escape="\\")))))
-        if status == "todo":
-            catalog = catalog.where(select(Frame.id).where(Frame.product_id == Product.id, Frame.status != "retired",
-                Frame.current_generation_id.is_(None)).exists())
-        elif status == "review":
-            catalog = catalog.where(select(Frame.id).where(Frame.product_id == Product.id, Frame.status == "review").exists())
-        elif status == "err":
-            catalog = catalog.where(select(Job.id).where(Job.product_id == Product.id, Job.status == "error").exists())
-        missing_product = select(Frame.id).where(Frame.product_id == Product.id, Frame.status != "retired", Frame.current_generation_id.is_(None)).exists()
-        todo_products = s.scalar(select(func.count(Product.id)).where(Product.project_id == project_id, missing_product)) or 0
-        no_prompts = s.scalar(select(func.count(Product.id)).where(Product.project_id == project_id,
-            ~select(Frame.id).where(Frame.product_id == Product.id, Frame.status != "retired").exists())) or 0
-        filtered = s.scalar(select(func.count()).select_from(catalog.subquery())) or 0
-        products = s.scalars(catalog.order_by(func.lower(Product.sku), Product.id)
-            .offset((page - 1) * page_size).limit(page_size)).all()
+        products = s.scalars(select(Product).where(Product.project_id == project_id).order_by(func.lower(Product.sku))).all()
         pids = [p.id for p in products]
         photos = s.scalars(select(ProductPhoto).where(ProductPhoto.product_id.in_(pids))
                            .order_by(ProductPhoto.product_id, ProductPhoto.position)).all() if pids else []
@@ -131,7 +121,7 @@ def state(project_id, admin=False, page=1, page_size=40, query="", status="all")
                 if g or f.status == "rejected":
                     q = qcs.get(f.current_generation_id)
                     key = (f.id, g.job_id) if g else None
-                    qv = {"status": f.status, "defect_details": (q.info or {}).get("defects", []) if q else [], "defects": list(q.reasons) if q else [], "counts": q.counts if q else None,
+                    qv = {"status": f.status, "defects": list(q.reasons) if q else [], "counts": q.counts if q else None,
                           "attempts": attempts.get(key, 1) if g else 0,
                           "cost": round(costs.get(key, g.cost_rub if g else 0) + float(frame_qc_cost.get(f.id) or 0), 2),
                           "model": q.model if q else None}
@@ -159,11 +149,6 @@ def state(project_id, admin=False, page=1, page_size=40, query="", status="all")
                 "profile_job": {"state": "running"} if pj and pj.status in LIVE else
                                {"state": "error", "error": pj.error} if pj and pj.status == "error" else None})
 
-        global_frames = s.execute(select(Frame.status, func.count(Frame.id), func.count(Frame.current_generation_id))
-            .join(Product).where(Product.project_id == project_id, Frame.status != "retired").group_by(Frame.status)).all()
-        total_all = sum(n for _, n, _ in global_frames)
-        done_all = sum(n for _, _, n in global_frames)
-        review_n = sum(n for st, _, n in global_frames if st == "review")
         warnings = []
         new = [m["sku"] for m in out if not m["total"]]
         if new:
@@ -187,7 +172,8 @@ def state(project_id, admin=False, page=1, page_size=40, query="", status="all")
         met = metrics(s, project_id, spent_all) if admin else None
         proj = {"id": project.id, "name": project.name, "client": project.client.name}
         preset_names = {x.id: {"id": x.id, "name": x.name, "total": presets_core.preset_total(x), "quality": x.quality,
-                                     "plan_mode": x.plan_mode or "auto"}
+                                     "plan_mode": x.plan_mode or "auto",
+                                     **_market_badge(x.market, st)}
                         for x in s.scalars(select(GenerationPreset).where(GenerationPreset.org_id == org.id,
                                                                           GenerationPreset.archived.is_(False),
                                                                           GenerationPreset.client_id.is_(None)
@@ -208,39 +194,33 @@ def state(project_id, admin=False, page=1, page_size=40, query="", status="all")
                                                                  PersonaPhoto.kind.in_(("main", "photo")))
                              .order_by(PersonaPhoto.kind, PersonaPhoto.position)).first()
             persona = {"id": pp_.id, "name": pp_.name, "asset": str(main) if main else None}
+        options = {
+            "personas": [{"id": x.id, "name": x.name} for x in s.scalars(select(Persona).where(
+                Persona.client_id == project.client_id, Persona.status == "ready").order_by(Persona.id)).all()],
+            "styles": [{"id": x.id, "name": x.name} for x in s.scalars(select(StyleRef).where(
+                StyleRef.client_id == project.client_id, StyleRef.status == "ready").order_by(StyleRef.id)).all()],
+        }
+        open_import = None               # незавершённая загрузка фото — к ней можно вернуться
+        row = s.execute(select(ImportSession.id, ImportSession.status, func.count(ImportFile.id))
+                        .join(ImportFile, ImportFile.session_id == ImportSession.id)
+                        .where(ImportSession.project_id == project_id,
+                               ImportSession.status.in_(("upload", "analyzing", "ready", "error")))
+                        .group_by(ImportSession.id).order_by(ImportSession.id.desc()).limit(1)).first()
+        if row:
+            open_import = {"id": row[0], "status": row[1], "count": row[2]}
+        import_rules = import_rules_mod.clean((project.settings or {}).get("import_rules"))
         settings = public(org, project)
         client = project.client
         markup = billing.markup_of(client, org)
-        account = {"balance": round(client.balance_rub or 0, 2), "billing": client.billing,
-                   "reserved": float(billing.held(s, client.id)), "available": float(billing.money(client.balance_rub) - billing.held(s, client.id))}
+        account = {"balance": round(client.balance_rub or 0, 2), "billing": client.billing, "client": client.name}
     b = polza.balance(st.get("api_key")) if admin else {"value": None, "error": ""}
     log_lines = lines(project_id) if admin else [_plain(x) for x in lines(project_id, include_global=False)]
     spent_v = round(float(spent or 0), 2) if admin else None
-    return {"pagination": {"page": page, "page_size": page_size, "total": filtered, "catalog_total": catalog_total, "todo_products": todo_products, "no_prompts": no_prompts}, "admin": admin, "project": proj, "persona": persona, "style_ref": style_ref, "preset": preset, "presets": list(preset_names.values()), "settings": settings, "warnings": warnings, "products": out,
+    return {"admin": admin, "project": proj, "persona": persona, "style_ref": style_ref, "preset": preset, "presets": list(preset_names.values()), "options": options, "settings": settings, "warnings": warnings, "products": out,
             "runner": {"queued": queued, "running": running, "busy": bool(queued or running), "ok": ok, "fail": fail,
                        "errors": errors, "spent": spent_v, "stopping": stopping},
             "log": log_lines,
             "totals": {"done": done_all, "total": total_all, "review": review_n, "spent_all": round(spent_all, 2) if admin else None,
                        "avg_cost": round(sum(recent) / len(recent) * (1 if admin else markup), 2) if recent else 0.0},
-            "account": account,
+            "account": account, "open_import": open_import, "import_rules": import_rules,
             "metrics": met, "balance": b["value"], "balance_error": b["error"]}
-
-
-
-def progress(project_id):
-    import hashlib
-    from ..db.models import Review, ProductProfile, BillingOperation
-    with db.session() as s:
-        jobs = s.execute(select(Job.status, func.count(Job.id), func.max(Job.id), func.max(Job.note))
-            .where(Job.project_id == project_id).group_by(Job.status)).all()
-        gens = s.execute(select(Generation.status, func.count(Generation.id), func.max(Generation.id))
-            .join(Frame, Frame.id == Generation.frame_id).join(Product, Product.id == Frame.product_id)
-            .where(Product.project_id == project_id).group_by(Generation.status)).all()
-        reviews = s.scalar(select(func.max(Review.id)).join(Frame).join(Product)
-            .where(Product.project_id == project_id))
-        cost = s.scalar(select(func.max(UsageEntry.id)).where(UsageEntry.project_id == project_id))
-        products = s.scalar(select(func.count(Product.id)).where(Product.project_id == project_id))
-        frames = s.execute(select(Frame.status, func.count(Frame.id), func.max(Frame.current_generation_id))
-            .join(Product).where(Product.project_id == project_id).group_by(Frame.status)).all()
-        return {"version": hashlib.sha256(repr((sorted(jobs), sorted(gens), reviews, cost, products, sorted(frames))).encode()).hexdigest(),
-            "busy": any(row[0] in LIVE for row in jobs)}

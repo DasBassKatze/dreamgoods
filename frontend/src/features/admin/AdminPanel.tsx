@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "../../api/client";
-import type { AdminOverview } from "../../api/types";
+import type { AdminOverview, ModerationEvent } from "../../api/types";
+import { Icon } from "../../layout/Icon";
+import { Modal } from "../../components/Modal";
 import { MetricsPanel } from "../../components/MetricsPanel";
 import { useUI } from "../../components/ui";
 import { rub } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
 
-type Tab = "overview" | "spend" | "quality" | "models" | "log";
+type Tab = "overview" | "spend" | "quality" | "models" | "moderation" | "log";
 const TABS: [Tab, string][] = [
   ["overview", "Обзор"], ["spend", "Расходы проекта"], ["quality", "Качество"], ["models", "Модели по блокам"],
+  ["moderation", "Модерация"],
 ];
 const BLOCK_RU: Record<string, string> = { studio: "Товар на фоне", detail: "Детали", worn: "На человеке", full: "В полный рост", lifestyle: "Лайфстайл" };
 
@@ -18,6 +21,7 @@ export function AdminPanel({ onCatalog, logOnly }: { onCatalog: () => void; logO
   const ui = useUI();
   const [tab, setTab] = useState<Tab>(logOnly ? "log" : "overview");
   const [o, setO] = useState<AdminOverview | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -36,9 +40,12 @@ export function AdminPanel({ onCatalog, logOnly }: { onCatalog: () => void; logO
   return (
     <section className="page">
       <div className="page-head">
-        <h1>{logOnly ? "Журнал сервера" : "Аналитика"}</h1>
+        <h1>{logOnly ? "Журнал сервера" : "Аналитика проекта"}</h1>
         {!logOnly && <span className="hint">проект «{state.project.name}» · {state.project.client}</span>}
+        {!logOnly && <><span className="spacer" />
+          <button onClick={() => setExportOpen(true)}><Icon name="download" size={16} /> Выгрузить данные проверки</button></>}
       </div>
+      {exportOpen && <QcExport projectId={state.project.id} projectName={state.project.name} onClose={() => setExportOpen(false)} />}
       {!logOnly && (
         <div className="tabs">
           {TABS.map(([k, name]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{name}</button>)}
@@ -54,6 +61,7 @@ export function AdminPanel({ onCatalog, logOnly }: { onCatalog: () => void; logO
           {tab === "quality" && <MetricsPanel m={o.metrics} />}
           {tab === "models" && <ModelStats o={o} />}
           {tab === "log" && <ServerLog />}
+          {tab === "moderation" && <ModerationLog />}
         </>
       )}
     </section>
@@ -119,7 +127,14 @@ function Overview({ o, reload, onCatalog }: { o: AdminOverview; reload: () => Pr
             <b style={{ width: 24 }}>{par}</b>
             <button className="primary" disabled={par === o.queue.parallel} onClick={saveParallel}>Применить</button>
           </div>
-          <div className="hint mt4">Больше — быстрее, но выше риск упереться в лимиты провайдера (HTTP 429). Обычно 3–6.</div>
+          <div className="hint mt4">Потоки почти ничего не стоят: пока Polza рисует, поток спит, а статусы проверяет общий опросчик.
+            Скорость отправки сервис подбирает сам — растёт, пока Polza отвечает, и снижается при «занято» (HTTP 429).</div>
+          <div className="met mt8">
+            <div><span>Заданий: в работе / в очереди</span><b>{o.queue.running} / {o.queue.queued}</b></div>
+            <div><span>Ждут результат у Polza</span><b>{o.queue.waiting_polza}</b></div>
+            <div><span>Скорость отправки задач</span><b>{o.queue.limits.submit_rate != null ? `${o.queue.limits.submit_rate} в сек.` : "—"}</b></div>
+            <div><span>Отказов «занято» за час</span><b className={o.queue.limits.throttled_hour ? "bad-text" : ""}>{o.queue.limits.throttled_hour}</b></div>
+          </div>
           <div className="row">
             <button disabled={!o.pending} onClick={resume}>⤵ Дозагрузить сейчас ({o.pending})</button>
           </div>
@@ -225,5 +240,98 @@ function ServerLog() {
         ))}
       </div>
     </>
+  );
+}
+
+/** Выгрузка данных ИИ-проверки (ZIP): проверки, ручные решения, профили товаров, картинки спорных кадров. */
+function QcExport({ projectId, projectName, onClose }: { projectId: number; projectName: string; onClose: () => void }) {
+  const [scope, setScope] = useState<"project" | "all">("project");
+  const [days, setDays] = useState(0);
+  const [images, setImages] = useState<"none" | "disputed" | "all">("disputed");
+  const url = adminApi.qcExportUrl({ project: scope === "project" ? projectId : null, days: days || null, images });
+  const ui = useUI();
+  const [busy, setBusy] = useState(false);
+  // архив с картинками собирается до минуты — качаем через fetch, чтобы показать, что идёт работа
+  const download = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(url, { credentials: "same-origin" });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || `ошибка ${r.status}`);
+      const name = /filename="([^"]+)"/.exec(r.headers.get("content-disposition") || "")?.[1] || "dreamgoods_qc.zip";
+      const href = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = name;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(href), 5000);
+      onClose();
+    } catch (e) {
+      ui.toast((e as Error).message, 5000);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Выгрузка данных проверки" width={560} onClose={onClose}
+      footer={<><span className="spacer" /><button onClick={onClose}>Закрыть</button>
+        <button className="primary" onClick={download} disabled={busy}>
+          <Icon name="download" size={16} /> {busy ? "Собираю архив…" : "Скачать ZIP"}</button></>}>
+      <div className="form grid">
+        <label className="form-label" htmlFor="qe-scope">Что выгрузить</label>
+        <select id="qe-scope" value={scope} onChange={(e) => setScope(e.target.value as "project" | "all")}>
+          <option value="project">Проект «{projectName}»</option>
+          <option value="all">Все проекты сервиса</option>
+        </select>
+        <label className="form-label" htmlFor="qe-days">Период</label>
+        <select id="qe-days" value={days} onChange={(e) => setDays(+e.target.value)}>
+          <option value={0}>За всё время</option>
+          <option value={7}>Последние 7 дней</option>
+          <option value={30}>Последние 30 дней</option>
+          <option value={90}>Последние 90 дней</option>
+        </select>
+        <label className="form-label" htmlFor="qe-img">Картинки</label>
+        <select id="qe-img" value={images} onChange={(e) => setImages(e.target.value as "none" | "disputed" | "all")}>
+          <option value="disputed">Брак и кадры, где вы не согласились с ИИ</option>
+          <option value="all">Все проверенные кадры (до 400)</option>
+          <option value="none">Без картинок — только таблицы</option>
+        </select>
+      </div>
+      <p className="hint mt12">В архиве: таблица всех проверок с причинами брака и промптами, ваши ручные решения, профили товаров
+        и описание фото товаров. Ключей, паролей и балансов в выгрузке нет. Таблицы открываются в Excel.
+        С картинками архив собирается до минуты.</p>
+    </Modal>
+  );
+}
+
+const SOURCE_RU: Record<ModerationEvent["source"], string> = { text: "запрос", frame: "готовый кадр", photo: "загруженное фото" };
+const ACTION_RU: Record<ModerationEvent["action"], string> = { blocked: "не выполнено", rejected: "отклонено", hidden: "скрыто" };
+
+/** Журнал модерации (весь сервис): что остановлено — запросы, готовые кадры, загруженные фото. */
+function ModerationLog() {
+  const ui = useUI();
+  const [items, setItems] = useState<ModerationEvent[] | null>(null);
+  useEffect(() => {
+    adminApi.moderation().then((r) => setItems(r.items)).catch((e) => ui.toast((e as Error).message));
+  }, [ui]);
+  if (!items) return <div className="empty">Загрузка…</div>;
+  return (
+    <div className="panel">
+      <p className="hint">Сервис не выполняет запросы и не показывает кадры с содержанием, запрещённым в РФ: символика ЛГБТ
+        и экстремистских организаций, нацистская символика, наркотики, обнажёнка, сексуализация несовершеннолетних,
+        дискредитация армии. Здесь — все такие случаи по всем кабинетам (последние 300).</p>
+      {!items.length ? <div className="empty">Пока ничего не останавливалось.</div> : (
+        <div className="table-wrap"><table className="tbl">
+          <thead><tr><th>Когда</th><th>Кабинет · проект</th><th>Где</th><th>Что найдено</th><th>Итог</th></tr></thead>
+          <tbody>{items.map((e) => (
+            <tr key={e.id}>
+              <td className="hint nowrap">{e.created ? new Date(e.created).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</td>
+              <td>{e.client || "—"}<div className="hint">{e.project}{e.user ? ` · ${e.user}` : ""}</div></td>
+              <td>{SOURCE_RU[e.source] || e.source}<div className="hint">{e.where}</div></td>
+              <td><b>{e.category_name}</b><div className="hint">{e.excerpt}</div></td>
+              <td className="nowrap">{ACTION_RU[e.action] || e.action}</td>
+            </tr>))}
+          </tbody></table></div>
+      )}
+    </div>
   );
 }

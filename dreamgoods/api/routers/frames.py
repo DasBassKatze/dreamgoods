@@ -1,10 +1,10 @@
 """Кадр: правка по промпту, версии, ручное решение (промпт кадра — только для админа)."""
 from fastapi import APIRouter, Depends, Request
 
-from ...core import admin
-from ...services import frames
+from ...core import admin, auth
+from ...services import frames, moderation
 from ..deps import need_key, project_id
-from ..schemas import EditRequest, PromptUpdate, RestoreRequest, ReviewRequest
+from ..schemas import EditRequest, PromptUpdate, QuickAction, RestoreRequest, ReviewRequest
 
 router = APIRouter(prefix="/api/projects/{project_id}/frames/{frame_id}", tags=["кадры"])
 
@@ -15,16 +15,26 @@ def get_prompt(frame_id: int, pid: int = Depends(project_id)):
 
 
 @router.put("/prompt", dependencies=[Depends(admin.required)])
-def set_prompt(frame_id: int, body: PromptUpdate, pid: int = Depends(project_id)):
+def set_prompt(frame_id: int, body: PromptUpdate, request: Request, pid: int = Depends(project_id)):
+    moderation.guard("промпт кадра", body.text, project_id=pid, frame_id=frame_id, user=auth.user(request))
     frames.set_prompt(pid, frame_id, body.text)
     return {"ok": True}
 
 
 @router.post("/edit")
-def edit(frame_id: int, body: EditRequest, pid: int = Depends(project_id)):
+def edit(frame_id: int, body: EditRequest, request: Request, pid: int = Depends(project_id)):
     """Правка готового фото: «что изменить» → новая версия кадра (прежняя остаётся в истории)."""
+    moderation.guard("правка кадра", body.instruction, project_id=pid, frame_id=frame_id, user=auth.user(request))
     need_key(pid)
     frames.edit(pid, frame_id, body.instruction, body.source_id)
+    return {"ok": True}
+
+
+@router.post("/quick")
+def quick(frame_id: int, body: QuickAction, pid: int = Depends(project_id)):
+    """Улучшить до 4K / убрать фон — правка готового кадра готовой инструкцией."""
+    need_key(pid)
+    frames.quick(pid, frame_id, body.action)
     return {"ok": True}
 
 

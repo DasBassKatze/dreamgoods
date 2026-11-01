@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Settings } from "../../api/types";
 import { Modal } from "../../components/Modal";
 import { useUI } from "../../components/ui";
+import { ASPECTS } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
 import type { CatalogKind, CatalogPick } from "../catalog/ModelCatalog";
 
@@ -64,13 +65,14 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
           <input type="password" value={apiKey} placeholder="оставьте пустым, чтобы не менять" onChange={(e) => setApiKey(e.target.value)} />
           <div className="hint">{v.has_key ? "Ключ сохранён (общий для всех проектов организации)" : "Ключ не найден — вставьте его сюда"}</div>
         </Row>
-        <Row label="Модель (ID)">
+        <Row label="Модель по умолчанию">
           <div className="row nowrap">
             <input type="text" list="known-models" value={v.model} onChange={(e) => set("model", e.target.value)} />
             <button type="button" onClick={() => onPickModel("image")}>Каталог Polza…</button>
           </div>
           <datalist id="known-models">{KNOWN_MODELS.map((m) => <option key={m} value={m} />)}</datalist>
-          <div className="hint">ID копируется со страницы модели на polza.ai</div>
+          <div className="hint">модель по умолчанию — работает, если в пресете не выбрана своя. Основную модель и модели по блокам
+            выбирают в пресете. ID копируется со страницы модели на polza.ai</div>
         </Row>
         <Row label="Провайдеры">
           {text("providers")}
@@ -79,7 +81,7 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
         <Row label="Запасной провайдер">{check("fallback", "разрешить переход к другому провайдеру при сбое")}</Row>
         <Row label="Формат кадра">
           <select value={v.aspect} onChange={(e) => set("aspect", e.target.value)}>
-            {["3:4", "4:5", "9:16", "1:1", "2:3", "16:9"].map((a) => <option key={a}>{a}</option>)}
+            {ASPECTS.map(([a, name]) => <option key={a} value={a}>{name}</option>)}
           </select>
         </Row>
         <Row label="Разрешение">
@@ -89,10 +91,11 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
         </Row>
         <Row label="Референсов в генерацию">{num("max_refs", 1, 14)}</Row>
         <Row label="Сжатие референсов, px">{num("ref_side", 512, 3072, 128)}</Row>
+        <Row label="Серия кадров">{check("series", "снимать кадры товара как одну фотосессию: сначала опорный кадр (обложка, первый кадр на модели), остальные — по нему с тем же светом, цветом и образом; в полный рост — разные эмоции модели")}</Row>
         <Row label="Передача фото">{check("upload_refs", "загружать фото-референсы в хранилище Polza и передавать ссылками — меньше сбоев «Image fetch failed», запросы легче")}</Row>
         <Row label="Фото модели клиента">
           {num("persona_refs", 1, 4)}
-          <div className="hint">сколько фото модели отправлять вместе с фото товара (кадры с человеком). Саму модель выбирают в «👤 Модель»</div>
+          <div className="hint">сколько фото модели отправлять вместе с фото товара (кадры с человеком). Саму модель выбирают в «Модель»</div>
         </Row>
 
         <h4>ИИ-проверка</h4>

@@ -22,7 +22,8 @@ from .logs import log
 
 COOKIE = "dg_session"
 TTL = timedelta(days=30)
-PUBLIC = ("/api/auth/login", "/api/auth/logout", "/api/health")
+PUBLIC = ("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/verify", "/api/auth/resend",
+          "/api/health", "/api/public/")
 
 
 class Unauthorized(PermissionError):
@@ -105,8 +106,21 @@ def login(email, password, ip="", agent=""):
         if not u or not u.active or not check_password(password, u.password_hash):
             _fail(ip)
             raise Unauthorized("неверный логин или пароль")
+        if u.email_verified_at is None:
+            raise Forbidden(UNVERIFIED)
+        user_id = u.id
+    return open_session(user_id, ip, agent)
+
+
+UNVERIFIED = "почта не подтверждена — перейдите по ссылке из письма (можно отправить письмо ещё раз)"
+
+
+def open_session(user_id, ip="", agent=""):
+    """Новая сессия пользователя → (токен для cookie, CurrentUser)."""
+    with db.session() as s:
+        u = s.get(User, user_id)
         token = secrets.token_urlsafe(32)
-        s.add(Session(id=_sid(token), user_id=u.id, expires_at=utcnow() + TTL, ip=ip[:64], agent=(agent or "")[:300]))
+        s.add(Session(id=_sid(token), user_id=u.id, expires_at=utcnow() + TTL, ip=(ip or "")[:64], agent=(agent or "")[:300]))
         u.last_login_at = utcnow()
         cu = _current(u)
     log.info("Вход: %s (%s) с %s", cu.email, cu.role, ip or "?")
@@ -190,10 +204,52 @@ def master(request: Request) -> CurrentUser:
 
 # ───────── первый запуск ─────────
 
+def ensure_master_cabinets(org_id):
+    """У каждого мастера — свой кабинет без внутреннего баланса: его проекты оплачиваются напрямую с баланса Polza.
+    Отдаём мастеру кабинет, который ещё никому не принадлежит (обычно «Мой магазин» с первыми проектами),
+    иначе создаём «Кабинет мастера»."""
+    from ..db.models import Client, Project
+    with db.session() as s:
+        for u in s.scalars(select(User).where(User.org_id == org_id, User.role == "master", User.client_id.is_(None))).all():
+            taken = set(s.scalars(select(User.client_id).where(User.client_id.is_not(None))).all())
+            c = next((c for c in s.scalars(select(Client).where(Client.org_id == org_id).order_by(Client.id)).all()
+                      if c.id not in taken), None)
+            if c is None:
+                name, n = "Кабинет мастера", 1
+                while s.scalar(select(Client.id).where(Client.org_id == org_id, Client.name == name)):
+                    n += 1
+                    name = f"Кабинет мастера {n}"
+                c = Client(org_id=org_id, name=name)
+                s.add(c)
+                s.flush()
+                s.add(Project(client_id=c.id, name="Основной проект", settings={}))
+            c.billing = False
+            u.client_id = c.id
+            log.info("Мастер %s: свой кабинет «%s» — генерации напрямую с баланса Polza", u.email, c.name)
+
+
+def reset_master(org_id):
+    """Сброс входа мастера из .env (запуск с --reset-master): логин и пароль — DREAMGOODS_ADMIN_EMAIL / _PASSWORD.
+    Нужен, если пароль забыт или .env поменяли уже после первого запуска. Старые сессии мастера закрываются."""
+    from ..db.models import Session as WebSession
+    email = config.app_env("ADMIN_EMAIL", "admin").strip().lower()
+    password = config.app_env("ADMIN_PASSWORD", "admin") or "admin"
+    with db.session() as s:
+        u = (s.scalar(select(User).where(User.email == email)) or
+             s.scalar(select(User).where(User.role == "master").order_by(User.id)))
+        if not u:
+            u = User(org_id=org_id, email=email, name="Мастер", role="master")
+            s.add(u)
+            s.flush()
+        u.email, u.role, u.active, u.password_hash = email, "master", True, hash_password(password)
+        s.query(WebSession).filter(WebSession.user_id == u.id).delete()
+    log.warning("Вход мастера сброшен: логин «%s», пароль из DREAMGOODS_ADMIN_PASSWORD в .env", email)
+
+
 def bootstrap_master(org_id):
     """Мастер-аккаунт из .env (DREAMGOODS_ADMIN_EMAIL / DREAMGOODS_ADMIN_PASSWORD), если в базе ещё нет мастера с паролем."""
     email = config.app_env("ADMIN_EMAIL", "admin").strip().lower()
-    password = config.app_env("ADMIN_PASSWORD", "") or "admin"
+    password = config.app_env("ADMIN_PASSWORD", "admin") or "admin"
     with db.session() as s:
         if s.scalar(select(User.id).where(User.role == "master", User.password_hash != "")):
             return

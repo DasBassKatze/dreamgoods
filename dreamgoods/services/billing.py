@@ -5,16 +5,23 @@
 с наценкой (наценка клиента или общая из настроек мастера) — в журнал баланса (balance_ledger).
 Мастер пополняет балансы вручную. При нулевом балансе новые платные задания не ставятся.
 """
-from sqlalchemy import func, select
-from .payments import money, held
+import contextvars
+
+from sqlalchemy import func, select, text
 
 from .. import db
 from ..core.logs import log
+from ..core.money import decimal, money
 from ..db.models import BalanceEntry, Client, Organization, Project
 
 KIND_RU = {"generation": "генерация кадра", "edit": "правка фото", "qc": "ИИ-проверка", "count": "ИИ-проверка",
            "spec": "ИИ-проверка", "views": "разбор референсов", "profile": "профиль товара", "sort": "разбор импорта",
            "persona": "модель клиента", "persona_image": "образ модели", "style": "оформление"}
+
+
+# Кто запустил текущее действие: мастер платит напрямую с Polza — внутренний баланс кабинета не проверяется
+# и не списывается. Ставится из запроса (API) и переносится в задания очереди (payload.by_master).
+by_master = contextvars.ContextVar("dg_by_master", default=False)
 
 
 class NoFunds(ValueError):
@@ -34,44 +41,50 @@ def markup_of(client, org):
 
 def charge(s, project_id, usage, tag=""):
     """usage — список расходов операции [{kind, cost}] (из Trace). Списывает с баланса клиента проекта."""
-    cost = sum(float(u.get("cost") or 0) for u in usage)
-    if cost <= 0 or not project_id:
+    cost = sum((decimal(u.get("cost")) for u in usage), decimal(0))
+    if cost <= 0 or not project_id or by_master.get():
         return 0.0
     project = s.get(Project, project_id)
     if not project:
         return 0.0
-    client = s.get(Client, project.client_id, with_for_update=True)     # параллельные задания не «съедят» баланс дважды
+    client = s.get(Client, project.client_id, with_for_update=True, populate_existing=True)     # параллельные задания не «съедят» баланс дважды
     if not client or not client.billing:
         return 0.0
-    amount = round(cost * markup_of(client, s.get(Organization, client.org_id)), 2)
+    amount = money(cost * decimal(markup_of(client, s.get(Organization, client.org_id))))
     if amount <= 0:
         return 0.0
-    client.balance_rub = money(client.balance_rub) - money(amount)
+    client.balance_rub = money(decimal(client.balance_rub) - decimal(amount))
     kinds = []
     for u in usage:
         k = KIND_RU.get(u.get("kind"), u.get("kind") or "")
         if k and k not in kinds:
             kinds.append(k)
     what = (", ".join(kinds) + (f" · {tag.strip('[]')}" if tag else ""))[:200]
-    s.add(BalanceEntry(client_id=client.id, project_id=project_id, kind="charge", amount_rub=-amount, cost_rub=round(cost, 4),
+    s.add(BalanceEntry(client_id=client.id, project_id=project_id, kind="charge", amount_rub=-amount, cost_rub=money(cost, 6),
                        balance_after=client.balance_rub, what=what))
     return amount
 
 
-def topup(client_id, amount, user_id, note=""):
+def credit(s, client, amount, user_id, note=""):
+    """Зачисление внутри транзакции вызывающего кода; строка клиента должна быть заблокирована."""
     amount = money(amount)
     if amount == 0:
         raise ValueError("укажите сумму")
+    client.balance_rub = money(decimal(client.balance_rub) + decimal(amount))
+    s.add(BalanceEntry(client_id=client.id, user_id=user_id, kind="topup" if amount > 0 else "adjust",
+                       amount_rub=amount, balance_after=client.balance_rub,
+                       what=(note or ("пополнение" if amount > 0 else "списание вручную"))[:200]))
+    return client.balance_rub
+
+
+def topup(client_id, amount, user_id, note=""):
     with db.session() as s:
         c = s.get(Client, int(client_id), with_for_update=True)
         if not c:
             raise LookupError("клиент не найден")
-        c.balance_rub = money(c.balance_rub) + amount
-        s.add(BalanceEntry(client_id=c.id, user_id=user_id, kind="topup" if amount > 0 else "adjust", amount_rub=amount,
-                           balance_after=c.balance_rub, what=(note or ("пополнение" if amount > 0 else "списание вручную"))[:200]))
-        bal = c.balance_rub
+        bal = credit(s, c, amount, user_id, note)
         name = c.name
-    log.info("Баланс клиента «%s»: %+.2f ₽ → %.2f ₽ %s", name, amount, bal, note)
+    log.info("Баланс клиента «%s»: %+.2f ₽ → %.2f ₽ %s", name, float(amount), bal, note)
     return bal
 
 
@@ -81,18 +94,22 @@ def client_of_project(s, project_id):
 
 
 def ensure_funds(project_id):
-    """Перед платным заданием: у клиента с балансом должно быть больше нуля."""
+    """Перед платным заданием: у клиента с балансом должно быть больше нуля (мастера это не касается)."""
+    if by_master.get():
+        return
     with db.session() as s:
         c = client_of_project(s, project_id)
-        if c and c.billing and money(c.balance_rub) - held(s, c.id) <= 0:
+        if c and c.billing and (c.balance_rub or 0) <= 0:
             raise NoFunds(f"На балансе {c.balance_rub:.2f} ₽ — пополните баланс, чтобы запускать генерацию "
                           "(обратитесь к администратору сервиса)")
 
 
 def has_funds(project_id):
+    if by_master.get():
+        return True
     with db.session() as s:
         c = client_of_project(s, project_id)
-        return not (c and c.billing and money(c.balance_rub) - held(s, c.id) <= 0)
+        return not (c and c.billing and (c.balance_rub or 0) <= 0)
 
 
 def account(client_id, limit=200):
@@ -106,9 +123,14 @@ def account(client_id, limit=200):
         month = s.scalar(select(func.coalesce(func.sum(BalanceEntry.amount_rub), 0)).where(
             BalanceEntry.client_id == c.id, BalanceEntry.kind == "charge",
             BalanceEntry.created_at >= func.date_trunc("month", func.now())))
-        return {"balance": round(c.balance_rub or 0, 2), "reserved": float(held(s, c.id)),
-                "available": float(money(c.balance_rub) - held(s, c.id)), "billing": c.billing, "markup": markup_of(c, org),
+        op = func.split_part(BalanceEntry.what, " · ", 1)
+        prices = s.execute(select(op, func.count(BalanceEntry.id), func.avg(BalanceEntry.amount_rub))
+                           .where(BalanceEntry.client_id == c.id, BalanceEntry.kind == "charge",
+                                  BalanceEntry.created_at >= func.now() - text("interval '90 days'"))
+                           .group_by(op).order_by(func.count(BalanceEntry.id).desc())).all()
+        return {"balance": round(c.balance_rub or 0, 2), "billing": c.billing, "markup": markup_of(c, org),
                 "spent_month": abs(round(float(month or 0), 2)),
+                "prices": [{"what": w or "прочее", "count": n, "avg": abs(round(float(a or 0), 2))} for w, n, a in prices],
                 "entries": [entry_view(e) for e in rows]}
 
 

@@ -24,7 +24,9 @@ export function matchesQuery(p: Product, q: string) {
   return hay.toLowerCase().includes(q.toLowerCase());
 }
 
-export function ProductList({ filter, query, dialogs }: { filter: Filter; query: string; dialogs: Dialogs }) {
+export function ProductList({ filter, query, dialogs, focus, onFocus }: {
+  filter: Filter; query: string; dialogs: Dialogs; focus: number | null; onFocus: (productId: number, frameId: number) => void;
+}) {
   const { state } = useProject();
   const q = query.trim();
   const shown = state.products.filter((p) => matchesFilter(p, filter) && matchesQuery(p, q));
@@ -38,7 +40,7 @@ export function ProductList({ filter, query, dialogs }: { filter: Filter; query:
       ) : !shown.length ? (
         <div className="empty">{q ? `Ничего не найдено по «${q}»` : "Под фильтр ничего не подходит"}</div>
       ) : (
-        shown.map((p) => <ProductCard key={p.id} product={p} dialogs={dialogs} />)
+        shown.map((p) => <ProductCard key={p.id} product={p} dialogs={dialogs} focus={focus} onFocus={onFocus} />)
       )}
     </>
   );

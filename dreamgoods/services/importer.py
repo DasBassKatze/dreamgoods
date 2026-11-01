@@ -1,9 +1,7 @@
-"""Импорт: клиент загружает кучу фото (файлы, папку, ZIP) → фото в S3 → vision-модель по листам из 20 фото
+"""Импорт: клиент загружает кучу фото (файлы или папку; архивы не принимаются) → фото в S3 → vision-модель по листам из 20 фото
 (с перекрытием 4) определяет роль каждого фото и группы товаров, читает артикул с этикеток →
 клиент подтверждает группы → товары и их фото в базе (файлы не копируются: товар ссылается на загруженные)."""
-import io
 import re
-import zipfile
 from datetime import datetime
 from pathlib import PurePosixPath
 
@@ -16,8 +14,11 @@ from ..core import storage
 from ..core.events import say
 from ..core.logs import Trace, log
 from ..core.settings import effective
-from ..db.models import ImportFile, ImportSession, Organization, Product, ProductPhoto, Project
+from ..db.models import (Asset, Generation, ImportFile, ImportSession, Job, Organization, PersonaPhoto, Product,
+                         ProductPhoto, Project, StyleRefPhoto)
 from ..workers.queue import enqueue, set_note
+from . import import_ai as AI
+from . import import_rules as R
 from .common import write_usage
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -28,19 +29,33 @@ each preceded by its id and shooting time. A seller usually photographs one prod
 with a photo of its label/tag/box, then moves on to the next product.
 
 For EACH photo decide:
-- role: "product" — the product itself (any angle or background, even if a price sticker is visible on it);
+- role: "product" — the product itself (any angle or background), INCLUDING photos where a tag, sticker or label is
+  attached to the product but the product (or its part: sole, inside, lining, heel) is still clearly visible — e.g. a
+  sole with a size sticker. Such photos are used for generation; still read the article/text from that label;
   "label" — a close-up of a tag, price tag, box label, sticker, barcode or paper with article/size, where text is the main subject;
   "packaging" — the product's box or bag as the main subject, without a readable label;
   "junk" — blurred, accidental, empty or unrelated photo.
 - group: a letter. Photos of the SAME physical product (same model AND color) get the same letter; different products get
-  different letters even if they look similar. A label/packaging photo gets the letter of the product it belongs to
+  different letters even if they look similar. A change of product type, color, material or model in the series means
+  a NEW letter, even without a label photo between them and even if the photos were taken seconds apart. Never put
+  boots and sneakers, or black and beige items, under one letter. A label/packaging photo gets the letter of the product it belongs to
   (usually photographed right before or right after it); if that is unclear, use "?".
 - product: for product photos, 3–6 English words: type, color, key feature (e.g. "black over-the-knee boots, stiletto").
-- article: for label photos, the model/article code exactly as printed (e.g. "BX096-2"); not the barcode digits, not the price. Else "".
-- text: for label photos, other useful printed info briefly (brand, size, color, composition). Else "".
+- kind: for product photos, the product type in 1–2 English words, the SAME wording for every photo of one product
+  (e.g. "ankle boots", "sneakers", "bag"). Else "".
+- color: for product photos, the main color of the product in 1–2 English words (e.g. "black", "beige"); for a close-up
+  of a part (sole, lining) give the color of the whole product if you can tell it from neighbors. Else "".
+- has_label: true if a sticker, tag or printed label with text/codes is visible on this photo (also a small sticker on a
+  sole or insole), even if you cannot read it at this size. Else false.
+- codes: for label photos, EVERY code printed on the label as a list (article, model, color code, size), except the
+  barcode digits. Else [].
+- article: for label photos AND product photos with a readable label on them — the model/article code exactly as printed
+  (e.g. "BX096-2"); not the barcode digits, not the price. Else "". Different article codes mean different products:
+  never give the same group letter to photos whose labels show different articles.
+- text: for the same photos, other useful printed info briefly (brand, size, color, composition). Else "".
 
 Reply with ONLY one JSON object, no markdown:
-{"photos":[{"id":1,"role":"product","group":"A","product":"...","article":"","text":""}]}"""
+{"photos":[{"id":1,"role":"product","group":"A","product":"...","kind":"...","color":"...","article":"","codes":[],"has_label":false,"text":""}]}"""
 
 
 def _safe_name(name):
@@ -68,23 +83,10 @@ def save_upload(session_id, rel, data):
     if not parts:
         raise ValueError("пустое имя файла")
     files = []
-    if PurePosixPath(parts[-1]).suffix.lower() == ".zip":
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
-            for info in z.infolist():
-                if info.is_dir():
-                    continue
-                name = info.filename
-                if not info.flag_bits & 0x800:     # имена из русского Windows-архива
-                    try:
-                        name = name.encode("cp437").decode("cp866")
-                    except Exception:
-                        pass
-                sub = [_safe_name(x) for x in name.replace("\\", "/").split("/") if x not in ("", ".", "..")]
-                if not sub or PurePosixPath(sub[-1]).suffix.lower() not in IMG_EXT or "__MACOSX" in sub:
-                    continue
-                path = "/".join([PurePosixPath(parts[-1]).stem] + sub if len(sub) == 1 else sub)
-                files.append((path, z.read(info)))
-    elif PurePosixPath(parts[-1]).suffix.lower() in IMG_EXT:
+    if PurePosixPath(parts[-1]).suffix.lower() in (".zip", ".rar", ".7z"):
+        # архивы не принимаем: содержимое не видно до распаковки и его нельзя проверить — нужна папка или фото
+        raise ValueError("архивы не поддерживаются — распакуйте архив и загрузите папку или фото")
+    if PurePosixPath(parts[-1]).suffix.lower() in IMG_EXT:
         files.append(("/".join(parts), data))
     with db.session() as s:
         sess = s.get(ImportSession, session_id)
@@ -102,9 +104,92 @@ def save_upload(session_id, rel, data):
     return n, total
 
 
-def _sort_chunk(st, model, items, trace):
-    """items: [(id, bytes, time_str)] → {id: {...}}"""
-    content = [{"type": "text", "text": "Photos in shooting order:"}]
+def _art(a):
+    """Артикул для сравнения: без пробелов, в верхнем регистре."""
+    return re.sub(r"\s+", "", str(a or "")).upper()
+
+
+def _split_by_articles(g, order="auto"):
+    """Группа с бирками разных артикулов → части по одному артикулу.
+
+    Фото идут в порядке съёмки. Если группа начинается с бирки — бирку снимали перед товаром, и каждая бирка
+    открывает новую часть; иначе бирку снимали после товара, и бирка закрывает часть."""
+    arts = [_art(r["article"]) for r in g]
+    if len({a for a in arts if a}) < 2:
+        return [g]
+    first_label = next((i for i, a in enumerate(arts) if a), 0)
+    if order in ("label_before", "label_after"):        # порядок съёмки задан продавцом
+        before = order == "label_before"
+    else:
+        before = all(not a or g[i]["role"] == "label" for i, a in enumerate(arts[:first_label + 1])) and \
+            not any(g[i]["role"] == "product" for i in range(first_label))
+    parts, cur, cur_art = [], [], ""
+    for r, a in zip(g, arts):
+        if before:
+            if a and cur and cur_art and a != cur_art:
+                parts.append(cur)
+                cur = []
+            cur.append(r)
+            cur_art = a or cur_art
+        else:
+            if a and cur_art and a != cur_art:
+                parts.append(cur)
+                cur = []
+            cur.append(r)
+            cur_art = a or cur_art
+            if a and r["role"] == "label":
+                parts.append(cur)
+                cur, cur_art = [], ""
+    if cur:
+        if parts and not any(x["role"] == "product" for x in cur):
+            parts[-1].extend(cur)           # хвост из одних бирок/упаковки — к последнему товару
+        else:
+            parts.append(cur)
+    # части без фото товара (одни бирки) — к соседней части
+    out = []
+    for part in parts:
+        if out and not any(x["role"] == "product" for x in part):
+            out[-1].extend(part)
+        else:
+            out.append(part)
+    if len(out) > 1 and not any(x["role"] == "product" for x in out[0]):
+        out[1] = out[0] + out[1]
+        out.pop(0)
+    return out
+
+
+def info_pre(answers, rows):
+    """Предварительное слияние ответов листов: {id: данные фото} (последний лист уточняет)."""
+    info = {r["id"]: {} for r in rows}
+    for _, got in answers:
+        for pid, ph in got.items():
+            if pid in info:
+                info[pid] = {**info[pid], **{k: v for k, v in ph.items() if v not in (None, "")}}
+    return info
+
+
+def _group_warn(g, rules):
+    """Подсказка пользователю, что группу стоит проверить (по правилам продавца)."""
+    n_prod = sum(1 for r in g if r["role"] == "product")
+    per = rules["photos_per_product"]
+    if per and n_prod > per * 1.7 + 1:
+        return f"фото товара {n_prod} — больше обычного ({per}): возможно, здесь несколько товаров"
+    kinds = {R.norm(r.get("kind")) for r in g if r["role"] == "product" and r.get("kind")}
+    if len(kinds) > 1:
+        return "разный вид товара на фото: " + ", ".join(sorted({r["kind"] for r in g if r.get("kind")})[:3])
+    if rules["labels_per_product"] == 0 or rules["order"] == "no_label":
+        return ""
+    if rules["labels_per_product"] > 0 and not any(r["role"] == "label" for r in g):
+        return "нет фото бирки"
+    return ""
+
+
+def _sort_chunk(st, model, items, trace, rules_text=""):
+    """items: [(id, bytes, time_str)] → {id: {...}}; rules_text — правила продавца (номенклатура загрузки)."""
+    content = []
+    if rules_text:
+        content.append({"type": "text", "text": rules_text + "\nKeep the reply format."})
+    content.append({"type": "text", "text": "Photos in shooting order:"})
     for pid, data, ts in items:
         content.append({"type": "text", "text": f"Photo {pid} (shot at {ts}):"})
         content.append({"type": "image_url", "image_url": {"url": jpeg_data_url(data, 512)}})
@@ -131,6 +216,8 @@ def analyze(session_id, job_id=None):
             st = effective(org, project)
             group_mode = sess.options.get("group_mode", "auto")
             label_mode = sess.options.get("label_mode", "read")
+            rules = R.clean(sess.options.get("rules") or {"rule": sess.options.get("sort_rule") or ""})
+            art_rx = R.article_regex(rules["article_example"])
             files = s.scalars(select(ImportFile).where(ImportFile.session_id == session_id)).all()
             rows = []
             for f in files:
@@ -143,6 +230,9 @@ def analyze(session_id, job_id=None):
         if not rows:
             raise RuntimeError("нет загруженных фото")
         model = (st.get("profile_model") or "").strip() or st.get("qc_model")
+        no_ai = group_mode == "none"          # «просто загрузить»: без ИИ — по папкам, все фото — фото товара
+        if no_ai:
+            group_mode = "folders"
         if group_mode == "folders":
             rows.sort(key=lambda r: (r["dir"], r["time"], r["name"]))
         else:
@@ -152,10 +242,11 @@ def analyze(session_id, job_id=None):
         srcs = {k: sum(1 for r in rows if r["src"] == k) for k in ("exif", "name", "upload")}
         log.info("%s анализ: %d фото · время съёмки: EXIF %d, из имени %d, по времени загрузки %d · модель %s · группы: %s",
                  tag, len(rows), srcs["exif"], srcs["name"], srcs["upload"], model,
-                 "по папкам архива" if group_mode == "folders" else "автоматически")
+                 "по папкам" if group_mode == "folders" else "автоматически" + (" + правила продавца" if rules != R.DEFAULTS else ""))
         step = SORT_CHUNK - SORT_OVERLAP
-        starts = list(range(0, max(len(rows) - SORT_OVERLAP, 1), step)) or [0]
-        _update(session_id, status="analyzing", progress=[0, len(starts)])
+        starts = [] if no_ai else (list(range(0, max(len(rows) - SORT_OVERLAP, 1), step)) or [0])
+        steps = len(starts) + (2 if starts else 0)      # листы + бирки крупно + проверка групп
+        _update(session_id, status="analyzing", progress=[0, steps])
         answers, total_cost = [], 0.0
         for c, a in enumerate(starts):
             part = rows[a:a + SORT_CHUNK]
@@ -167,14 +258,35 @@ def analyze(session_id, job_id=None):
                 prev = r["time"]
             if job_id:
                 set_note(job_id, f"лист {c + 1}/{len(starts)}")
-            got, cost, secs = _sort_chunk(st, model, items, trace)
+            got, cost, secs = _sort_chunk(st, model, items, trace, R.prompt_section(rules) if group_mode == "auto" else "")
             total_cost += cost
             answers.append((c, got))
-            _update(session_id, progress=[c + 1, len(starts)], cost_rub=total_cost)
+            _update(session_id, progress=[c + 1, steps], cost_rub=total_cost)
             log.info("%s лист %d/%d (фото %d–%d) за %.1f с, %.2f ₽", tag, c + 1, len(starts),
                      part[0]["id"], part[-1]["id"], secs, cost)
-        with db.session() as s:
-            write_usage(s, ids["org"], ids["project"], None, None, trace, f"import:{session_id}")
+        by_id = {r["id"]: r for r in rows}
+        if starts and label_mode != "skip":
+            # дочитываем бирки крупно: на листе из 20 фото мелкая наклейка (подошва, стелька) не читается
+            need = []
+            for pid, ph in info_pre(answers, rows).items():
+                art = R.pick_article(str(ph.get("article") or "").strip(), ph.get("codes"), art_rx, rules["ignore"])
+                role = str(ph.get("role") or "")
+                if not art and role != "junk" and (role == "label" or ph.get("has_label") in (True, "true", 1)):
+                    need.append(by_id[pid])
+            if need:
+                _update(session_id, progress=[len(starts), steps])
+                if job_id:
+                    set_note(job_id, f"бирки крупно: {len(need)}")
+                read, cost = AI.read_labels(st, model, need, trace)
+                total_cost += cost
+                _update(session_id, cost_rub=total_cost)
+                got_n = 0
+                for pid, ph in read.items():
+                    if pid in by_id:
+                        answers.append((len(starts), {pid: {"article": ph.get("article") or "", "codes": ph.get("codes") or [],
+                                                             **({"text": ph["text"]} if ph.get("text") else {})}}))
+                        got_n += bool(ph.get("article") or ph.get("codes"))
+                log.info("%s бирки крупно: фото %d, прочитано %d, %.2f ₽", tag, len(need), got_n, cost)
         # объединение групп между листами через перекрывающиеся фото (union-find)
         parent = {}
 
@@ -185,8 +297,19 @@ def analyze(session_id, job_id=None):
                 x = parent[x]
             return x
 
+        arts_of = {}            # корень группы → артикулы с её бирок (разные артикулы — разные товары)
+
         def union(a, b):
-            parent[find(a)] = find(b)
+            ra, rb = find(a), find(b)
+            if ra == rb:
+                return True
+            A, B = arts_of.get(ra, set()), arts_of.get(rb, set())
+            if A and B and not (A & B):
+                return False         # у обеих групп свои, разные артикулы — не склеиваем
+            parent[ra] = rb
+            arts_of[rb] = A | B
+            arts_of.pop(ra, None)
+            return True
 
         info = {r["id"]: {} for r in rows}
         keys = {r["id"]: [] for r in rows}
@@ -199,9 +322,21 @@ def analyze(session_id, job_id=None):
                 g = str(ph.get("group") or "?").strip()
                 if g and g != "?" and str(ph.get("role")) != "junk":
                     keys[pid].append((c, g))
+        for pid, ph in info.items():
+            # артикул — по образцу продавца из всех кодов бирки (размер и цвет не примешиваются)
+            ph["article"] = R.pick_article(str(ph.get("article") or "").strip(), ph.get("codes"), art_rx, rules["ignore"])
+            if "packaging" in rules["ignore"] and str(ph.get("role")) == "packaging":
+                ph["role"] = "junk"
+        for pid, ph in info.items():
+            a = _art(ph.get("article"))
+            if a and str(ph.get("role")) != "junk":
+                for k in keys[pid]:
+                    arts_of.setdefault(find(k), set()).add(a)
         for pid, ks in keys.items():
             for k in ks[1:]:
-                union(ks[0], k)
+                if not union(ks[0], k):
+                    log.info("%s листы: группы с разными артикулами не склеены (%s)", tag,
+                             ", ".join(sorted(arts_of.get(find(ks[0]), set()) | arts_of.get(find(k), set()))))
 
         for r in rows:
             ph = info.get(r["id"]) or {}
@@ -210,6 +345,8 @@ def analyze(session_id, job_id=None):
             r["product"] = str(ph.get("product") or "")
             r["article"] = str(ph.get("article") or "").strip()
             r["text"] = str(ph.get("text") or "").strip()
+            r["kind"] = str(ph.get("kind") or "").strip()[:40]
+            r["color"] = str(ph.get("color") or "").strip()[:40]
             r["gkey"] = find(keys[r["id"]][0]) if keys[r["id"]] else None
 
         if group_mode == "folders":
@@ -223,18 +360,25 @@ def analyze(session_id, job_id=None):
                     best, bd = None, None
                     for q in rows:
                         if q["role"] == "product" and q["gkey"]:
-                            d = abs(q["time"] - r["time"]) + (0.5 if q["id"] < r["id"] else 0)
+                            d = abs(q["time"] - r["time"])
+                            # порядок съёмки продавца: бирка после товара — ищем товар раньше, перед товаром — позже
+                            if rules["order"] == "label_after":
+                                d += 0 if q["id"] < r["id"] else 10 ** 6
+                            elif rules["order"] == "label_before":
+                                d += 0 if q["id"] > r["id"] else 10 ** 6
+                            else:
+                                d += 0.5 if q["id"] < r["id"] else 0
                             if bd is None or d < bd:
                                 best, bd = q["gkey"], d
                     r["gkey"] = best
             # одинаковый артикул на этикетках разных групп — это один товар
             art_key = {}
             for r in rows:
-                a = re.sub(r"\s+", "", r["article"]).upper()
-                if r["role"] == "label" and a and r["gkey"]:
+                a = _art(r["article"])
+                if r["role"] in ("label", "product") and a and r["gkey"]:
                     if a in art_key and find(art_key[a]) != find(r["gkey"]):
-                        log.info("%s группы объединены по одинаковому артикулу %s", tag, r["article"])
-                        union(r["gkey"], art_key[a])
+                        if union(r["gkey"], art_key[a]):
+                            log.info("%s группы объединены по одинаковому артикулу %s", tag, r["article"])
                     art_key.setdefault(a, r["gkey"])
             for r in rows:
                 if r["gkey"] and not (isinstance(r["gkey"], tuple) and r["gkey"][0] == "dir"):
@@ -249,16 +393,70 @@ def analyze(session_id, job_id=None):
                 groups[k] = []
                 order.append(k)
             groups[k].append(r)
+        # в одной группе оказались бирки с разными артикулами — делим её по биркам (раздельных товаров несколько)
+        split_order = []
+        for k in order:
+            parts = [groups[k]] if k == "_junk" or group_mode == "folders" else _split_by_articles(groups[k], rules["order"])
+            if len(parts) > 1:
+                log.info("%s группа разделена по артикулам: %s", tag,
+                         ", ".join(sorted({_art(r["article"]) for r in groups[k] if _art(r["article"])})))
+            if k != "_junk" and group_mode != "folders":
+                # внутри части без разных артикулов — серии разного вида (тип, цвет) — это разные товары
+                vis = []
+                for part in parts:
+                    sub = R.split_visual(part, rules["colors_separate"], rules["order"])
+                    if len(sub) > 1:
+                        log.info("%s группа разделена по виду товара: %s", tag, " | ".join(
+                            f"{x[0].get('kind') or '?'} {x[0].get('color') or ''}".strip()
+                            for x in ([r for r in s_ if r["role"] == "product"] or s_ for s_ in sub)))
+                    vis.extend(sub)
+                parts = vis
+            for i, part in enumerate(parts):
+                nk = k if i == 0 else (k, "part", i)
+                groups[nk] = part
+                split_order.append(nk)
+        order = split_order
+        if group_mode == "auto" and starts:
+            # проверка групп: каждую группу модель смотрит отдельно и крупнее — «это один товар?»
+            cand = [k for k in order if k != "_junk" and sum(1 for r in groups[k] if r["role"] == "product") >= 2]
+            if cand:
+                _update(session_id, progress=[len(starts) + 1, steps])
+                if job_id:
+                    set_note(job_id, f"проверка групп: {len(cand)}")
+                checked, cost = AI.verify_groups(st, model, [groups[k] for k in cand], trace,
+                                                 R.prompt_section(rules) if rules != R.DEFAULTS else "")
+                total_cost += cost
+                _update(session_id, cost_rub=total_cost)
+                new_order, n_split = [], 0
+                res_of = dict(zip(cand, checked))
+                for k in order:
+                    if k not in res_of:
+                        new_order.append(k)
+                        continue
+                    letters, reason = res_of[k]
+                    parts = AI.split_by_letters(groups[k], letters)
+                    if len(parts) > 1:
+                        n_split += 1
+                        log.info("%s проверка группы: разделена на %d товара — %s", tag, len(parts), reason or "без пояснения")
+                    for i, part in enumerate(parts):
+                        nk = k if i == 0 else (k, "v", i)
+                        groups[nk] = part
+                        new_order.append(nk)
+                order = new_order
+                log.info("%s проверка групп: %d, разделено %d, %.2f ₽", tag, len(cand), n_split, cost)
+        if total_cost:
+            with db.session() as s:
+                write_usage(s, ids["org"], ids["project"], None, None, trace, f"import:{session_id}")
         out, noname, used = [], 0, set()
         for k in order:
             if k == "_junk":
                 continue
             g = groups[k]
-            arts = [r["article"] for r in g if r["role"] == "label" and r["article"]]
-            texts = [r["text"] for r in g if r["role"] == "label" and r["text"]]
+            arts = [r["article"] for r in g if r["role"] in ("label", "product") and r["article"]]
+            texts = [r["text"] for r in g if r["role"] in ("label", "product") and r["text"]]
             prods = [r["product"] for r in g if r["role"] == "product" and r["product"]]
-            if isinstance(k, tuple) and k[0] == "dir":
-                name = k[1]
+            if isinstance(k, tuple) and k[0] == "dir" and len(k) == 2:
+                name = k[1] if k[1] != "без_папки" else "товар_01"
             elif arts:
                 name = max(set(arts), key=arts.count)
             else:
@@ -272,11 +470,13 @@ def analyze(session_id, job_id=None):
             out.append({"id": f"g{len(out) + 1}", "name": name, "article": arts[0] if arts else "",
                         "articles": sorted(set(arts)), "text": "; ".join(dict.fromkeys(texts)),
                         "product": max(set(prods), key=prods.count) if prods else "",
-                        "photos": [r["name"] for r in g], "exists": name.lower() in existing})
+                        "photos": [r["name"] for r in g], "exists": name.lower() in existing,
+                        "warn": _group_warn(g, rules) if group_mode != "folders" else ""})
         if "_junk" in groups:
             out.append({"id": "junk", "name": "Не использовать", "article": "", "articles": [], "text": "",
                         "product": "", "photos": [r["name"] for r in groups["_junk"]], "exists": False, "junk": True})
-        photos = [{k: r[k] for k in ("id", "name", "asset", "time", "src", "role", "product", "article", "text", "dir")}
+        photos = [{k: r[k] for k in ("id", "name", "asset", "time", "src", "role", "product", "article", "text", "dir",
+                                     "kind", "color")}
                   for r in rows]
         if label_mode == "keep":
             for ph in photos:
@@ -287,7 +487,7 @@ def analyze(session_id, job_id=None):
             for f in s.scalars(select(ImportFile).where(ImportFile.session_id == session_id)).all():
                 r = by_fid.get(f.id)
                 if r:
-                    f.analysis = {k: r.get(k) for k in ("id", "role", "product", "article", "text", "src")}
+                    f.analysis = {k: r.get(k) for k in ("id", "role", "product", "article", "text", "src", "kind", "color")}
             sess = s.get(ImportSession, session_id)
             sess.groups, sess.status, sess.result = out, "ready", {"photos": photos}
         n_lab = sum(1 for r in rows if r["role"] == "label")
@@ -299,6 +499,47 @@ def analyze(session_id, job_id=None):
         raise
 
 
+def _feedback(sess, files, groups, tag):
+    """Сравнение раскладки ИИ с тем, что подтвердил пользователь: у каждого фото — группа и роль от ИИ и итоговые,
+    у сессии — сводка и отмеченные «ошибки раскладки». Нужно для разбора качества раскладки (выгрузка проверки)."""
+    ai_group = {}
+    for g in sess.groups or []:
+        for n in g.get("photos") or []:
+            ai_group[n] = "_junk" if g.get("junk") else g.get("id")
+    ai_role = {ph["name"]: ph.get("role") for ph in (sess.result or {}).get("photos") or []}
+    final = {}
+    for i, g in enumerate(groups):
+        for n, r in g.get("photos") or []:
+            final[n] = (i, r)
+    # группа ИИ → в какую итоговую группу ушло больше всего её фото; фото, ушедшие в другую, — перенесённые
+    major = {}
+    for n, (i, r) in final.items():
+        major.setdefault(ai_group.get(n), {}).setdefault(i, 0)
+        major[ai_group.get(n)][i] += 1
+    main_of = {k: max(v, key=v.get) for k, v in major.items()}
+    owner = {}
+    for k, i in main_of.items():
+        owner.setdefault(i, k)
+    moved = role_changed = 0
+    for n, f in files.items():
+        i, r = final.get(n, (None, "junk"))
+        g_ai = ai_group.get(n)
+        was_moved = i is not None and g_ai is not None and g_ai != "_junk" and owner.get(i) != g_ai
+        changed = bool(ai_role.get(n)) and ai_role.get(n) != r
+        moved += was_moved
+        role_changed += changed
+        f.analysis = {**(f.analysis or {}), "ai_group": g_ai, "final_group": groups[i].get("name") if i is not None else "",
+                      "final_role": r, "moved": was_moved, "role_changed": changed}
+    flagged = [{"name": g.get("name"), "photos": len(g.get("photos") or [])} for g in groups if g.get("sort_error")]
+    sess.result = {**(sess.result or {}), "feedback": {"moved": moved, "role_changed": role_changed, "flagged": flagged,
+                                                        "ai_groups": len([g for g in sess.groups or [] if not g.get("junk")]),
+                                                        "final_groups": len(groups)}}
+    if moved or role_changed or flagged:
+        log.info("%s правки раскладки: перенесено фото %d, сменена роль %d, групп ИИ %d → итог %d%s", tag, moved,
+                 role_changed, sess.result["feedback"]["ai_groups"], len(groups),
+                 f"; отмечены ошибки: {', '.join(x['name'] for x in flagged)}" if flagged else "")
+
+
 def _update(session_id, **kw):
     with db.session() as s:
         sess = s.get(ImportSession, session_id)
@@ -306,10 +547,13 @@ def _update(session_id, **kw):
             setattr(sess, k, v)
 
 
-def start_analysis(session_id, group_mode, label_mode):
+def start_analysis(session_id, group_mode, label_mode, rules=None):
+    rules = R.clean(rules)
     with db.session() as s:
         sess = s.get(ImportSession, session_id)
-        sess.options = {"group_mode": group_mode, "label_mode": label_mode}
+        sess.options = {"group_mode": group_mode, "label_mode": label_mode, "rules": rules}
+        project = s.get(Project, sess.project_id)       # правила запоминаются в проекте — подставятся в следующую загрузку
+        project.settings = {**(project.settings or {}), "import_rules": rules}
         sess.status, sess.error, sess.cost_rub, sess.progress = "analyzing", "", 0.0, [0, 0]
         enqueue(s, "import", sess.project_id, payload={"session": session_id}, priority=10)
 
@@ -320,6 +564,7 @@ def apply(session_id, groups, label_mode, auto_profile):
     with db.session() as s:
         sess = s.get(ImportSession, session_id)
         files = {f.rel_path: f for f in s.scalars(select(ImportFile).where(ImportFile.session_id == session_id)).all()}
+        _feedback(sess, files, groups, tag)
         made, added, labels, merged, new_ids = [], 0, 0, [], []
         for g in groups:
             items = [(n, r) for n, r in (g.get("photos") or []) if n in files and r != "junk"]
@@ -347,11 +592,12 @@ def apply(session_id, groups, label_mode, auto_profile):
                 s.add(ProductPhoto(product_id=p.id, asset_id=files[n].asset_id, role=dict(items)[n], is_reference=True,
                                    position=pos))
                 added += 1
-            if labs and label_mode != "skip":
+            tagged = [n for n in prods if (files[n].analysis or {}).get("article") or (files[n].analysis or {}).get("text")]
+            if (labs or tagged) and label_mode != "skip":
                 arts = set((p.label_data or {}).get("articles") or [])
                 texts = list((p.label_data or {}).get("texts") or [])
-                for n in labs:
-                    if files[n].asset_id not in have:
+                for n in labs + tagged:          # бирки и фото товара с биркой на нём (подошва с наклейкой)
+                    if n in labs and files[n].asset_id not in have:
                         pos += 1
                         s.add(ProductPhoto(product_id=p.id, asset_id=files[n].asset_id, role="label", is_reference=False,
                                            position=pos))
@@ -362,6 +608,9 @@ def apply(session_id, groups, label_mode, auto_profile):
                     if an.get("text") and an["text"] not in texts:
                         texts.append(an["text"])
                 p.label_data = {"articles": sorted(arts), "texts": texts}
+            desc = str(g.get("description") or "").strip()[:2000]
+            if desc:                     # описание товара словами — в профиль (подсказка ИИ вместе с текстом бирки)
+                p.label_data = {**(p.label_data or {}), "user_text": desc}
             made.append(sku)
             log.info("%s → товар %s: фото товара %d, этикеток %d%s", tag, sku, len(prods), len(labs) if label_mode != "skip" else 0,
                      " (товар уже был — фото добавлены)" if sku in merged else "")
@@ -397,11 +646,29 @@ def get_session(session_id, project_id=None):
         return sess.status, sess.project_id
 
 
+STALE_ERROR = "анализ прерван (сервер перезапускался) — нажмите «Анализировать» ещё раз, загруженные фото на месте"
+
+
+def _unstick(s, sess):
+    """«Анализ идёт», а задания анализа уже нет (сервер перезапустили посреди анализа) — сессия снова доступна:
+    статус «ошибка», можно запустить анализ заново или начать загрузку с начала."""
+    if sess.status != "analyzing":
+        return False
+    jobs = s.scalars(select(Job).where(Job.kind == "import", Job.project_id == sess.project_id,
+                                       Job.status.in_(("queued", "running", "cancelling")))).all()
+    if any(int((j.payload or {}).get("session") or 0) == sess.id for j in jobs):
+        return False
+    sess.status, sess.error = "error", STALE_ERROR
+    log.warning("[импорт %s] анализ без задания (прерван перезапуском) — сессия разблокирована", sess.id)
+    return True
+
+
 def view(session_id):
     with db.session() as s:
         sess = s.get(ImportSession, int(session_id))
         if not sess:
             raise LookupError("сессия импорта не найдена")
+        _unstick(s, sess)
         count = s.scalar(select(func.count(ImportFile.id)).where(ImportFile.session_id == sess.id))
         return {"id": sess.id, "project_id": sess.project_id, "status": sess.status, "progress": sess.progress,
                 "error": sess.error, "photos": (sess.result or {}).get("photos", []), "groups": sess.groups or [],
@@ -416,16 +683,70 @@ def upload(session_id, path, data):
     return save_upload(session_id, path, data)
 
 
-def analyze_request(session_id, group_mode, label_mode):
+def analyze_request(session_id, group_mode, label_mode, rules=None):
     with db.session() as s:
         sess = s.get(ImportSession, int(session_id))
         if not sess:
             raise LookupError("сессия импорта не найдена")
+        _unstick(s, sess)
         if sess.status == "analyzing":
             raise ValueError("анализ уже идёт")
         if not s.scalar(select(func.count(ImportFile.id)).where(ImportFile.session_id == sess.id)):
             raise ValueError("сначала загрузите фото")
-    start_analysis(session_id, group_mode, label_mode)
+    start_analysis(session_id, group_mode, label_mode, rules)
+
+
+def cancel(session_id):
+    """Отказ от незавершённой загрузки: загруженные фото удаляются из базы и хранилища, чтобы не занимать место.
+    Файл остаётся, если он нужен где-то ещё (то же фото уже есть у товара, в другой загрузке, у модели или оформления)."""
+    with db.session() as s:
+        sess = s.get(ImportSession, int(session_id))
+        if not sess:
+            raise LookupError("сессия импорта не найдена")
+        _unstick(s, sess)
+        if sess.status in ("analyzing", "applying"):
+            raise ValueError("сессия импорта сейчас занята — дождитесь окончания анализа")
+        if sess.status == "done":
+            return {"deleted": 0, "freed": 0}
+        files = s.scalars(select(ImportFile).where(ImportFile.session_id == sess.id)).all()
+        asset_ids = {f.asset_id for f in files}
+        for f in files:
+            s.delete(f)
+        sess.status, sess.groups, sess.result = "cancelled", [], {}
+        s.flush()
+        keys, freed, deleted = set(), 0, 0
+        for a in s.scalars(select(Asset).where(Asset.id.in_(asset_ids or {None}))).all():
+            if _asset_used(s, a.id):
+                continue
+            keys.add(a.storage_key)
+            freed += a.bytes or 0
+            deleted += 1
+            s.delete(a)
+        s.flush()
+        # одинаковые файлы хранятся один раз — удаляем файл, только если на него не ссылается ни одна запись
+        still = set(s.scalars(select(Asset.storage_key).where(Asset.storage_key.in_(keys or {""}))).all())
+        project_id = sess.project_id
+    removed = 0
+    for k in keys - still:
+        try:
+            storage.remove(k)
+            removed += 1
+        except Exception as e:          # файл не удалился — место освободится при следующей уборке, загрузка всё равно отменена
+            log.warning("[импорт %s] файл %s не удалён: %s", session_id, k, e)
+    log.info("[импорт %s] загрузка отменена: удалено фото %d (файлов %d, %.1f МБ)", session_id, deleted, removed, freed / 1e6)
+    say("info", f"🗑 Загрузка отменена: удалено фото {deleted}", project_id)
+    from .projects import _storage_cache
+    _storage_cache.clear()
+    return {"deleted": deleted, "freed": freed}
+
+
+def _asset_used(s, asset_id):
+    """На файл ссылается что-то кроме отменённой загрузки."""
+    for col in (ProductPhoto.asset_id, PersonaPhoto.asset_id, StyleRefPhoto.asset_id, Generation.output_asset_id,
+                ImportFile.asset_id):
+        if s.scalar(select(func.count()).select_from(col.class_).where(col == asset_id)):
+            return True
+    return False
 
 
 def apply_request(session_id, groups, label_mode, auto_profile):

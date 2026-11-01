@@ -3,7 +3,11 @@ import { assetUrl } from "../api/client";
 import type { Product } from "../api/types";
 import { useActions } from "../hooks/useActions";
 import { useProject } from "../ProjectContext";
+import { SHORT_MARKET, useRunOptions } from "../features/generate/runOptions";
+import { pad } from "../lib/format";
+import { Icon } from "../layout/Icon";
 import { FrameTile } from "./FrameTile";
+import { ProductSettings } from "./ProductSettings";
 import { useUI } from "./ui";
 
 const VIEW_RU: Record<string, string> = {
@@ -12,13 +16,26 @@ const VIEW_RU: Record<string, string> = {
   detail: "деталь", pair: "пара", worn: "на человеке", packaging: "упаковка",
 };
 
-export function ProductCard({ product: p, dialogs }: { product: Product; dialogs: Dialogs }) {
-  const { api, reload, run, selected, toggleSelected, state } = useProject();
-  const { generate, regenerate, profiles } = useActions();
+interface Props {
+  product: Product;
+  dialogs: Dialogs;
+  focus: number | null;
+  onFocus: (productId: number, frameId: number) => void;
+}
+
+export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
+  const { api, reload, run, selected, toggleSelected, state, pickedFrames, togglePicked } = useProject();
+  const { generate, regenerate, profiles, quick } = useActions();
+  const opts = useRunOptions();
   const ui = useUI();
+  const zoomRefs = (i: number) => ui.zoom(p.photos.map((x) => ({ asset: x.asset,
+    caption: `${p.sku}${x.view ? ` · ${VIEW_RU[x.view] || x.view}` : ""} · ${x.selected ? "идёт в генерацию" : "не используется"}` })), i);
   const chosen = p.photos.filter((x) => x.selected);
   const busy = p.profile_job?.state === "running";
   const own = p.preset_id ? state.presets.find((x) => x.id === p.preset_id) : null;
+  const eff = own || state.preset;
+  const aspect = eff?.aspect || "3:4";
+  const label = [eff?.market && eff.market !== "none" ? SHORT_MARKET[eff.market] : "", aspect].filter(Boolean).join(" · ");
 
   const toggleRef = (asset: string) =>
     run(async () => {
@@ -47,27 +64,26 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
           <span className="pbusy">составляю профиль по фото…</span>
         ) : p.profile ? (
           <span className="pchip2" title="Профиль товара — открыть и поправить" onClick={profileClick}>
-            🧠 {p.profile.category}{p.profile.subcategory ? ` · ${p.profile.subcategory}` : ""} · {p.profile.summary}
+            <Icon name="spark" size={13} />{p.profile.category}{p.profile.subcategory ? ` · ${p.profile.subcategory}` : ""} · {p.profile.summary}
           </span>
         ) : (
-          <button title="ИИ составит профиль товара по фото: описание, детали, чек-лист проверки, кадры" onClick={profileClick}>🧠 Профиль</button>
+          <button title="ИИ составит профиль товара по фото: описание, детали, чек-лист проверки, кадры" onClick={profileClick}><Icon name="spark" size={14} /> Профиль по фото</button>
         )}
-        {own && <span className="tag preset-tag" title="Свой пресет товара" onClick={dialogs.openPresets}>🎛 {own.name}</span>}
-        {p.persona && (
-          <span className="tag preset-tag" onClick={dialogs.openPersonas}
-            title={p.persona.via === "товар" ? "Модель выбрана в профиле товара" : p.persona.via === "проект" ? "Модель проекта"
-              : `Модель по группе «${p.persona.via}»`}>👤 {p.persona.name}</span>
-        )}
+        <span className="mk-chip" title="Площадка и формат по пресету товара">{label}</span>
         <span className="spacer" />
-        <button disabled={p.done === p.total} onClick={() => generate([p.id])}>▶ Догенерировать</button>
+        <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие (с пожеланиями из строки запуска)"
+          onClick={() => generate([p.id], 0, opts)}>Сгенерировать</button>
       </div>
+
+      <ProductSettings product={p} dialogs={dialogs} />
 
       <div className="refs">
         <span className="lbl">Референсы {chosen.length} из {p.photos.length}:</span>
-        {p.photos.map((ph) => (
+        {p.photos.map((ph, i) => (
           <button key={ph.asset} className={`ref ${ph.selected ? "on" : ""}`} onClick={() => toggleRef(ph.asset)}
             title={(ph.selected ? "Идёт в генерацию" : "Не используется") + (ph.view ? ` · ракурс: ${VIEW_RU[ph.view] || ph.view}` : "")}>
             <img loading="lazy" src={assetUrl(ph.asset, 160)} alt="" />
+            <span className="zoom-btn" role="button" title="Открыть крупно" onClick={(e) => { e.stopPropagation(); zoomRefs(i); }}><Icon name="search" size={14} /></span>
           </button>
         ))}
         {!chosen.length && <span className="err-text">не выбрано ни одного фото</span>}
@@ -78,7 +94,10 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
       {p.total ? (
         <div className="frames">
           {p.frames.map((f) => (
-            <FrameTile key={f.id} frame={f} onOpen={() => dialogs.openFrame(p.id, f.id)} onRegen={() => regenerate(p, f)} />
+            <FrameTile key={f.id} frame={f} fileName={`${p.sku}_${pad(f.i)}`} aspect={aspect} label={label}
+              focused={focus === f.id} onFocus={() => onFocus(p.id, f.id)} onUpscale={() => quick(p, f, "upscale")}
+              onOpen={() => dialogs.openFrame(p.id, f.id)} onRegen={() => regenerate(p, f)}
+              picked={pickedFrames.has(f.id)} onPick={(on) => togglePicked(f.id, on)} />
           ))}
         </div>
       ) : (
@@ -86,7 +105,7 @@ export function ProductCard({ product: p, dialogs }: { product: Product; dialogs
           Промптов для этого товара нет.
           <div className="row center">
             <button className="primary" disabled={busy || !chosen.length} onClick={() => profiles([p.id], true)}>
-              ✨ Составить профиль и промпты по фото
+              Составить профиль и промпты по фото
             </button>
           </div>
         </div>

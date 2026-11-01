@@ -1,6 +1,11 @@
 // Тонкая обёртка над fetch и все вызовы API в одном месте.
 import type {
-  GenerationEstimate, ReviewListing,
+  ConsentRow,
+  ImportRules,
+  LegalAdmin,
+  LegalDoc,
+  LegalDocBrief,
+  MyConsent,
   AccountBalance,
   AdminOverview,
   FinanceView,
@@ -9,6 +14,7 @@ import type {
   UsersListing,
   CatalogModel,
   FrameVersion,
+  HistoryItem,
   ImportResult,
   ImportView,
   PersonaListing,
@@ -21,8 +27,14 @@ import type {
   ProfileData,
   ProfileResponse,
   ProjectRef,
+  PriceList,
   ProjectState,
+  TopupRequest,
+  ReportSelection,
+  ServiceReport,
   Settings,
+  PlansAdmin,
+  ModerationEvent,
 } from "./types";
 
 export class ApiError extends Error {
@@ -73,31 +85,41 @@ const put = <T>(p: string, b: unknown) => request<T>("PUT", p, b);
 const patch = <T>(p: string, b: unknown) => request<T>("PATCH", p, b);
 
 export const assetUrl = (id: string, w = 0) => `/api/assets/${id}${w ? `?w=${w}` : ""}`;
+/** Ссылка «скачать оригинал» с понятным именем файла. */
+export const downloadUrl = (id: string, name: string) => `/api/assets/${id}?dl=${encodeURIComponent(name)}`;
+
+/** Что произойдёт с кадрами при приведении к пресету перед генерацией. */
+export interface PresetSync {
+  products: number;
+  frames: number;
+  reshoot: number;
+  need_profile: number;
+  queued_profiles: number;
+  count: number;
+}
 
 export interface Selection {
   product_ids?: number[] | null;
   frame_ids?: number[] | null;
   limit?: number;
-  budget_rub?: number; retry_budget_rub?: number;
+  /** пожелания к этому запуску — поверх пресета */
+  brief?: string;
+  market?: string;
+  aspect?: string;
 }
 
 /** Методы проекта. */
 export function projectApi(id: number) {
   const p = `/api/projects/${id}`;
   return {
-    state: (options: { page?: number; query?: string; status?: string } = {}) =>
-      get<ProjectState>(`${p}/state?${new URLSearchParams(Object.entries(options).map(([k, v]) => [k, String(v)]))}`),
-    reviews: (options: { page: number; status: string; defect: string; query: string }) =>
-      get<ReviewListing>(`${p}/review?${new URLSearchParams(Object.entries(options).map(([k, v]) => [k, String(v)]))}`),
-    reviewBatch: (items: { frame_id: number; generation_id: number }[], action: "accept" | "reject" | "edit", comment: string) =>
-      post<{ done: number[]; errors: { frame_id: number; error: string }[] }>(`${p}/review/batch`, { items, action, comment }),
+    state: () => get<ProjectState>(`${p}/state`),
     saveSettings: (values: Partial<Settings> & Record<string, unknown>) => patch<{ ok: true }>(`${p}/settings`, values),
     settingsDefaults: () => get<{ qc_checklist: string }>(`${p}/settings/defaults`),
     catalog: (kind: "image" | "qc", refresh = false) =>
       get<{ models: CatalogModel[]; error: string }>(`${p}/catalog?kind=${kind}${refresh ? "&refresh=true" : ""}`),
 
-    previewGenerate: (sel: Selection) => post<GenerationEstimate>(`${p}/generate/preview`, sel),
-    generate: (sel: Selection) => post<{ added: number }>(`${p}/generate`, sel),
+    previewGenerate: (sel: Selection) => post<{ count: number; preset: PresetSync | null }>(`${p}/generate/preview`, sel),
+    generate: (sel: Selection) => post<{ added: number; preset: PresetSync | null }>(`${p}/generate`, sel),
     previewCheck: (sel: Selection & { only_unchecked?: boolean }) => post<{ count: number }>(`${p}/check/preview`, sel),
     check: (sel: Selection & { only_unchecked?: boolean }) => post<{ added: number }>(`${p}/check`, sel),
     stop: () => post<{ cancelled: number }>(`${p}/stop`),
@@ -107,6 +129,8 @@ export function projectApi(id: number) {
     setPrompt: (frameId: number, text: string) => put<{ ok: true }>(`${p}/frames/${frameId}/prompt`, { text }),
     editFrame: (frameId: number, instruction: string, sourceId?: number) =>
       post<{ ok: true }>(`${p}/frames/${frameId}/edit`, { instruction, source_id: sourceId ?? null }),
+    quick: (frameId: number, action: "upscale" | "remove_bg") => post<{ ok: true }>(`${p}/frames/${frameId}/quick`, { action }),
+    runs: (before?: number) => get<{ items: HistoryItem[] }>(`${p}/history${before ? `?before=${before}` : ""}`),
     history: (frameId: number) => get<{ versions: FrameVersion[] }>(`${p}/frames/${frameId}/history`),
     restore: (frameId: number, generationId: number) =>
       post<{ ok: true }>(`${p}/frames/${frameId}/restore`, { generation_id: generationId }),
@@ -122,14 +146,18 @@ export function projectApi(id: number) {
 
     newImport: () => post<{ id: number }>(`${p}/imports`),
     getImport: (sid: number) => get<ImportView>(`${p}/imports/${sid}`),
+    cancelImport: (sid: number) => request<{ ok: true }>("DELETE", `${p}/imports/${sid}`),
     uploadImportFile: (sid: number, path: string, file: Blob) =>
       request<{ added: number; total: number }>("POST", `${p}/imports/${sid}/files?path=${encodeURIComponent(path)}`, file),
-    analyzeImport: (sid: number, group_mode: string, label_mode: string) =>
-      post<{ ok: true }>(`${p}/imports/${sid}/analyze`, { group_mode, label_mode }),
-    applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][] }[], label_mode: string, auto_profile: boolean) =>
+    analyzeImport: (sid: number, group_mode: string, label_mode: string, rules?: ImportRules) =>
+      post<{ ok: true }>(`${p}/imports/${sid}/analyze`, { group_mode, label_mode, rules }),
+    applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][]; description?: string; sort_error?: boolean }[], label_mode: string,
+      auto_profile: boolean) =>
       post<ImportResult>(`${p}/imports/${sid}/apply`, { groups, label_mode, auto_profile }),
 
-    exportUrl: (include: "accepted" | "all", format = "original", complete = false) => `${p}/export?include=${include}&output_format=${format}&require_complete=${complete}`,
+    exportUrl: (include: "accepted" | "all" | "picked", ids: { frames?: number[]; products?: number[] } = {}) =>
+      `${p}/export?include=${include}` + (ids.frames?.length ? `&frames=${ids.frames.join(",")}` : "")
+      + (ids.products?.length ? `&products=${ids.products.join(",")}` : ""),
 
     presets: () => get<PresetListing>(`${p}/presets`),
     savePreset: (id: number | null, body: Omit<Preset, "id" | "total" | "is_default" | "products">) =>
@@ -159,6 +187,8 @@ export function projectApi(id: number) {
     archivePersona: (id: number) => request<{ ok: true }>("DELETE", `${p}/personas/${id}`),
     uploadPersonaPhoto: (id: number, file: File) =>
       request<{ ok: true }>("POST", `${p}/personas/${id}/photos?name=${encodeURIComponent(file.name)}`, file),
+    uploadPersonaRef: (id: number, file: File) =>
+      request<{ ok: true }>("POST", `${p}/personas/${id}/refs?name=${encodeURIComponent(file.name)}`, file),
     deletePersonaPhoto: (id: number, photoId: number) => request<{ ok: true }>("DELETE", `${p}/personas/${id}/photos/${photoId}`),
     describePersona: (id: number) => post<{ ok: true }>(`${p}/personas/${id}/describe`),
     personaCandidates: (id: number, count: number, brief?: string) =>
@@ -183,18 +213,52 @@ export const api = {
 
 export const authApi = {
   me: () => get<Me>("/api/auth/me"),
+  register: (email: string, name: string, password: string, accepted: string[]) =>
+    post<{ ok: true; email: string; sent: boolean }>("/api/auth/register", { email, name, password, accepted }),
+  verify: (token: string) => post<Me>("/api/auth/verify", { token }),
+  resend: (email: string) => post<{ ok: true }>("/api/auth/resend", { email }),
+  consents: () => get<{ items: MyConsent[] }>("/api/account/consents"),
+  acceptConsents: (kinds: string[]) => post<{ items: MyConsent[] }>("/api/account/consents", { kinds }),
+  revokeConsent: (kind: string) => post<{ items: MyConsent[] }>(`/api/account/consents/${kind}/revoke`),
   login: (email: string, password: string) => post<Me>("/api/auth/login", { email, password }),
   logout: () => post<{ ok: true }>("/api/auth/logout"),
   password: (old: string, next: string) => post<{ ok: true }>("/api/auth/password", { old, new: next }),
   balance: () => get<AccountBalance>("/api/account/balance"),
+  storage: () => get<{ used: number; quota: number }>("/api/account/storage"),
+  topups: () => get<{ items: TopupRequest[] }>("/api/account/topups"),
+  createTopup: (amount: number, method: string, note: string, plan = "", months = 0) =>
+    post<TopupRequest>("/api/account/topups", { amount, method, note, plan, months }),
+};
+
+const reportQuery = (q: { from: string; to: string; client?: number | null; rate: number }) =>
+  `date_from=${q.from}&date_to=${q.to}&usn_rate=${q.rate}${q.client ? `&client_id=${q.client}` : ""}`;
+
+export const publicApi = {
+  prices: () => get<PriceList>("/api/public/prices"),
+};
+
+/** Публичные документы сервиса (без входа). */
+export const legalApi = {
+  list: () => get<{ registration_open: boolean; docs: LegalDocBrief[] }>("/api/public/legal"),
+  doc: (kind: string) => get<LegalDoc>(`/api/public/legal/${kind}`),
 };
 
 export const adminApi = {
-  setClientParallel: (id:number, n:number) => put<{ok:true}>(`/api/admin/clients/${id}/parallel`, { n }),
-  setReservePrices: (image:number, chat:number) => put<{ok:true}>("/api/admin/reserve-prices", { image, chat }),
-  pendingPayments: () => get<{ items: { id:string; client_id:number; task:string; reserved:number; status:string; created:string }[] }>("/api/admin/payments/pending"),
-  resolvePayment: (id:string, cost_rub:number, note:string) => post<{ok:true}>(`/api/admin/payments/${id}/resolve`, { cost_rub, note }),
+  legal: () => get<LegalAdmin>("/api/admin/legal"),
+  saveLegal: (kind: string, title: string, body: string, required: boolean) =>
+    request<LegalAdmin>("PUT", `/api/admin/legal/${kind}`, { title, body, required }),
+  setRegistration: (open: boolean) => request<LegalAdmin>("PUT", "/api/admin/registration", { open }),
+  consents: (kind = "", q = "") => get<{ items: ConsentRow[] }>(`/api/admin/consents?kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(q)}`),
+  consentsCsvUrl: (kind = "", q = "") => `/api/admin/consents?format=csv&kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(q)}`,
+  verifyUser: (id: number) => post<{ ok: true }>(`/api/admin/users/${id}/verify`),
+  topups: (status = "") => get<{ items: TopupRequest[] }>(`/api/admin/topups${status ? `?status=${status}` : ""}`),
+  resolveTopup: (id: number, action: "paid" | "cancel") => post<{ ok: true }>(`/api/admin/topups/${id}/${action}`),
   users: () => get<UsersListing>("/api/admin/users"),
+  plans: () => get<PlansAdmin>("/api/admin/plans"),
+  moderation: () => get<{ items: ModerationEvent[] }>("/api/admin/moderation"),
+  qcExportUrl: (o: { project?: number | null; days?: number | null; images: "none" | "disputed" | "all" }) =>
+    `/api/admin/qc-export?images=${o.images}${o.project ? `&project_id=${o.project}` : ""}${o.days ? `&days=${o.days}` : ""}`,
+  savePlans: (plans: Record<string, Record<string, unknown>>) => put<PlansAdmin>("/api/admin/plans", { plans }),
   createUser: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/users", body),
   updateUser: (id: number, body: Record<string, unknown>) => patch<{ ok: true }>(`/api/admin/users/${id}`, body),
   topup: (clientId: number, amount: number, note: string) =>
@@ -204,10 +268,14 @@ export const adminApi = {
   createKey: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/keys", body),
   updateKey: (id: number, body: Record<string, unknown>) => patch<{ ok: true }>(`/api/admin/keys/${id}`, body),
   deleteKey: (id: number) => request<{ ok: true }>("DELETE", `/api/admin/keys/${id}`),
+  report: (q: { from: string; to: string; client?: number | null; rate: number }) =>
+    get<ServiceReport>(`/api/admin/report?${reportQuery(q)}`),
+  reportCsvUrl: (q: { from: string; to: string; client?: number | null; rate: number }, sel?: ReportSelection) =>
+    `/api/admin/report?${reportQuery(q)}&format=csv` + (sel ? (["metrics", "sections", "cols"] as const)
+      .map((k) => `&${k}=${sel[k].length ? sel[k].join(",") : "none"}`).join("") : ""),
   finance: (clientId?: number) => get<FinanceView>(`/api/admin/finance${clientId ? `?client_id=${clientId}` : ""}`),
   overview: (projectId: number) => get<AdminOverview>(`/api/admin/projects/${projectId}/overview`),
   log: (lines = 400, level = "") => get<{ lines: string[] }>(`/api/admin/log?lines=${lines}&level=${level}`),
   setParallel: (n: number) => put<{ parallel: number }>("/api/admin/parallel", { n }),
   resume: () => post<{ resumed: number }>("/api/admin/resume"),
 };
-

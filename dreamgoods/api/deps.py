@@ -3,7 +3,7 @@ from fastapi import Path, Request
 
 from .. import db
 from ..core.auth import Forbidden, user
-from ..db.models import Project
+from ..db.models import Client, Project
 from ..services import billing, projects
 
 
@@ -13,7 +13,7 @@ def project_id(request: Request, project_id: int = Path(..., description="ID п�
     u = user(request)
     with db.session() as s:
         p = s.get(Project, project_id)
-        if not p or p.archived:
+        if not p or p.archived or s.get(Client, p.client_id).org_id != u.org_id:
             raise LookupError("проект не найден")
         if not u.master and p.client_id != u.client_id:
             raise Forbidden("нет доступа к этому проекту")
@@ -25,3 +25,4 @@ def need_key(pid: int):
     if not projects.project_settings(pid).get("api_key"):
         raise ValueError("Не настроен ключ Polza — обратитесь к администратору сервиса")
     billing.ensure_funds(pid)
+

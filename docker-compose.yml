@@ -1,5 +1,7 @@
 # База данных DreamGoods (PostgreSQL 16). Файлы хранятся в папке data/files (или в облачном S3 — см. .env).
-# Запуск:  docker compose up -d      Остановка:  docker compose down      (данные сохраняются в томе pgdata)
+# Свой компьютер (Windows):  docker compose up -d            — только база, сервис запускается «Запуск DreamGoods.bat»
+# Сервер (Linux):           docker compose --profile server up -d --build   — база + сервис в контейнере
+# Остановка:  docker compose --profile server down      (данные сохраняются в томе pgdata и папках data, logs)
 name: dreamgoods
 services:
   postgres:
@@ -16,6 +18,29 @@ services:
       test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
       interval: 5s
       retries: 20
+
+  # сервис DreamGoods в контейнере — только с профилем server (на Windows не запускается)
+  app:
+    profiles: ["server"]
+    build: .
+    image: dreamgoods:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: [.env]
+    environment:
+      # в контейнере база доступна по имени сервиса, сервис слушает все адреса внутри контейнера
+      DATABASE_URL: postgresql+psycopg://studio:${POSTGRES_PASSWORD:-studio}@postgres:5432/studio
+      DREAMGOODS_HOST: 0.0.0.0
+      DREAMGOODS_PORT: "8090"
+    # снаружи: адрес и порт сервера (DREAMGOODS_BIND и DREAMGOODS_PUBLIC_PORT в .env), по умолчанию — все адреса, 8090
+    ports: ["${DREAMGOODS_BIND:-0.0.0.0}:${DREAMGOODS_PUBLIC_PORT:-8090}:8090"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./exports:/app/exports
+      - /etc/localtime:/etc/localtime:ro      # время в журнале — как на сервере
 
 volumes:
   pgdata:

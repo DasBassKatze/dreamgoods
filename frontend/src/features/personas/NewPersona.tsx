@@ -21,6 +21,8 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
   const [count, setCount] = useState(3);
   const [consent, setConsent] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [refs, setRefs] = useState<File[]>([]);
+  const refInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const avg = state.totals.avg_cost;
@@ -40,6 +42,7 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
         if (!ok) return;
         setBusy(true);
         const r = await api.createPersona({ name: name.trim(), brief: brief.trim(), source: "generated" });
+        for (const f of refs) await api.uploadPersonaRef(r.id, f);
         await api.personaCandidates(r.id, count);
       } else {
         if (!files.length) {
@@ -63,8 +66,8 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
   return (
     <div className="persona-new">
       <div className="seg mb10">
-        <button className={mode === "generated" ? "on" : ""} onClick={() => setMode("generated")}>✨ Сгенерировать образ</button>
-        <button className={mode === "upload" ? "on" : ""} onClick={() => setMode("upload")}>📷 Загрузить фото своей модели</button>
+        <button className={mode === "generated" ? "on" : ""} onClick={() => setMode("generated")}>Сгенерировать образ</button>
+        <button className={mode === "upload" ? "on" : ""} onClick={() => setMode("upload")}>Загрузить фото своей модели</button>
       </div>
       <div className="form grid">
         <label className="form-label">Название</label>
@@ -82,6 +85,22 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
               <div className="hint mt6">Можно описать и стиль: готика, стритвир, old money, макияж, татуировки, украшения. ИИ составит
                 для каждого варианта подробный «паспорт образа» — внешность и стиль. Паспорт выбранного варианта потом задаёт
                 макияж, укладку и стиль одежды на кадрах товара.</div>
+            </div>
+            <label className="form-label">Референсы образа</label>
+            <div>
+              <div className="row nowrap">
+                <button onClick={() => refInput.current?.click()}>{refs.length ? "Заменить фото…" : "Добавить фото…"}</button>
+                <span className="hint">{refs.length ? `выбрано: ${refs.length}` : "необязательно, до 4 фото"}</span>
+                {refs.length > 0 && <button className="link" onClick={() => setRefs([])}>убрать</button>}
+              </div>
+              {refs.length > 0 && (
+                <div className="ref-previews">{refs.map((f) => <img key={f.name + f.size} src={URL.createObjectURL(f)} alt="" />)}</div>
+              )}
+              <div className="hint mt6">Фото-примеры образа: причёска, макияж, одежда, настроение. В пожеланиях можно уточнить, что взять
+                («причёску и макияж как на фото»). Лицо с референса не копируется — модель будет новым человеком. Снимать
+                конкретного человека — «Загрузить фото своей модели».</div>
+              <input ref={refInput} type="file" accept="image/*" multiple hidden
+                onChange={(e) => { setRefs([...(e.target.files || [])].slice(0, 4)); e.target.value = ""; }} />
             </div>
             <label className="form-label">Вариантов</label>
             <div className="row nowrap">
@@ -104,7 +123,8 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
             <label className="form-label">Согласие</label>
             <label className="check">
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> у меня есть согласие этого
-              человека на использование его фото для создания изображений товаров
+              человека на использование его фото для создания изображений товаров — <a href="/legal/persona_photo" target="_blank"
+                rel="noreferrer">что это значит</a>. Отметка сохраняется в журнале согласий
             </label>
           </>
         )}

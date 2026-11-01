@@ -2,51 +2,58 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { projectApi } from "../api/client";
 import type { ProjectState } from "../api/types";
 
-/** SSE invalidates the visible page; periodic refresh covers non-job edits and unsupported proxies. */
-export function useProjectState(projectId: number | null, page = 1, query = "", status = "all") {
+/** Опрос только видимой вкладки: 2 с в работе, 15 с в простое. */
+export function useProjectState(projectId: number | null) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [offline, setOffline] = useState(false);
-  const generation = useRef(0);
-  const serial = useRef(0);
+  const timer = useRef<number | undefined>(undefined);
+  const gen = useRef(0);
+  const request = useRef(0);
+
   const load = useCallback(async () => {
     if (projectId == null) return;
-    const mine = generation.current, request = ++serial.current;
+    const my = gen.current;
+    const sequence = ++request.current;
     try {
-      const data = await projectApi(projectId).state({ page, query, status });
-      if (mine !== generation.current || request !== serial.current) return;
-      setState(data); setOffline(false);
-      return data;
+      const s = await projectApi(projectId).state();
+      if (my !== gen.current || sequence !== request.current) return;
+      setState(s);
+      setOffline(false);
+      return s;
     } catch {
-      if (mine === generation.current && request === serial.current) setOffline(true);
+      if (my === gen.current && sequence === request.current) setOffline(true);
     }
-  }, [projectId, page, query, status]);
+  }, [projectId]);
+
   useEffect(() => {
-    generation.current++;
+    gen.current += 1;
     setState(null);
     if (projectId == null) return;
-    let alive = true, timer: number | undefined, stream: EventSource | undefined;
+    let alive = true;
+    let running = false;
     const tick = async () => {
-      if (document.visibilityState !== "hidden") await load();
-      if (alive) timer = window.setTimeout(tick, 30000);
+      if (!alive || running || document.hidden) return;
+      window.clearTimeout(timer.current);
+      running = true;
+      const s = await load();
+      running = false;
+      if (!alive) return;
+      timer.current = window.setTimeout(tick, s?.runner.busy ? 2000 : 15000);
     };
-    const connect = () => {
-      stream?.close();
-      if (document.visibilityState === "hidden") return;
-      let previous: string | undefined;
-      stream = new EventSource(`/api/projects/${projectId}/events`);
-      stream.onmessage = (e) => {
-        const next = JSON.parse(e.data).version as string;
-        if (previous !== undefined && previous !== next) void load();
-        previous = next;
-      };
+    const visible = () => {
+      window.clearTimeout(timer.current);
+      if (!document.hidden) void tick();
     };
-    const visible = () => { connect(); if (document.visibilityState !== "hidden") void load(); };
-    void tick(); connect();
     document.addEventListener("visibilitychange", visible);
+    tick();
     return () => {
-      alive = false; generation.current++; stream?.close(); window.clearTimeout(timer);
+      alive = false;
+      gen.current += 1;
       document.removeEventListener("visibilitychange", visible);
+      window.clearTimeout(timer.current);
     };
   }, [projectId, load]);
+
   return { state, offline, reload: load };
 }
+

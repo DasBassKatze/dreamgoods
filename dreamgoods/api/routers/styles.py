@@ -1,7 +1,8 @@
 """Референсы оформления: фото-пример стиля + пожелание → разбор ИИ → пример для генератора."""
 from fastapi import APIRouter, Depends, Request
 
-from ...services import styles
+from ...core import auth
+from ...services import moderation, styles
 from ..deps import need_key, project_id
 from ..schemas import StyleRefChoice, StyleRefCreate, StyleRefUpdate
 
@@ -14,12 +15,14 @@ def listing(pid: int = Depends(project_id)):
 
 
 @router.post("/styles")
-def create(body: StyleRefCreate, pid: int = Depends(project_id)):
+def create(body: StyleRefCreate, request: Request, pid: int = Depends(project_id)):
+    moderation.guard("оформление", body.name, body.note, project_id=pid, user=auth.user(request))
     return {"id": styles.create(pid, body.name, body.note, body.blocks)}
 
 
 @router.patch("/styles/{ref_id}")
-def update(ref_id: int, body: StyleRefUpdate, pid: int = Depends(project_id)):
+def update(ref_id: int, body: StyleRefUpdate, request: Request, pid: int = Depends(project_id)):
+    moderation.guard("оформление", body.name, body.note, body.description, project_id=pid, user=auth.user(request))
     styles.update(pid, ref_id, body.model_dump())
     return {"ok": True}
 

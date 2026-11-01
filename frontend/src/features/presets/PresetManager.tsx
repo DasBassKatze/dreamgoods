@@ -8,7 +8,7 @@ import { PresetEditor, type Draft } from "./PresetEditor";
 
 const EMPTY: Draft = { name: "", description: "", quality: "standard", custom: {},
   plan: { studio: 4, detail: 1, worn: 2, full: 1, lifestyle: 0 }, market: { key: "wb", cover: true }, strictness: "normal",
-  plan_mode: "auto", manual: [], block_models: {} };
+  plan_mode: "auto", manual: [], block_models: {}, brief: "" };
 
 /** Пресеты генерации: уровень качества + план кадров. Общие для всей организации; применяются к товарам проекта. */
 export function PresetManager({ onClose, initialApply }: { onClose: () => void; initialApply?: boolean }) {
@@ -56,14 +56,14 @@ export function PresetManager({ onClose, initialApply }: { onClose: () => void; 
     });
 
   return (
-    <Modal title="🎛 Пресеты генерации" width={1180} onClose={onClose}>
+    <Modal title="Пресеты генерации" width={1180} onClose={onClose}>
       {!data ? <div className="empty">Загрузка…</div> : (
         <div className="presets">
           <div className="preset-list">
             {data.presets.map((p) => (
               <button key={p.id} className={`preset-item ${current === p.id ? "on" : ""}`} onClick={() => { setCurrent(p.id); setApplying(false); }}>
                 <b>{p.name}</b>
-                {p.shared && <span className="tag">{state.admin ? "общий для всех" : "общий"}</span>}
+                {p.shared && <span className="tag">{state.admin ? "пресет студии" : "общий"}</span>}
                 <span className="hint">{data.quality.find((q) => q.key === p.quality)?.name} · {p.total} кадр.
                   {p.is_default ? " · проект" : ""}{p.products ? ` · товаров ${p.products}` : ""}</span>
               </button>
@@ -81,7 +81,7 @@ export function PresetManager({ onClose, initialApply }: { onClose: () => void; 
               <PresetEditor key={String(current)} listing={data} initial={preset ? { name: preset.name, description: preset.description,
                 quality: preset.quality, custom: preset.custom, plan: preset.plan, market: preset.market,
                 strictness: preset.strictness, plan_mode: preset.plan_mode, manual: preset.manual,
-                block_models: preset.block_models } : EMPTY}
+                block_models: preset.block_models, shared: !!preset.shared, brief: preset.brief || "" } : EMPTY}
                 isNew={current === "new"} onSave={save} onDelete={preset && !readonly ? remove : undefined}
                 onApply={preset ? () => setApplying(true) : undefined} />
               </>

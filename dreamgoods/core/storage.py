@@ -72,7 +72,9 @@ def _image_meta(data):
     """(ширина, высота, время съёмки из EXIF)."""
     try:
         with Image.open(io.BytesIO(data)) as im:
-            w, h = ImageOps.exif_transpose(im).size
+            w, h = im.size                       # размер без распаковки пикселей
+            if im.getexif().get(0x0112) in (5, 6, 7, 8):   # снимок повёрнут на 90° по EXIF
+                w, h = h, w
             shot = None
             try:
                 ex = im.getexif()
@@ -208,6 +210,25 @@ def upload_local_to_s3():
     log.info("Перенос в S3 завершён: загружено %d, уже были %d. Теперь поставьте в .env STORAGE=s3", done, skipped)
 
 
+def remove(key):
+    """Удаляет файл из хранилища (и из кэшей). Вызывающий сам проверяет, что на файл больше никто не ссылается."""
+    global _cache_size
+    with _cache_lock:
+        v = _cache.pop(key, None)
+        if v is not None:
+            _cache_size -= len(v)
+    with _thumb_lock:
+        for k in [k for k in _thumbs if k[0] == key]:
+            _thumbs.pop(k, None)
+    if config.STORAGE != "s3":
+        try:
+            _local(key).unlink()
+        except FileNotFoundError:
+            pass
+        return
+    s3().delete_object(Bucket=config.S3_BUCKET, Key=key)
+
+
 _thumbs, _thumb_lock = OrderedDict(), threading.Lock()
 
 
@@ -218,11 +239,13 @@ def thumb(asset, w):
         if k in _thumbs:
             _thumbs.move_to_end(k)
             return _thumbs[k]
-    with Image.open(io.BytesIO(get(asset))) as im:
-        im = ImageOps.exif_transpose(im).convert("RGB")
-        im.thumbnail((w, w * 2), Image.LANCZOS)
-        buf = io.BytesIO()
-        im.save(buf, format="JPEG", quality=82)
+    from ..ai.images import DECODE_SLOTS, open_small
+    with DECODE_SLOTS:
+        with open_small(get(asset), w) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            im.thumbnail((w, w * 2), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=82)
     data = buf.getvalue()
     with _thumb_lock:
         _thumbs[k] = data

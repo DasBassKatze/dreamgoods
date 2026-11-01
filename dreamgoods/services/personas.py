@@ -97,6 +97,8 @@ def listing(project_id):
 def create(project_id, name, brief, source):
     with db.session() as s:
         project = _project(s, project_id)
+        from .plans import check_new_persona
+        check_new_persona(s, project.client)
         p = Persona(client_id=project.client_id, name=(name or "").strip()[:120] or "Новая модель", brief=(brief or "").strip(),
                     source="upload" if source == "upload" else "generated", status="draft")
         s.add(p)
@@ -159,6 +161,26 @@ def upload_photo(project_id, persona_id, data, filename):
         first = not _has_main(s, p.id)
         s.add(PersonaPhoto(persona_id=p.id, asset_id=a.id, kind="main" if first else "photo", position=pos))
         p.source = "upload"
+        return {"ok": True}
+
+
+MAX_REFS = 4
+
+
+def upload_ref(project_id, persona_id, data, filename):
+    """Референс образа для генерации модели: пример причёски, макияжа, одежды, настроения.
+    Лицо с референса не копируется — модель получается новым человеком, поэтому согласие не нужно."""
+    with db.session() as s:
+        p = _persona(s, project_id, persona_id)
+        n = s.scalar(select(func.count(PersonaPhoto.id)).where(PersonaPhoto.persona_id == p.id, PersonaPhoto.kind == "ref"))
+        if n >= MAX_REFS:
+            raise ValueError(f"референсов образа не больше {MAX_REFS} — удалите лишний")
+        org = org_of_project(s, project_id)
+        a = storage.put(s, org.id, data, "persona", filename)
+        if not (a.mime or "").startswith("image/"):
+            raise ValueError("это не картинка")
+        pos = (s.scalar(select(func.max(PersonaPhoto.position)).where(PersonaPhoto.persona_id == p.id)) or 0) + 1
+        s.add(PersonaPhoto(persona_id=p.id, asset_id=a.id, kind="ref", position=pos))
         return {"ok": True}
 
 
@@ -266,3 +288,18 @@ def set_product_persona(project_id, product_id, persona_id):
         if persona_id:
             _persona(s, project_id, persona_id)
         pr.persona_id = int(persona_id) if persona_id else None
+
+
+def consent_of(project_id, persona_id):
+    with db.session() as s:
+        return bool(_persona(s, project_id, persona_id).consent)
+
+
+def record_consent(project_id, persona_id, cu, granted, ip, agent):
+    """Подтверждение согласия человека на фото модели — запись в журнал согласий."""
+    from . import consents
+    with db.session() as s:
+        p = _persona(s, project_id, persona_id)
+        org = org_of_project(s, project_id)
+        consents.persona_photo(s, org.id, cu, p, ip, agent, granted)
+    log.info("Модель «%s»: согласие человека на фото %s (%s)", p.name, "подтверждено" if granted else "снято", cu.email)

@@ -1,7 +1,5 @@
 """Проекты и состояние проекта."""
-from fastapi import APIRouter, Depends, Request, Query
-from fastapi.responses import StreamingResponse
-from starlette.concurrency import run_in_threadpool
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from ...core import admin, auth
@@ -39,40 +37,6 @@ def archive(pid: int = Depends(project_id)):
 
 
 @router.get("/{project_id}/state")
-def state(request: Request, pid: int = Depends(project_id), page: int = Query(1, ge=1),
-          page_size: int = Query(40, ge=1, le=100), query: str = "", status: str = "all"):
+def state(request: Request, pid: int = Depends(project_id)):
     """Всё, что нужно экрану проекта. Себестоимость, баланс Polza и метрики — только мастеру."""
-    return board.state(pid, admin.is_admin(request), page, page_size, query, status)
-
-
-
-@router.get("/{project_id}/progress")
-def progress(pid: int = Depends(project_id)):
-    return board.progress(pid)
-
-
-@router.get("/{project_id}/events")
-async def events(request: Request, pid: int = Depends(project_id)):
-    import asyncio
-    import json
-    token = auth.token_of(request)
-    async def stream():
-        previous = None
-        while not await request.is_disconnected():
-            current_user = await run_in_threadpool(auth.user_by_token, token)
-            if current_user is None:
-                break
-            # Access can be revoked while the stream is open.
-            try:
-                await run_in_threadpool(projects.require_project, pid, current_user)
-            except (LookupError, PermissionError):
-                break
-            data = await run_in_threadpool(board.progress, pid)
-            if data["version"] != previous:
-                previous = data["version"]
-                yield "data: " + json.dumps(data) + "\n\n"
-            else:
-                yield ": heartbeat\n\n"
-            await asyncio.sleep(3)
-    return StreamingResponse(stream(), media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return board.state(pid, admin.is_admin(request))

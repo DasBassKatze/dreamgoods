@@ -5,8 +5,9 @@ import { PersonaGroups } from "./PersonaGroups";
 import { useUI } from "../../components/ui";
 import { rub } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
+import { Icon } from "../../layout/Icon";
 
-const KIND_RU: Record<string, string> = { main: "основное", photo: "фото", sheet: "ракурс", candidate: "вариант" };
+const KIND_RU: Record<string, string> = { main: "основное", photo: "фото", sheet: "ракурс", candidate: "вариант", ref: "референс" };
 const VIEW_RU: Record<string, string> = { portrait: "портрет", "three-quarter": "¾", side: "профиль", "full front": "в рост" };
 const STYLE_FIELDS: [keyof PersonaStyle, string, string][] = [
   ["makeup", "Макияж", "dark plum lipstick, smoky black eyeliner, pale matte skin"],
@@ -35,7 +36,9 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
   const input = useRef<HTMLInputElement>(null);
   const running = p.job?.state === "running";
   const candidates = p.photos.filter((x) => x.kind === "candidate");
-  const kept = p.photos.filter((x) => x.kind !== "candidate");
+  const kept = p.photos.filter((x) => x.kind !== "candidate" && x.kind !== "ref");
+  const refs = p.photos.filter((x) => x.kind === "ref");
+  const refInput = useRef<HTMLInputElement>(null);
   const hasMain = p.photos.some((x) => x.kind === "main");
   const hasSheet = p.photos.some((x) => x.kind === "sheet");
   const avg = state.totals.avg_cost;
@@ -96,13 +99,19 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
   const upload = (files: FileList | null) =>
     act(async () => {
       if (!p.consent) {
-        const ok = await ui.confirm({ text: "У вас есть согласие этого человека на использование его фото для изображений товаров?", ok: "Да, есть" });
+        const ok = await ui.confirm({ text: <>У вас есть согласие этого человека на использование его фото для изображений товаров?{" "}
+          <a href="/legal/persona_photo" target="_blank" rel="noreferrer">Подробнее</a>. Отметка сохранится в журнале согласий.</>, ok: "Да, есть" });
         if (!ok) return;
         await api.updatePersona(p.id, { consent: true });
       }
       for (const f of [...(files || [])].slice(0, 4)) await api.uploadPersonaPhoto(p.id, f);
       await api.describePersona(p.id);
     }, "Фото добавлены, ИИ обновляет паспорт образа");
+
+  const addRefs = (files: FileList | null) =>
+    act(async () => {
+      for (const f of [...(files || [])].slice(0, Math.max(0, 4 - refs.length))) await api.uploadPersonaRef(p.id, f);
+    }, "Референсы добавлены — они учтутся в следующих вариантах образа");
 
   const countSelect = (
     <select value={count} onChange={(e) => setCount(+e.target.value)} title="Сколько вариантов сгенерировать">
@@ -112,7 +121,8 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
 
   const photo = (ph: PersonaPhoto) => (
     <div key={ph.id} className={`pphoto ${ph.kind}`}>
-      <img loading="lazy" src={assetUrl(ph.asset, 400)} alt="" onClick={() => window.open(assetUrl(ph.asset), "_blank")} />
+      <img loading="lazy" src={assetUrl(ph.asset, 400)} alt="" title="Открыть крупно"
+        onClick={() => { const list = p.photos.filter((x) => x.kind === ph.kind); ui.zoom(list.map((x) => ({ asset: x.asset, caption: `${p.name} · ${KIND_RU[x.kind] || ""}` })), list.indexOf(ph)); }} />
       {ph.kind !== "candidate" && <span className="pk">{KIND_RU[ph.kind]}{ph.view && ph.kind === "sheet" ? ` · ${VIEW_RU[ph.view] || ph.view}` : ""}</span>}
       <button className="pdel" title="Удалить" onClick={() => act(() => api.deletePersonaPhoto(p.id, ph.id))}>✕</button>
       {ph.kind === "candidate" && (
@@ -157,10 +167,10 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
 
       <div className="row mt10">
         <button disabled={running} className={panel === "more" ? "on" : ""} onClick={() => setPanel(panel === "more" ? null : "more")}>＋ Ещё варианты…</button>
-        {hasMain && <button disabled={running} className={panel === "edit" ? "on" : ""} onClick={() => setPanel(panel === "edit" ? null : "edit")}>✏️ Изменить внешность…</button>}
-        {hasMain && <button disabled={running} onClick={sheet}>{hasSheet ? "↻ Переделать ракурсы" : "🧍 Сделать ракурсы (портрет, ¾, профиль)"}</button>}
-        <button disabled={running} onClick={() => input.current?.click()}>📷 Добавить фото</button>
-        {hasMain && p.source === "upload" && <button disabled={running} onClick={() => act(() => api.describePersona(p.id), "ИИ описывает внешность и стиль…")}>🧠 Описать по фото</button>}
+        {hasMain && <button disabled={running} className={panel === "edit" ? "on" : ""} onClick={() => setPanel(panel === "edit" ? null : "edit")}>Изменить внешность…</button>}
+        {hasMain && <button disabled={running} onClick={sheet}>{hasSheet ? "↻ Переделать ракурсы" : "Сделать ракурсы (портрет, ¾, профиль)"}</button>}
+        <button disabled={running} onClick={() => input.current?.click()}>Добавить фото</button>
+        {hasMain && p.source === "upload" && <button disabled={running} onClick={() => act(() => api.describePersona(p.id), "ИИ описывает внешность и стиль…")}>Описать по фото</button>}
         <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
       </div>
 
@@ -168,6 +178,15 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
         <div className="persona-panel">
           <div className="hint">Новые варианты по пожеланиям — можно уточнить их перед генерацией:</div>
           <textarea className="short" value={brief} placeholder="пол, возраст, внешность, стиль" onChange={(e) => setBrief(e.target.value)} />
+          <div className="persona-refs">
+            <b>Референсы образа</b>
+            <span className="hint">причёска, макияж, одежда, настроение — лицо не копируется{refs.length ? ` · ${refs.length} из 4` : ""}</span>
+            <div className="persona-photos small">
+              {refs.map(photo)}
+              {refs.length < 4 && <button className="ref-add" onClick={() => refInput.current?.click()}><Icon name="plus" size={18} />фото</button>}
+            </div>
+            <input ref={refInput} type="file" accept="image/*" multiple hidden onChange={(e) => { addRefs(e.target.files); e.target.value = ""; }} />
+          </div>
           <div className="row">{countSelect}<span className="hint">каждый вариант — одна генерация{price(1)}</span>
             <span className="spacer" /><button onClick={() => setPanel(null)}>Отмена</button>
             <button className="primary" disabled={!brief.trim()} onClick={more}>Сгенерировать {count}{price(count)}</button></div>
@@ -202,8 +221,8 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
         {p.status !== "ready" && p.groups.length > 0 && <div className="err-text">Модель ещё не готова — группы начнут работать, когда будет выбран образ.</div>}
       </div>
 
-      <details className="persona-passport mt10">
-        <summary>Паспорт образа — то, что получает генератор{p.style?.vibe ? ` · ${p.style.vibe}` : ""}</summary>
+      {state.admin && <details className="persona-passport mt10 admin-only">
+        <summary>Паспорт образа — то, что получает генератор (видно только мастер-аккаунту){p.style?.vibe ? ` · ${p.style.vibe}` : ""}</summary>
         <div className="hint mb8">
           Составляется ИИ для каждого варианта и сохраняется у выбранного. Внешность держится на всех кадрах товара; макияж,
           укладка и аксессуары сохраняются; стиль одежды задаёт, во что одевать модель под товар.
@@ -224,7 +243,7 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
             <button className="primary" onClick={() => act(() => api.updatePersona(p.id, { description: desc, style }), "Паспорт образа сохранён")}>Сохранить паспорт</button>
           </div>
         )}
-      </details>
+      </details>}
     </section>
   );
 }

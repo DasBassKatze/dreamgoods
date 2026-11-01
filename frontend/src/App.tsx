@@ -1,23 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, authApi, onAuthLost, projectApi } from "./api/client";
 import type { Me, ProjectRef } from "./api/types";
-import { Header } from "./components/Header";
-import { LogPanel } from "./components/LogPanel";
 import { PageMode } from "./components/Modal";
-import { ProductList } from "./components/ProductList";
-import { ProjectBar } from "./components/ProjectBar";
-import { ListBar, Toolbar, type Filter } from "./components/Toolbar";
+import type { Filter } from "./components/Toolbar";
 import { useUI } from "./components/ui";
 import { AccountPage } from "./features/account/AccountPage";
 import { BalancePage } from "./features/account/BalancePage";
 import { AdminPanel } from "./features/admin/AdminPanel";
+import { ConsentGate } from "./features/auth/ConsentGate";
 import { LoginPage } from "./features/auth/LoginPage";
+import { LegalPage } from "./features/master/LegalPage";
 import { ModelCatalog, type CatalogKind, type CatalogPick } from "./features/catalog/ModelCatalog";
-import { ReviewDesk } from "./features/frame/ReviewDesk";
 import { FrameViewer } from "./features/frame/FrameViewer";
+import { GalleryPage } from "./features/gallery/GalleryPage";
+import { GenerationPage } from "./features/generate/GenerationPage";
+import { HistoryPage } from "./features/history/HistoryPage";
 import { ImportWizard } from "./features/import/ImportWizard";
-import { PaymentsPage } from "./features/master/PaymentsPage";
 import { FinancePage } from "./features/master/FinancePage";
+import { ReportsPage } from "./features/master/ReportsPage";
 import { KeysPage } from "./features/master/KeysPage";
 import { UsersPage } from "./features/master/UsersPage";
 import { PersonaManager } from "./features/personas/PersonaManager";
@@ -27,8 +27,11 @@ import { SettingsDialog } from "./features/settings/SettingsDialog";
 import { StyleManager } from "./features/styles/StyleManager";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useProjectState } from "./hooks/useProjectState";
+import { useReadyNotify } from "./lib/notify";
 import { useRoute, type Route } from "./hooks/useRoute";
-import { Sidebar } from "./layout/Sidebar";
+import { ProjectsSidebar } from "./layout/ProjectsSidebar";
+import { ANALYTICS_ROUTES, AnalyticsNav, SECTION_ROUTES, SectionNav } from "./layout/SectionNav";
+import { TopBar } from "./layout/TopBar";
 import { ProjectCtx, type ProjectScope } from "./ProjectContext";
 
 export interface Dialogs {
@@ -52,10 +55,12 @@ export function App() {
   }, []);
   if (me === undefined) return <div className="empty">Загрузка…</div>;
   if (!me) return <LoginPage onLogin={setMe} />;
+  if (me.consents_required?.length)
+    return <ConsentGate me={me} onDone={setMe} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
   return <Workspace key={me.id} me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
 }
 
-const NEEDS_PROJECT: Route[] = ["review", "products", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
+const NEEDS_PROJECT: Route[] = ["products", "gallery", "history", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
 
 function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const ui = useUI();
@@ -64,15 +69,11 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectRef[]>([]);
   const [projectId, setProjectId] = usePersistentState<number | null>(`project_${me.id}`, null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  useEffect(() => { const t = window.setTimeout(() => { setDebouncedQuery(query); setPageNumber(1); }, 300); return () => window.clearTimeout(t); }, [query]);
-  useEffect(() => { setPageNumber(1); }, [projectId, filter]);
-  const { state, offline, reload } = useProjectState(projectId, pageNumber, debouncedQuery, filter);
+  const { state, offline, reload } = useProjectState(projectId);
+  useReadyNotify(state, ui.toast);
   const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
-
+  const [pickedByProject, setPickedByProject] = usePersistentState<Record<string, number[]>>("picked-frames", {});
+  const [filter, setFilter] = useState<Filter>("all");
   const [limit, setLimit] = useState(0);
 
   const [viewer, setViewer] = useState<{ productId: number; frameId: number } | null>(null);
@@ -80,6 +81,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [catalog, setCatalog] = useState<CatalogKind | null>(null);
   const [picked, setPicked] = useState<CatalogPick | null>(null);
 
+  useEffect(() => { window.scrollTo(0, 0); }, [route]);
   // чужие разделы не открываются по ссылке
   useEffect(() => {
     if (!master && route.startsWith("m-")) go("products");
@@ -98,6 +100,11 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+  // картинки проектов в списке слева обновляются, когда появляются новые готовые кадры
+  const doneNow = state?.totals.done;
+  useEffect(() => {
+    if (doneNow != null) loadProjects();
+  }, [doneNow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const papi = useMemo(() => (projectId == null ? null : projectApi(projectId)), [projectId]);
 
@@ -105,6 +112,10 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     if (!state || projectId == null || !papi || state.project.id !== projectId) return null;
     const selected = new Set(selectedByProject[projectId] || []);
     const save = (ids: number[]) => setSelectedByProject((all) => ({ ...all, [projectId]: ids }));
+    // выделенные кадры: только те, что ещё есть в проекте (кадр могли удалить или пересобрать)
+    const frameIds = new Set(state.products.flatMap((p) => p.frames.map((f) => f.id)));
+    const pickedFrames = new Set((pickedByProject[projectId] || []).filter((id) => frameIds.has(id)));
+    const savePicked = (ids: number[]) => setPickedByProject((all) => ({ ...all, [projectId]: ids }));
     return {
       state,
       api: papi,
@@ -117,6 +128,15 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         save([...next]);
       },
       setSelected: save,
+      pickedFrames,
+      // через функцию обновления: плитки кадров запоминают обработчик, он не должен опираться на старый выбор
+      togglePicked: (id, on) => setPickedByProject((all) => {
+        const next = new Set(all[projectId] || []);
+        if (on) next.add(id);
+        else next.delete(id);
+        return { ...all, [projectId]: [...next] };
+      }),
+      setPicked: savePicked,
       product: (id) => state.products.find((p) => p.id === id),
       limit,
       setLimit,
@@ -128,7 +148,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         }
       },
     };
-  }, [state, projectId, papi, selectedByProject, setSelectedByProject, reload, ui, limit]);
+  }, [state, projectId, papi, selectedByProject, setSelectedByProject, pickedByProject, setPickedByProject, reload, ui, limit]);
 
   const dialogs: Dialogs = {
     openFrame: (productId, frameId) => setViewer({ productId, frameId }),
@@ -144,7 +164,8 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   const createProject = async () => {
     const fields = master
-      ? [{ key: "client", label: "Кабинет (клиент)", value: state?.project.client || "" }, { key: "name", label: "Название проекта", value: "" }]
+      ? [{ key: "name", label: "Название проекта", value: "" },
+         { key: "client", label: "Кабинет пользователя (пусто — ваш собственный)", value: "" }]
       : [{ key: "name", label: "Название проекта", value: "" }];
     const v = await ui.ask({ title: "Новый проект", ok: "Создать", fields });
     if (!v) return;
@@ -166,8 +187,9 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     switch (route) {
       case "m-users": return <UsersPage />;
       case "m-keys": return <KeysPage />;
-      case "m-payments": return <PaymentsPage />;
       case "m-finance": return <FinancePage />;
+      case "m-reports": return <ReportsPage />;
+      case "m-legal": return <LegalPage />;
       case "balance": return <BalancePage />;
       case "account": return <AccountPage me={me} onLogout={onLogout} />;
     }
@@ -176,7 +198,6 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         : offline ? "Нет связи с сервером. Проверьте, что DreamGoods запущен." : "Загрузка…"}</div>;
     }
     switch (route) {
-      case "review": return <ReviewDesk key={projectId} />;
       case "import": return <PageMode.Provider value><ImportWizard key={projectId} open onClose={toProducts} /></PageMode.Provider>;
       case "presets": return <PageMode.Provider value><PresetManager onClose={toProducts} /></PageMode.Provider>;
       case "personas": return <PageMode.Provider value><PersonaManager onClose={toProducts} /></PageMode.Provider>;
@@ -184,38 +205,30 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
       case "m-settings": return <PageMode.Provider value><SettingsDialog onClose={toProducts} onPickModel={setCatalog} picked={picked} /></PageMode.Provider>;
       case "m-analytics": return <AdminPanel onCatalog={() => setCatalog("image")} />;
       case "m-log": return <AdminPanel onCatalog={() => setCatalog("image")} logOnly />;
+      case "gallery": return <GalleryPage dialogs={dialogs} />;
+      case "history": return <HistoryPage dialogs={dialogs} onBalance={() => go(master ? "m-finance" : "balance")} />;
       default:
-        return (
-          <>
-            <Header dialogs={dialogs} onProjectsChanged={loadProjects} />
-            <ProjectBar dialogs={dialogs} />
-            <Toolbar filter={filter} onFilter={setFilter} query={query} onQuery={setQuery} />
-            <div className="layout">
-              <div className="main-col">
-                <ListBar />
-                <ProductList filter="all" query="" dialogs={dialogs} />
-                <div className="row pagination">
-                  <button disabled={pageNumber <= 1} onClick={() => setPageNumber((n) => n - 1)}>← Назад</button>
-                  <span>Страница {pageNumber} из {Math.max(1, Math.ceil(state!.pagination.total / state!.pagination.page_size))} · товаров {state!.pagination.total}</span>
-                  <button disabled={pageNumber * state!.pagination.page_size >= state!.pagination.total} onClick={() => setPageNumber((n) => n + 1)}>Далее →</button>
-                </div>
-              </div>
-              <aside><LogPanel /></aside>
-            </div>
-          </>
-        );
+        return <GenerationPage key={projectId} dialogs={dialogs} filter={filter} onFilter={setFilter} onProjectsChanged={loadProjects} />;
     }
   })();
 
   const body = (
-    <div className="shell">
-      <Sidebar me={me} route={route} go={go} projects={projects} projectId={projectId} onProject={setProjectId}
-        onNewProject={createProject} balance={account} reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy}
-        onLogout={onLogout} open={menuOpen} onToggle={() => setMenuOpen((x) => !x)} />
-      <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
-        {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
-        {page}
-      </main>
+    <div className="app">
+      <TopBar me={me} route={route} go={go} balance={account}
+        polza={master && state ? { value: state.balance, error: state.balance_error } : null}
+        reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
+        onMenu={() => setMenuOpen((x) => !x)} />
+      <div className="app-body">
+        <ProjectsSidebar master={master} projects={projects} projectId={projectId}
+          onProject={(id) => { setProjectId(id); if (!NEEDS_PROJECT.includes(route)) go("products"); }}
+          onNewProject={createProject} open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
+          {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
+          {scope && SECTION_ROUTES.includes(route) && <SectionNav route={route} go={go} />}
+          {master && ANALYTICS_ROUTES.includes(route) && <AnalyticsNav route={route} go={go} />}
+          {page}
+        </main>
+      </div>
     </div>
   );
 
@@ -232,4 +245,3 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     </ProjectCtx.Provider>
   );
 }
-
