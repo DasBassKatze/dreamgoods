@@ -237,6 +237,15 @@ def generate(st, key, prompt, refs, tag="", on_task=None):
 
 
 def _generate_once(st, key, prompt, refs, tag="", on_task=None):
+    from ..services import payments
+    with payments.call("generation", st["model"]) as oid:
+        data = _generate_paid(st, key, prompt, refs, tag, on_task)
+        payments.settle(oid, cost_of(data), provider=data.get("provider", ""))
+        data["_paid_operation"] = oid
+        return data
+
+
+def _generate_paid(st, key, prompt, refs, tag="", on_task=None):
     """refs: [{"type": "base64", "data": "data:image/jpeg;base64,…"}]. Возвращает ответ Polza со статусом completed."""
     headers = {"Authorization": f"Bearer {key}"}
     body = {
@@ -263,6 +272,8 @@ def _generate_once(st, key, prompt, refs, tag="", on_task=None):
     task_id = data.get("id") or data.get("taskId") or data.get("task_id")
     log.info("%s задача Polza %s принята за %.1f с, статус %s", tag, task_id or "—", time.time() - t0, data.get("status"))
     log.debug("%s ответ на создание: %s", tag, _short(data))
+    from ..services import payments
+    payments.submitted(str(task_id or ""))
     if task_id and on_task:
         on_task(str(task_id))     # номер задачи — сразу в базу: даже при обрыве результат можно будет забрать
     if data.get("status") not in ("completed", "failed", "cancelled"):
@@ -281,6 +292,8 @@ def _submit(headers, body, tag):
     for attempt in range(12):
         lim.acquire()
         try:
+            from ..services import payments
+            payments.submitted()
             r = http.post(f"{API}/media", headers=headers, json=body, timeout=(20, 180))
         except requests.RequestException as e:
             if _not_sent(e) and attempt < 3:
@@ -288,6 +301,7 @@ def _submit(headers, body, tag):
                 time.sleep(5 * (attempt + 1))
                 continue
             if _not_sent(e):
+                payments.not_charged()
                 raise RuntimeError(f"нет соединения с Polza: {e}")
             log.error("%s связь с Polza оборвалась после отправки запроса — повтор не делаю (риск двойной оплаты): %s", tag, e)
             raise RuntimeError("связь с Polza оборвалась сразу после отправки запроса; повтор не делался, чтобы не "
@@ -298,6 +312,8 @@ def _submit(headers, body, tag):
             log.debug("%s Polza занята: HTTP %s (%d-й раз): %s", tag, r.status_code, busy, r.text[:200])
             continue
         if r.status_code >= 400:
+            if r.status_code < 500:
+                payments.not_charged()
             try:
                 msg = r.json().get("error", {}).get("message") or r.text
             except Exception:
@@ -556,6 +572,12 @@ _NO_REASONING = set()      # адреса API, которые не приним�
 
 
 def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=None, _retry=True):
+    from ..services import payments
+    with payments.call(KIND.get(what, what), model, trace) as oid:
+        return _chat_paid(st, model, system, content, trace, what, max_tokens, reasoning, _retry, oid)
+
+
+def _chat_paid(st, model, system, content, trace, what, max_tokens=1500, reasoning=None, _retry=True, paid_id=None):
     """Запрос к OpenAI-совместимому чату (Polza, vLLM, Ollama). Возвращает (разобранный JSON, стоимость ₽, секунды).
     reasoning: auto — как решит модель; none/minimal/low/medium/high — уровень «размышлений» (они оплачиваются как ответ).
     Расход пишется в trace (потом — в журнал расходов)."""
@@ -577,6 +599,8 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
             lim = throttle.limiter("chat", key or base)
             lim.acquire()
             with throttle.chat_slots:
+                from ..services import payments
+                payments.submitted()
                 r = http.post(f"{base}/chat/completions", headers=headers, json=body, timeout=(20, 240))
         except requests.RequestException as e:
             attempt += 1
@@ -584,6 +608,7 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
             if not _not_sent(e):
                 raise RuntimeError(f"{what}: связь оборвалась после отправки; автоматический повтор отключён") from e
             if attempt >= 3:
+                payments.not_charged()
                 raise RuntimeError(f"{what}: нет связи с моделью: {e}")
             time.sleep(8)
             continue
@@ -601,6 +626,8 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
             log.warning("%s %s: HTTP %s (попытка %d/5)", tag, what, r.status_code, attempt)
             continue
         if r.status_code >= 400:
+            if r.status_code < 500:
+                payments.not_charged()
             log.error("%s %s: HTTP %s: %s", tag, what, r.status_code, r.text[:500])
             raise RuntimeError(f"{what}: HTTP {r.status_code}: {r.text[:300]}")
         break
@@ -616,6 +643,7 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
     rt = int(((usage.get("completion_tokens_details") or {}).get("reasoning_tokens")) or 0)
     cached = int(((usage.get("prompt_tokens_details") or {}).get("cached_tokens")) or 0)
     secs = time.time() - t0
+    payments.settle(paid_id, cost, {"prompt": pt, "completion": ct, "reasoning": rt, "cached": cached})
     trace.add(KIND.get(what, what), model, cost, {"prompt": pt, "completion": ct, "reasoning": rt, "cached": cached})
     log.info("%s %s: %.1f с · %.2f ₽ · токены: вход %d%s, ответ %d%s", tag, what, secs, cost, pt,
              f" (из кэша {cached})" if cached else "", ct, f" (из них рассуждения {rt})" if rt else "")
@@ -630,8 +658,12 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
         cut = choice.get("finish_reason") == "length"
         if _retry:      # один повтор: обрезанному ответу — вдвое больше лимит, иначе — та же просьба ещё раз
             log.warning("%s %s: повторяю запрос%s", tag, what, " с увеличенным лимитом ответа" if cut else "")
-            res, cost2, secs2 = chat(st, model, system, content, trace, what, max_tokens * 2 if cut else max_tokens,
-                                     reasoning, _retry=False)
+            retry_token = payments.retry_context.set(True)
+            try:
+                res, cost2, secs2 = chat(st, model, system, content, trace, what, max_tokens * 2 if cut else max_tokens,
+                                         reasoning, _retry=False)
+            finally:
+                payments.retry_context.reset(retry_token)
             return res, cost + cost2, secs + secs2
         raise RuntimeError(f"{what}: модель {model} ответила испорченным JSON"
                            + (" — ответ обрезан по лимиту токенов" if cut else "")

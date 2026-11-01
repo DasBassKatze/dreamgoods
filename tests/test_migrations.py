@@ -39,10 +39,20 @@ def test_upgrade_preserves_data_and_handles_legacy_0013(monkeypatch, legacy):
             with engine.begin() as c:
                 with Operations.context(MigrationContext.configure(c)): module.upgrade()
             command.stamp(cfg, '0013')
+        command.upgrade(cfg, '0019')
+        from dreamgoods.db.models import Project, Product, Frame, Generation
+        with engine.begin() as c:
+            pid=c.execute(Project.__table__.insert().values(client_id=1,name='Pending project').returning(Project.id)).scalar_one()
+            prod=c.execute(Product.__table__.insert().values(project_id=pid,sku='PENDING').returning(Product.id)).scalar_one()
+            fid=c.execute(Frame.__table__.insert().values(product_id=prod,position=1,prompt='test').returning(Frame.id)).scalar_one()
+            gid=c.execute(Generation.__table__.insert().values(frame_id=fid,status='pending',external_id='legacy-task',model='test').returning(Generation.id)).scalar_one()
         command.upgrade(cfg, 'head')
         with engine.connect() as c:
+            assert c.scalar(text('SELECT count(*) FROM paid_operations'))==1
+            assert c.scalar(text('SELECT status FROM paid_operations'))=='uncertain'
+            assert c.scalar(text('SELECT paid_operation_id FROM generations WHERE id=:id'),{'id':gid})==f'legacy-{gid}'
             assert float(c.scalar(text('SELECT balance_rub FROM clients WHERE id=1'))) == pytest.approx(123.45)
-            assert c.scalar(text('SELECT version_num FROM alembic_version')) == '0019'
+            assert c.scalar(text('SELECT version_num FROM alembic_version')) == '0020'
             assert inspect(c).has_table('topup_requests')
             assert 'months' in {x['name'] for x in inspect(c).get_columns('topup_requests')}
             assert inspect(c).get_columns('clients')[0] is not None

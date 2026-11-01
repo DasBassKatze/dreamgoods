@@ -100,7 +100,8 @@ def ensure_funds(project_id):
         return
     with db.session() as s:
         c = client_of_project(s, project_id)
-        if c and c.billing and (c.balance_rub or 0) <= 0:
+        from .payments import held
+        if c and c.billing and decimal(c.balance_rub) - decimal(held(s, c.id)) <= 0:
             raise NoFunds(f"На балансе {c.balance_rub:.2f} ₽ — пополните баланс, чтобы запускать генерацию "
                           "(обратитесь к администратору сервиса)")
 
@@ -110,7 +111,8 @@ def has_funds(project_id):
         return True
     with db.session() as s:
         c = client_of_project(s, project_id)
-        return not (c and c.billing and (c.balance_rub or 0) <= 0)
+        from .payments import held
+        return not (c and c.billing and decimal(c.balance_rub) - decimal(held(s, c.id)) <= 0)
 
 
 def account(client_id, limit=200):
@@ -129,7 +131,10 @@ def account(client_id, limit=200):
                            .where(BalanceEntry.client_id == c.id, BalanceEntry.kind == "charge",
                                   BalanceEntry.created_at >= func.now() - text("interval '90 days'"))
                            .group_by(op).order_by(func.count(BalanceEntry.id).desc())).all()
-        return {"balance": round(c.balance_rub or 0, 2), "billing": c.billing, "markup": markup_of(c, org),
+        from .payments import held
+        reserved = held(s, c.id)
+        return {"balance": round(c.balance_rub or 0, 2), "reserved": reserved,
+                "available": money(decimal(c.balance_rub) - decimal(reserved)), "billing": c.billing, "markup": markup_of(c, org),
                 "spent_month": abs(round(float(month or 0), 2)),
                 "prices": [{"what": w or "прочее", "count": n, "avg": abs(round(float(a or 0), 2))} for w, n, a in prices],
                 "entries": [entry_view(e) for e in rows]}

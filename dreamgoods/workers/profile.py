@@ -58,7 +58,7 @@ def handle(job_id):
         then_generate = False
     if then_generate:        # запуск «Сгенерировать» ждал профиль — ставим недостающие кадры в очередь
         from ..services import frames as frames_svc
-        if billing.has_funds(ids["project"]):
-            queued = frames_svc.enqueue_frames(ids["project"], frames_svc.missing_frames(ids["project"], [ids["product"]]))
+        queued = frames_svc.enqueue_frames(ids["project"], frames_svc.missing_frames(ids["project"], [ids["product"]]))
     say("ok", f"🧠 {sku}: профиль готов — {prof['category_ru']}, {prof.get('summary_ru') or prof['object']} · {cost:.2f} ₽"
         + (f" · промптов кадров: {n}" if build else "") + (f" · в очередь кадров: {queued}" if queued else ""), ids["project"])
+

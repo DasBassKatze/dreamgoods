@@ -22,13 +22,13 @@ from ..core.events import say, utcnow
 from ..core.logs import log
 from ..db.models import Frame, Generation, Instance, Job, Organization, Product
 
-ACTIVE = ("queued", "running", "cancelling")
+ACTIVE = ("queued", "running", "cancelling", "paused")
 HANDLERS = {}          # kind → функция(job_id); заполняет workers/__init__.py
 
 _wake = threading.Event()
 
 
-def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, priority=100):
+def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, priority=100, batch_id=None):
     """Ставит задание, если такого же активного ещё нет. Возвращает Job или None."""
     if frame_id is not None:
         frame = s.get(Frame, frame_id, with_for_update=True)
@@ -49,10 +49,12 @@ def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, p
         if dup:
             return None
     from ..services.billing import by_master
+    from ..services.payments import batch_context
+    if batch_id is None: batch_id = batch_context.get()
     payload = dict(payload or {})
     if by_master.get():
         payload["by_master"] = True          # запустил мастер — оплата напрямую с Polza
-    j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload,
+    j = Job(batch_id=batch_id, kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload,
             priority=priority)
     s.add(j)
     s.flush()
@@ -63,7 +65,7 @@ def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, p
 def stop(project_id):
     """Снимает задания из очереди; запущенные доделают текущую (уже оплаченную) попытку и остановятся."""
     with db.session() as s:
-        n = s.execute(update(Job).where(Job.project_id == project_id, Job.status == "queued")
+        n = s.execute(update(Job).where(Job.project_id == project_id, Job.status.in_(("queued", "paused")))
                       .values(status="cancelled", finished_at=utcnow())).rowcount
         m = s.execute(update(Job).where(Job.project_id == project_id, Job.status == "running")
                       .values(status="cancelling")).rowcount
@@ -123,6 +125,14 @@ def recover(quiet=False):
                 sess = s.get(ImportSession, int((j.payload or {}).get("session") or 0))
                 if sess is not None and sess.status == "analyzing":
                     sess.status, sess.error = "error", STALE_ERROR
+            from ..db.models import PaidOperation
+            for operation in s.scalars(select(PaidOperation).where(PaidOperation.job_id == j.id,
+                    PaidOperation.status.in_(("reserved", "submitted")))).all():
+                operation.status = "released" if operation.status == "reserved" else "uncertain"
+                if operation.status == "uncertain" and operation.batch_id:
+                    from ..db.models import BudgetBatch
+                    batch = s.get(BudgetBatch, operation.batch_id)
+                    batch.state, batch.pause_reason = "paused", "Сервер прервался после отправки запроса. Требуется сверка резерва."
             j.status, j.finished_at = "error", utcnow()
             j.error = ("прервано: сервер, выполнявший задание, остановился; повтор не делался, чтобы не заплатить "
                        "дважды. Если Polza успела принять задачу — результат дозагрузится автоматически")
@@ -137,7 +147,7 @@ def recover(quiet=False):
 def _claim(worker):
     """Честная очередь для многих пользователей: сначала задания проектов, у которых сейчас меньше всего
     запущенных заданий, — один большой запуск не займёт все потоки и не заставит остальных ждать."""
-    from ..db.models import Project
+    from ..db.models import Project, BudgetBatch
     other = aliased(Job)
     other_project = aliased(Project)
     busy = (select(func.count(other.id)).join(other_project, other_project.id == other.project_id)
@@ -150,7 +160,8 @@ def _claim(worker):
         offset = 0
         while True:
             cands = s.scalars(select(Job).outerjoin(Project, Project.id == Job.project_id)
-                              .where(Job.status == "queued").order_by(Job.priority, busy, Job.id)
+                              .where(Job.status == "queued", ~select(BudgetBatch.id).where(
+                                  BudgetBatch.id == Job.batch_id, BudgetBatch.state == "paused").exists()).order_by(Job.priority, busy, Job.id)
                               .with_for_update(of=Job, skip_locked=True).offset(offset).limit(30)).all()
             if not cands:
                 return None
@@ -191,6 +202,15 @@ def _finish(job_id, status, error=""):
         if j.status == "cancelling" and status == "done":
             status = "cancelled"
         j.status, j.error, j.finished_at, j.note = status, error[:2000], utcnow(), ""
+        if status == "done" and (j.payload or {}).get("deferred_budget_check") and j.frame_id:
+            payload=dict(j.payload)
+            payload.pop("deferred_budget_check",None)
+            j.payload=payload
+            s.flush()
+            f=s.get(Frame,j.frame_id,with_for_update=True)
+            if f and f.current_generation_id and f.status not in ("accepted","retired"):
+                enqueue(s,"check",j.project_id,product_id=j.product_id,frame_id=j.frame_id,batch_id=j.batch_id,
+                        payload={"by_master":bool(payload.get("by_master")),"budget_retry":bool(payload.get("deferred_retry"))})
 
 
 def set_note(job_id, note):
@@ -251,7 +271,7 @@ def _funds_ok(job_id):
     with db.session() as s:
         pid, payload = s.execute(select(Job.project_id, Job.payload).where(Job.id == job_id)).one()
     billing.by_master.set(bool((payload or {}).get("by_master")))
-    return not pid or billing.has_funds(pid)
+    return True  # доступные средства проверяются атомарно перед каждым платным запросом
 
 
 def _run_handler(job_id, kind):
@@ -259,6 +279,14 @@ def _run_handler(job_id, kind):
     from ..core.logs import pending_traces
     from ..db.models import Client, Project
     from ..services.common import write_usage
+    from ..services import payments
+    with db.session() as s:
+        job = s.get(Job, job_id)
+        batch_id = job.batch_id
+        retry = bool((job.payload or {}).get("budget_retry"))
+    job_token = payments.job_context.set(job_id)
+    batch_token = payments.batch_context.set(batch_id)
+    retry_token = payments.retry_context.set(retry)
     traces = []
     token = pending_traces.set(traces)
     try:
@@ -275,6 +303,9 @@ def _run_handler(job_id, kind):
                             write_usage(s, c.org_id, p.id, j.product_id, j.frame_id, trace, f"job:{job_id}")
         finally:
             pending_traces.reset(token)
+            payments.retry_context.reset(retry_token)
+            payments.batch_context.reset(batch_token)
+            payments.job_context.reset(job_token)
 
 
 def _worker(name, idx=1):
@@ -301,7 +332,8 @@ def _worker(name, idx=1):
             _finish(job_id, "done")
         except Exception as e:
             log.debug("Задание %s: трассировка\n%s", job_id, traceback.format_exc())
-            _finish(job_id, "error", str(e))
+            from ..services.payments import BudgetPause
+            _finish(job_id, "paused" if isinstance(e, BudgetPause) else "error", str(e))
             with db.session() as s:
                 j = s.get(Job, job_id)
                 where = _where(s, j)

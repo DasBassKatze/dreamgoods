@@ -87,7 +87,7 @@ def _generate(st, prompt, refs, trace):
         raise RuntimeError("в ответе Polza нет картинки")
     usage = data.get("usage") or {}
     cost = polza._num(usage.get("cost_rub")) or polza._num(usage.get("cost")) or 0.0
-    trace.add("persona", st["model"], cost, provider=data.get("provider", ""))
+    trace.add("persona", st["model"], cost, provider=data.get("provider", ""), paid_operation=data.get("_paid_operation"))
     return img, cost
 
 
@@ -186,3 +186,4 @@ def _sheet(job_id, pid, org_id, project_id, st, trace, views):
         total += cost
         made += 1
     say("ok", f"👤 Модель «{name}»: готово ракурсов {made} · {total:.2f} ₽", project_id)
+

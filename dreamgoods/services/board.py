@@ -19,15 +19,17 @@ from .common import LIVE, persona_id_for
 from .metrics import metrics
 
 
-def _job_state(job):
+def _job_state(job, paused_batches=None):
     """(состояние кадра, подпись, ошибка) по последнему заданию."""
     if not job:
         return "", "", ""
     if job.status == "queued":
+        if paused_batches and job.batch_id in paused_batches:
+            return "error", "", "Пауза партии: " + paused_batches[job.batch_id]
         return "queued", "", ""
     if job.status in ("running", "cancelling"):
         return ("checking" if "провер" in (job.note or "") else "running"), job.note or "", ""
-    if job.status == "error":
+    if job.status in ("error", "paused"):
         return "error", "", job.error
     return "", "", ""
 
@@ -53,6 +55,9 @@ def state(project_id, admin=False):
         project = s.get(Project, project_id)
         org = s.get(Organization, project.client.org_id)
         st = effective(org, project)
+        from ..db.models import BudgetBatch
+        paused_batches = dict(s.execute(select(BudgetBatch.id, BudgetBatch.pause_reason).where(
+            BudgetBatch.project_id == project_id, BudgetBatch.state == "paused")).all())
         products = s.scalars(select(Product).where(Product.project_id == project_id).order_by(func.lower(Product.sku))).all()
         pids = [p.id for p in products]
         photos = s.scalars(select(ProductPhoto).where(ProductPhoto.product_id.in_(pids))
@@ -67,7 +72,7 @@ def state(project_id, admin=False):
                 qcs[q.generation_id] = q
         last_job, prof_job = {}, {}      # последнее активное/ошибочное задание по кадру и по профилю товара
         if pids:
-            for j in s.scalars(select(Job).where(Job.project_id == project_id, Job.status.in_(LIVE + ("error",)))
+            for j in s.scalars(select(Job).where(Job.project_id == project_id, Job.status.in_(LIVE + ("error", "paused")))
                                .order_by(Job.id)).all():
                 if j.frame_id:
                     last_job[j.frame_id] = j
@@ -110,7 +115,7 @@ def state(project_id, admin=False):
             fr_out, done = [], 0
             for f in by_frames.get(p.id, []):
                 g = gens.get(f.current_generation_id)
-                ui, note, err = _job_state(last_job.get(f.id))
+                ui, note, err = _job_state(last_job.get(f.id), paused_batches)
                 if f.id in waiting and ui in ("", "error"):
                     ui, note, err = "running", "ждём результат Polza", ""
                 if g:
@@ -149,14 +154,14 @@ def state(project_id, admin=False):
                 "profile_job": {"state": "running"} if pj and pj.status in LIVE else
                                {"state": "error", "error": pj.error} if pj and pj.status == "error" else None})
 
-        warnings = []
+        warnings = [f"Партия #{bid} на паузе: {reason}. Откройте раздел «Бюджеты»." for bid, reason in paused_batches.items()]
         new = [m["sku"] for m in out if not m["total"]]
         if new:
             warnings.append(f"Без промптов: {len(new)} товаров ({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — "
                             "нажмите «✨ Промпты для новых», чтобы ИИ составил профиль товара и промпты по фото")
 
         count = lambda *w: s.scalar(select(func.count(Job.id)).where(Job.project_id == project_id, *w))
-        queued = count(Job.status == "queued")
+        queued = count(Job.status == "queued", Job.batch_id.not_in(list(paused_batches)) | Job.batch_id.is_(None)) if paused_batches else count(Job.status == "queued")
         running = count(Job.status.in_(("running", "cancelling")))
         stopping = bool(count(Job.status == "cancelling"))
         ok = count(Job.status == "done", Job.finished_at >= STARTED_AT)
@@ -212,7 +217,11 @@ def state(project_id, admin=False):
         settings = public(org, project)
         client = project.client
         markup = billing.markup_of(client, org)
-        account = {"balance": round(client.balance_rub or 0, 2), "billing": client.billing, "client": client.name}
+        from .payments import held
+        from ..core.money import decimal, money
+        reserved = held(s, client.id)
+        account = {"balance": round(client.balance_rub or 0, 2), "reserved": reserved,
+                   "available": money(decimal(client.balance_rub) - decimal(reserved)), "billing": client.billing, "client": client.name}
     b = polza.balance(st.get("api_key")) if admin else {"value": None, "error": ""}
     log_lines = lines(project_id) if admin else [_plain(x) for x in lines(project_id, include_global=False)]
     spent_v = round(float(spent or 0), 2) if admin else None
@@ -224,3 +233,4 @@ def state(project_id, admin=False):
                        "avg_cost": round(sum(recent) / len(recent) * (1 if admin else markup), 2) if recent else 0.0},
             "account": account, "open_import": open_import, "import_rules": import_rules,
             "metrics": met, "balance": b["value"], "balance_error": b["error"]}
+

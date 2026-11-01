@@ -1,3 +1,4 @@
+import { parseBudget, budgetFields, EstimateText } from "../features/budgets/BudgetForm";
 import type { Frame, Product } from "../api/types";
 import { useUI } from "../components/ui";
 import { pad, rub } from "../lib/format";
@@ -55,14 +56,15 @@ export function useActions() {
         opts.brief?.trim() ? `Пожелания к запуску: «${opts.brief.trim().slice(0, 140)}${opts.brief.trim().length > 140 ? "…" : ""}»` : "",
         ps?.need_profile ? `Для ${ps.need_profile} товар(ов) ИИ сначала составит профиль по фото — их кадры встанут в очередь сами.` : "",
       ].filter(Boolean);
-      const ok = await ui.confirm({
+      const limits = await ui.ask({
         title: "Запуск генерации",
         text: <>{p.count ? <>Сгенерировать {p.count} кадр(ов){est}?</> : "Запустить подготовку кадров?"}
-          {notes.map((n) => <p key={n}>{n}</p>)}{qc && <p className="hint">{qc}</p>}</>,
+          {notes.map((n) => <p key={n}>{n}</p>)}{qc && <p className="hint">{qc}</p>}<EstimateText estimate={p.estimate} /></>,
+        fields: budgetFields(p.estimate?.reserve_upper),
         ok: "Сгенерировать",
       });
-      if (!ok) return;
-      const r = await api.generate({ product_ids: productIds, limit, ...opts });
+      if (!limits) return;
+      const r = await api.generate({ product_ids: productIds, limit, ...opts, ...parseBudget(limits) });
       ui.toast(r.added || r.preset?.queued_profiles
         ? `В очереди кадров: ${r.added}${r.preset?.queued_profiles ? ` · профилей: ${r.preset.queued_profiles}` : ""}`
         : "Нечего запускать");
@@ -129,3 +131,4 @@ export function useActions() {
 
   return { generate, regenerate, checkReady, profiles, quick };
 }
+

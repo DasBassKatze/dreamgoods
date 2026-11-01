@@ -68,12 +68,15 @@ class Trace:
     def __init__(self, tag):
         self.tag = tag
         self.usage = []
+        from ..services.payments import job_context
+        self.job_id = job_context.get()
         traces = pending_traces.get()
         if traces is not None:
             traces.append(self)
 
-    def add(self, kind, model, cost, tokens=None, provider=""):
-        self.usage.append({"kind": kind, "model": model or "", "cost": float(cost or 0), "tokens": tokens or {},
+    def add(self, kind, model, cost, tokens=None, provider="", paid_operation=None):
+        from ..services.payments import operation_context
+        self.usage.append({"managed": bool(paid_operation or operation_context.get()), "kind": kind, "model": model or "", "cost": float(cost or 0), "tokens": tokens or {},
                            "provider": provider or ""})
 
     def __str__(self):

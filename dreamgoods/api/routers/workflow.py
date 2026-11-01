@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Literal
 from ...core import auth
-from ...services import preflight, trials, frames, moderation, plans
+from ...services import preflight, trials, frames, moderation, plans, budgets
 from ..deps import project_id, need_key
 
 router=APIRouter(prefix='/api/projects/{project_id}',tags=['подготовка и приёмка'])
@@ -12,6 +12,8 @@ class Products(BaseModel):
 
 class Approval(BaseModel):
     generation_id:int
+    budget_rub:float|None=Field(None,ge=0,le=1e9,allow_inf_nan=False)
+    retry_budget_rub:float|None=Field(None,ge=0,le=1e9,allow_inf_nan=False)
 
 class Decision(BaseModel):
     frame_id:int
@@ -38,13 +40,18 @@ def start(body:Products,request:Request,pid:int=Depends(project_id)):
     moderation.guard_products(pid,body.product_ids)
     return {'trial':trials.start(pid,body.product_ids)}
 
+@router.get('/trial/{job_id}/estimate')
+def estimate(job_id:int,pid:int=Depends(project_id)):
+    return budgets.quote(pid,trials.product_ids(pid,job_id))
+
 @router.post('/trial/{job_id}/approve')
 def approve(job_id:int,body:Approval,pid:int=Depends(project_id)):
     need_key(pid)
     ids=trials.product_ids(pid,job_id)
     plans.check_generation_project(pid,ids)
     moderation.guard_products(pid,ids)
-    return trials.approve(pid,job_id,body.generation_id)
+    with budgets.launch(pid,body.budget_rub,body.retry_budget_rub,'Продолжение пробной партии'):
+        return trials.approve(pid,job_id,body.generation_id)
 
 @router.post('/review/batch')
 def review(body:BatchReview,request:Request,pid:int=Depends(project_id)):

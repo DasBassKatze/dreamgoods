@@ -137,6 +137,8 @@ def handle(job_id):
     post = PostSlot()
     try:
         for a in range(1, tries + 1):
+            from ..services.payments import retry_context
+            retry_context.set(a > 1 or bool(run.get("budget_retry")))
             if a > 1 and cancelled(job_id):
                 log.info("%s остановлено: новых попыток не делаю", trace)
                 break
@@ -150,7 +152,8 @@ def handle(job_id):
 
             def on_task(task_id, a=a, gen_prompt=gen_prompt):
                 with db.session() as s:
-                    g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
+                    from ..services.payments import operation_context
+                    g = Generation(paid_operation_id=operation_context.get(), frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
                                    status="pending", external_id=task_id, instruction=edit_label or edit, source_id=source_gen)
                     s.add(g)
                     s.flush()
@@ -189,14 +192,15 @@ def handle(job_id):
             cost = polza.cost_of(data)
             provider = data.get("provider", "")
             total += cost
-            trace.add("edit" if edit else "generation", st["model"], cost, provider=provider)
+            trace.add("edit" if edit else "generation", st["model"], cost, provider=provider, paid_operation=data.get("_paid_operation"))
             with db.session() as s:   # оплаченный результат — сразу в базу и хранилище
                 asset = storage.put(s, ids["org"], img, "output", f"{sku}_{pos:02d}_a{a}{'_edit' if edit else ''}.png")
                 for gid in pend[:-1]:
                     s.get(Generation, gid).status = "error"
                 g = s.get(Generation, pend[-1]) if pend else None
                 if g is None:
-                    g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
+                    from ..services.payments import operation_context
+                    g = Generation(paid_operation_id=data.get("_paid_operation"), frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
                                    instruction=edit_label or edit, source_id=source_gen)
                     s.add(g)
                 g.provider, g.status, g.output_asset_id, g.cost_rub = provider, "ok", asset.id, cost
@@ -220,6 +224,10 @@ def handle(job_id):
                     ids["project"])
                 with db.session() as s:
                     write_usage(s, ids["org"], ids["project"], ids["product"], ids["frame"], trace, f"generation:{gen_id}")
+                    from ..services.payments import BudgetPause
+                    if isinstance(e, BudgetPause):
+                        current_job=s.get(Job,job_id)
+                        current_job.payload={**(current_job.payload or {}),"deferred_budget_check":True,"deferred_retry":a>1}
                 break
             att["qc"] = res
             total += res["cost"]

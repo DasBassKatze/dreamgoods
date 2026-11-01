@@ -14,6 +14,8 @@ class Selection(BaseModel):
     product_ids: list[int] | None = None
     frame_ids: list[int] | None = None
     limit: int = Field(0, ge=0)
+    budget_rub: float | None = Field(None, ge=0, le=1e9, allow_inf_nan=False)
+    retry_budget_rub: float | None = Field(None, ge=0, le=1e9, allow_inf_nan=False)
     brief: str = Field("", max_length=1500)
     market: str = ""
     aspect: str = ""
@@ -155,3 +157,4 @@ class StyleRefUpdate(BaseModel):
 
 class StyleRefChoice(BaseModel):
     style_ref_id: int | None = None
+

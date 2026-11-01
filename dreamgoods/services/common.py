@@ -9,7 +9,7 @@ from ..core import presets
 from ..db.models import (CategoryChecklist, Frame, Generation, GenerationPreset, Organization, Product, ProductProfile,
                          Project, Review, UsageEntry)
 
-LIVE = ("queued", "running", "cancelling")
+LIVE = ("queued", "running", "cancelling", "paused")
 
 
 # ───────── группы товаров (категория / подраздел из профиля) и модель клиента по группе ─────────
@@ -121,9 +121,10 @@ def checklist_for(s, st, product, org_id):
 def write_usage(s, org_id, project_id, product_id, frame_id, trace, ref=""):
     """Переносит накопленные в trace расходы в журнал usage_ledger и списывает их с баланса клиента (с наценкой)."""
     from .billing import charge
-    if trace.usage:
-        charge(s, project_id, trace.usage, str(trace))
-    for u in trace.usage:
+    usage = [u for u in trace.usage if not u.get("managed")]
+    if usage:
+        charge(s, project_id, usage, str(trace))
+    for u in usage:
         s.add(UsageEntry(org_id=org_id, project_id=project_id, product_id=product_id, frame_id=frame_id, kind=u["kind"],
                          model=u["model"], provider=u.get("provider", ""), amount_rub=u["cost"], tokens=u["tokens"], ref=ref))
     trace.usage.clear()
@@ -197,3 +198,4 @@ def rebuild_frames(s, product, prof, plan=None, keep_edited=False):
                 s.delete(f)
     s.flush()
     return len(rows)
+

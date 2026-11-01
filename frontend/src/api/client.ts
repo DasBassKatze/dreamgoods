@@ -102,6 +102,8 @@ export interface Selection {
   product_ids?: number[] | null;
   frame_ids?: number[] | null;
   limit?: number;
+  budget_rub?: number | null;
+  retry_budget_rub?: number | null;
   /** пожелания к этому запуску — поверх пресета */
   brief?: string;
   market?: string;
@@ -112,6 +114,9 @@ export interface PreflightReport {
   products: {id:number;sku:string;references:number;issues:{code:string;level:string;text:string}[]}[];
   errors:number;warnings:number;note:string;
 }
+export interface CostEstimate {frames:number;profiles:number;base_estimate:number;retry_estimate:number;reserve_upper:number;historical_samples:number;unit:string;note:string}
+export interface BatchBudget {id:number;title:string;unit:string;created:string;state:string;pause_reason:string;budget:number|null;retry_budget:number|null;spent:number;reserved:number;retries:number;queued:number;running:number;paused:number;products:{product_id:number|null;sku:string;spent:number;reserved:number;retries:number;accepted:number;cost_per_accepted:number|null}[]}
+export interface BudgetState {batches:BatchBudget[];balance:number;reserved:number;available:number;admin:boolean;paused_jobs:number;operations:{id:string;kind:string;model:string;status:string;reserved:number;external_id:string;job_id:number|null;note:string}[]}
 export interface Trial {id:number;frame_id:number;product_id:number;status:string;error:string;asset:string|null;generation:number|null;approved:boolean;products:number}
 
 /** Методы проекта. */
@@ -122,14 +127,19 @@ export function projectApi(id: number) {
     preflight: (productIds:number[]|null) => post<PreflightReport>(`${p}/preflight`, {product_ids:productIds}),
     trial: () => get<{trial:Trial|null}>(`${p}/trial`),
     startTrial: (productIds:number[]|null) => post<{trial:Trial}>(`${p}/trial`, {product_ids:productIds}),
-    approveTrial: (id:number,generationId:number) => post<{added:number;already_approved:boolean}>(`${p}/trial/${id}/approve`, {generation_id:generationId}),
+    estimateTrial: (id:number) => get<CostEstimate>(`${p}/trial/${id}/estimate`),
+    approveTrial: (id:number,generationId:number,budget: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{added:number;already_approved:boolean}>(`${p}/trial/${id}/approve`, {generation_id:generationId,...budget}),
+    budgets: () => get<BudgetState>(`${p}/budgets`),
+    resumeBudget: (id:number,budget: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{ok:true}>(`${p}/budgets/${id}/resume`,budget),
+    resumeUnbatched: () => post<{queued:number}>(`${p}/budgets/resume-unbatched`),
+    reconcile: (id:string,action:"refresh"|"settle"|"release",note="",cost=0) => post<{ok:true}>(`${p}/budgets/operations/${id}/reconcile`,{action,note,cost}),
     reviewBatch: (items:{frame_id:number;generation_id:number}[],verdict:"ok"|"bad",comment:string,regen:boolean) => post<{results:{frame_id:number;ok:boolean;error?:string}[]}>(`${p}/review/batch`, {items,verdict,comment,regen}),
     saveSettings: (values: Partial<Settings> & Record<string, unknown>) => patch<{ ok: true }>(`${p}/settings`, values),
     settingsDefaults: () => get<{ qc_checklist: string }>(`${p}/settings/defaults`),
     catalog: (kind: "image" | "qc", refresh = false) =>
       get<{ models: CatalogModel[]; error: string }>(`${p}/catalog?kind=${kind}${refresh ? "&refresh=true" : ""}`),
 
-    previewGenerate: (sel: Selection) => post<{ count: number; preset: PresetSync | null }>(`${p}/generate/preview`, sel),
+    previewGenerate: (sel: Selection) => post<{ count: number; preset: PresetSync | null; estimate?:CostEstimate }>(`${p}/generate/preview`, sel),
     generate: (sel: Selection) => post<{ added: number; preset: PresetSync | null }>(`${p}/generate`, sel),
     previewCheck: (sel: Selection & { only_unchecked?: boolean }) => post<{ count: number }>(`${p}/check/preview`, sel),
     check: (sel: Selection & { only_unchecked?: boolean }) => post<{ added: number }>(`${p}/check`, sel),

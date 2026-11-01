@@ -372,6 +372,7 @@ class Generation(TS, Base):
     outcome: Mapped[str] = mapped_column(String(20), default="")       # current | rejected | archived
     cost_rub: Mapped[float] = mapped_column(Numeric(18, 6, asdecimal=False), default=0.0)
     seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    paid_operation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     external_id: Mapped[str] = mapped_column(String(120), default="")  # id задачи Polza
     instruction: Mapped[str] = mapped_column(Text, default="")         # правка: что просили изменить на фото
     source_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # правка: исходная версия кадра
@@ -438,6 +439,7 @@ class Job(TS, Base):
     __tablename__ = "jobs"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("budget_batches.id", ondelete="SET NULL"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(20))                      # generate | check | profile | import
     status: Mapped[str] = mapped_column(String(20), default="queued")  # queued | running | done | error | cancelled
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=True)
@@ -452,11 +454,11 @@ class Job(TS, Base):
     __table_args__ = (
         Index("ix_jobs_queue", "status", "priority", "id"),
         Index("uq_jobs_active_frame", "frame_id", unique=True,
-              postgresql_where=text("frame_id IS NOT NULL AND status IN ('queued','running','cancelling')"),
-              sqlite_where=text("frame_id IS NOT NULL AND status IN ('queued','running','cancelling')")),
+              postgresql_where=text("frame_id IS NOT NULL AND status IN ('queued','running','cancelling','paused')"),
+              sqlite_where=text("frame_id IS NOT NULL AND status IN ('queued','running','cancelling','paused')")),
         Index("uq_jobs_active_profile", "product_id", unique=True,
-              postgresql_where=text("kind = 'profile' AND status IN ('queued','running','cancelling')"),
-              sqlite_where=text("kind = 'profile' AND status IN ('queued','running','cancelling')")),
+              postgresql_where=text("kind = 'profile' AND status IN ('queued','running','cancelling','paused')"),
+              sqlite_where=text("kind = 'profile' AND status IN ('queued','running','cancelling','paused')")),
     )
 
 
@@ -509,3 +511,36 @@ class ImportFile(TS, Base):
     asset: Mapped["Asset"] = relationship()
     __table_args__ = (UniqueConstraint("session_id", "rel_path"),)
 
+
+
+class BudgetBatch(TS, Base):
+    __tablename__ = 'budget_batches'
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id',ondelete='CASCADE'),index=True)
+    title: Mapped[str] = mapped_column(String(200),default='Генерация')
+    budget_rub: Mapped[float|None] = mapped_column(Numeric(18,6,asdecimal=False),nullable=True)
+    retry_budget_rub: Mapped[float|None] = mapped_column(Numeric(18,6,asdecimal=False),nullable=True)
+    state: Mapped[str] = mapped_column(String(20),default='active')
+    pause_reason: Mapped[str] = mapped_column(Text,default='')
+
+
+class PaidOperation(TS, Base):
+    __tablename__ = 'paid_operations'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey('clients.id',ondelete='CASCADE'),index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id',ondelete='CASCADE'),index=True)
+    job_id: Mapped[int|None] = mapped_column(ForeignKey('jobs.id',ondelete='SET NULL'),nullable=True,index=True)
+    batch_id: Mapped[int|None] = mapped_column(ForeignKey('budget_batches.id',ondelete='SET NULL'),nullable=True,index=True)
+    product_id: Mapped[int|None] = mapped_column(ForeignKey('products.id',ondelete='SET NULL'),nullable=True)
+    frame_id: Mapped[int|None] = mapped_column(ForeignKey('frames.id',ondelete='SET NULL'),nullable=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(120),default='')
+    status: Mapped[str] = mapped_column(String(20),default='reserved',index=True)
+    external_id: Mapped[str] = mapped_column(String(120),default='')
+    reserved_rub: Mapped[float] = mapped_column(Numeric(18,6,asdecimal=False),default=0)
+    charged_rub: Mapped[float] = mapped_column(Numeric(18,6,asdecimal=False),default=0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18,6,asdecimal=False),default=0)
+    markup: Mapped[float] = mapped_column(Numeric(18,6,asdecimal=False),default=1)
+    billable: Mapped[bool] = mapped_column(Boolean,default=True)
+    is_retry: Mapped[bool] = mapped_column(Boolean,default=False)
+    note: Mapped[str] = mapped_column(Text,default='')

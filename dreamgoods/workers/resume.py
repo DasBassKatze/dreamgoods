@@ -33,7 +33,7 @@ def candidates():
                          .where(Generation.status == "pending").order_by(Generation.id)).all()
         out = []
         for gid, jid, created in rows:
-            if jid and s.scalar(select(Job.status).where(Job.id == jid)) in ACTIVE:
+            if jid and s.scalar(select(Job.status).where(Job.id == jid)) in ("queued", "running", "cancelling"):
                 continue
             out.append((gid, created))
         return out
@@ -64,7 +64,9 @@ def _resume(gid, created):
         others = [k for k in keys.all_secrets(s, org.id) if k != key]
         ids = dict(org=org.id, project=project.id, product=product.id, frame=frame.id)
         sku, pos, model, edit = product.sku, frame.position, g.model, g.instruction
+        paid_id = g.paid_operation_id
         job = s.get(Job, g.job_id) if g.job_id else None
+        batch_id = job.batch_id if job else None
         billing.by_master.set(bool(job and (job.payload or {}).get("by_master")))
     tag = f"[{sku} #{pos:02d}]"
     if not task_id or (created and utcnow() - created > timedelta(seconds=polza.POLL_GIVE_UP)):
@@ -85,6 +87,12 @@ def _resume(gid, created):
         log.debug("%s дозагрузка: задача %s ещё %s", tag, task_id, status)
         return 0
     if status != "completed":
+        from ..services import payments
+        paid_cost = polza.cost_of(data)
+        if paid_cost:
+            payments.settle(paid_id, paid_cost, provider=data.get("provider", ""))
+        else:
+            payments.release(paid_id, known=True)
         err = data.get("error") or {}
         _mark(gid, "error", str(err.get("message") if isinstance(err, dict) else err)[:1000] or status)
         say("err", f"❌ {sku} · кадр {pos:02d}: задача Polza завершилась с ошибкой — перегенерируйте кадр", ids["project"])
@@ -98,8 +106,10 @@ def _resume(gid, created):
         _mark(gid, "error", "в ответе Polza нет картинки")
         return 0
     cost = polza.cost_of(data)
+    from ..services import payments
+    payments.settle(paid_id, cost, provider=data.get("provider", ""))
     trace = Trace(tag)
-    trace.add("edit" if edit else "generation", model, cost, provider=data.get("provider", ""))
+    trace.add("edit" if edit else "generation", model, cost, provider=data.get("provider", ""), paid_operation=paid_id)
     with db.session() as s:
         f = s.get(Frame, ids["frame"], with_for_update=True)
         g = s.get(Generation, gid, with_for_update=True)
@@ -119,7 +129,8 @@ def _resume(gid, created):
             g.outcome, f.current_generation_id, f.status = "current", g.id, "unchecked"
             became_current = True
             if st.get("qc_enabled"):
-                enqueue(s, "check", ids["project"], product_id=ids["product"], frame_id=f.id)
+                enqueue(s, "check", ids["project"], product_id=ids["product"], frame_id=f.id,
+                        batch_id=batch_id, payload={"budget_retry": g.attempt > 1})
         else:
             g.outcome, became_current = "archived", False
     log.info("%s ⤵ дозагружен оплаченный результат задачи %s", tag, task_id)

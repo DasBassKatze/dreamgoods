@@ -28,7 +28,7 @@ interface UI {
   toast: (text: string, ms?: number) => void;
   confirm: (o: ConfirmOptions) => Promise<boolean>;
   choose: <T extends string>(o: { title: string; text: ReactNode; choices: Choice<T>[] }) => Promise<T | null>;
-  ask: (o: { title: string; fields: Field[]; ok?: string }) => Promise<Record<string, string> | null>;
+  ask: (o: { title: string; text?: ReactNode; fields: Field[]; ok?: string }) => Promise<Record<string, string> | null>;
   /** Открыть фото крупно (с листанием по списку). */
   zoom: (images: ZoomImage[] | string[], start?: number) => void;
 }
@@ -43,7 +43,7 @@ export const useUI = () => {
 
 type Dialog =
   | { kind: "choose"; title: string; text: ReactNode; choices: Choice<string>[]; resolve: (v: string | null) => void }
-  | { kind: "ask"; title: string; fields: Field[]; ok: string; resolve: (v: Record<string, string> | null) => void };
+  | { kind: "ask"; title: string; text?: ReactNode; fields: Field[]; ok: string; resolve: (v: Record<string, string> | null) => void };
 
 export function UIProvider({ children }: { children: ReactNode }) {
   const [toastText, setToastText] = useState("");
@@ -81,9 +81,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
   );
 
   const ask = useCallback(
-    (o: { title: string; fields: Field[]; ok?: string }) =>
+    (o: { title: string; text?: ReactNode; fields: Field[]; ok?: string }) =>
       new Promise<Record<string, string> | null>((resolve) =>
-        setDialog({ kind: "ask", title: o.title, fields: o.fields, ok: o.ok || "OK", resolve }),
+        setDialog({ kind: "ask", title: o.title, text: o.text, fields: o.fields, ok: o.ok || "OK", resolve }),
       ),
     [],
   );
@@ -131,6 +131,7 @@ function AskDialog({ dialog, onDone }: { dialog: Extract<Dialog, { kind: "ask" }
         <button className="primary" type="submit" form="ask-form">{dialog.ok}</button>
       </>}>
       <form id="ask-form" className="form" onSubmit={(e) => { e.preventDefault(); onDone(values); }}>
+        {dialog.text && <div>{dialog.text}</div>}
         {dialog.fields.map((f, n) => (
           <label key={f.key} className="form-row">
             <span>{f.label}</span>
@@ -142,3 +143,4 @@ function AskDialog({ dialog, onDone }: { dialog: Extract<Dialog, { kind: "ask" }
     </Modal>
   );
 }
+

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { assetUrl, type PreflightReport, type Trial } from "../../api/client";
+import { parseBudget, budgetFields, EstimateText } from "../budgets/BudgetForm";
 import { Modal } from "../../components/Modal";
 import { useUI } from "../../components/ui";
 import { useProject } from "../../ProjectContext";
@@ -35,8 +36,10 @@ export function StagePanel() {
   });
   const approve = () => action(async () => {
     if (!trial?.generation) return;
-    if (!await ui.confirm({title:"Утвердить и запустить партию",text:`Запустить недостающие подготовленные кадры ${trial.products} товар(ов) из пробной партии? Дальнейшая генерация платная, с настройками переделок выбранных пресетов.`,ok:"Утвердить и запустить"})) return;
-    const r = await api.approveTrial(trial.id, trial.generation);
+    const estimate = await api.estimateTrial(trial.id);
+    const limits = await ui.ask({title:"Утвердить и запустить партию",text:<><p>Запустить недостающие кадры {trial.products} товар(ов) сохранённой партии?</p><EstimateText estimate={estimate} /></>, fields:budgetFields(estimate.reserve_upper),ok:"Утвердить и запустить"});
+    if (!limits) return;
+    const r = await api.approveTrial(trial.id, trial.generation,parseBudget(limits));
     ui.toast(r.already_approved ? "Эта партия уже утверждена" : `В очередь добавлено кадров: ${r.added}`);
     await refresh(); await reload();
   });

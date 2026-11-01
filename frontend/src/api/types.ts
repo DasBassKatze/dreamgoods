@@ -491,6 +491,8 @@ export interface LedgerEntry {
 }
 
 export interface AccountBalance {
+  reserved?: number;
+  available?: number;
   balance: number | null;
   billing: boolean;
   spent_month: number;
@@ -631,3 +633,4 @@ export interface PlansAdmin {
   defaults: Record<PlanKey, PricePlan>;
   overrides: Partial<Record<PlanKey, Partial<PricePlan>>>;
 }
+

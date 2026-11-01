@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from ...core import admin, auth
 
 from ...core.events import say
-from ...services import frames, moderation, plans, presets
+from ...services import frames, moderation, plans, presets, budgets
 from ...workers import queue
 from ..deps import need_key, project_id
 from ..schemas import CheckRequest, Selection
@@ -35,9 +35,9 @@ def _to_generate(pid, body: Selection):
 def preview_generate(body: Selection, pid: int = Depends(project_id)):
     """Сколько кадров встанет в очередь (для подтверждения и оценки цены) и что изменится по пресету."""
     if body.frame_ids is not None:
-        return {"count": len(_to_generate(pid, body)), "preset": None}
+        return {"count": len(_to_generate(pid, body)), "preset": None, "estimate": budgets.quote(pid, body.product_ids, body.frame_ids, body.limit)}
     sync = presets.sync_for_generation(pid, body.product_ids, dry_run=True, limit=body.limit)
-    return {"count": sync["count"], "preset": sync}
+    return {"count": sync["count"], "preset": sync, "estimate": budgets.quote(pid, body.product_ids, limit=body.limit, count=sync["count"])}
 
 
 @router.post("/generate")
@@ -48,12 +48,14 @@ def generate(body: Selection, request: Request, pid: int = Depends(project_id)):
         moderation.guard_products(pid, body.product_ids)
     need_key(pid)
     plans.check_generation_project(pid, body.product_ids if body.frame_ids is None else None)
-    sync = presets.sync_for_generation(pid, body.product_ids, limit=body.limit) if body.frame_ids is None else None
-    added = frames.enqueue_frames(pid, _to_generate(pid, body), payload=_run_options(body))
-    if added:
-        say("info", (f"↻ На перегенерацию поставлено кадров: {added}" if body.frame_ids is not None
-                     else f"▶ В очередь добавлено кадров: {added}"), pid)
-    return {"added": added, "preset": sync}
+    with budgets.launch(pid, body.budget_rub, body.retry_budget_rub) as batch:
+        sync = presets.sync_for_generation(pid, body.product_ids, limit=body.limit) if body.frame_ids is None else None
+        added = frames.enqueue_frames(pid, _to_generate(pid, body), payload=_run_options(body))
+        if added:
+            say("info", (f"↻ На перегенерацию поставлено кадров: {added}" if body.frame_ids is not None
+                         else f"▶ В очередь добавлено кадров: {added}"), pid)
+        return {"added": added, "preset": sync, "batch_id": batch.id}
+
 
 
 @router.post("/check/preview")
@@ -64,11 +66,13 @@ def preview_check(body: CheckRequest, pid: int = Depends(project_id)):
 @router.post("/check")
 def check(body: CheckRequest, pid: int = Depends(project_id)):
     need_key(pid)
-    added = frames.enqueue_frames(pid, frames.checkable_frames(pid, body.product_ids, body.frame_ids, body.only_unchecked),
-                                  kind="check")
-    if added:
-        say("info", f"🔍 На проверку поставлено кадров: {added}", pid)
-    return {"added": added}
+    with budgets.launch(pid, body.budget_rub, body.retry_budget_rub, "Проверка готовых кадров") as batch:
+        added = frames.enqueue_frames(pid, frames.checkable_frames(pid, body.product_ids, body.frame_ids, body.only_unchecked),
+                                      kind="check")
+        if added:
+            say("info", f"🔍 На проверку поставлено кадров: {added}", pid)
+        return {"added": added}
+
 
 
 @router.post("/stop")
@@ -86,3 +90,4 @@ def clear_errors(pid: int = Depends(project_id)):
 def history(request: Request, before: int | None = None, pid: int = Depends(project_id)):
     """История генераций проекта (вкладка «История»)."""
     return {"items": frames.project_history(pid, admin.is_admin(request), before=before)}
+

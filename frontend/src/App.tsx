@@ -4,6 +4,7 @@ import type { Me, ProjectRef } from "./api/types";
 import { PageMode } from "./components/Modal";
 import type { Filter } from "./components/Toolbar";
 import { useUI } from "./components/ui";
+import { BudgetsPage } from "./features/budgets/BudgetsPage";
 import { ReviewDesk } from "./features/workflow/ReviewDesk";
 import { AccountPage } from "./features/account/AccountPage";
 import { BalancePage } from "./features/account/BalancePage";
@@ -61,7 +62,7 @@ export function App() {
   return <Workspace key={me.id} me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
 }
 
-const NEEDS_PROJECT: Route[] = ["products", "review", "gallery", "history", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
+const NEEDS_PROJECT: Route[] = ["products", "budgets", "review", "gallery", "history", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
 
 function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const ui = useUI();
@@ -206,6 +207,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
       case "m-settings": return <PageMode.Provider value><SettingsDialog onClose={toProducts} onPickModel={setCatalog} picked={picked} /></PageMode.Provider>;
       case "m-analytics": return <AdminPanel onCatalog={() => setCatalog("image")} />;
       case "m-log": return <AdminPanel onCatalog={() => setCatalog("image")} logOnly />;
+      case "budgets": return <BudgetsPage />;
       case "review": return <ReviewDesk />;
       case "gallery": return <GalleryPage dialogs={dialogs} />;
       case "history": return <HistoryPage dialogs={dialogs} onBalance={() => go(master ? "m-finance" : "balance")} />;
