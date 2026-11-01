@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 export type Route =
-  | "products" | "gallery" | "history" | "import" | "presets" | "personas" | "styles" | "balance" | "account"
+  | "products" | "review" | "gallery" | "history" | "import" | "presets" | "personas" | "styles" | "balance" | "account"
   | "m-analytics" | "m-users" | "m-keys" | "m-finance" | "m-reports" | "m-log" | "m-settings" | "m-legal";
 
-const ALL: Route[] = ["products", "gallery", "history", "import", "presets", "personas", "styles", "balance", "account",
+const ALL: Route[] = ["products", "review", "gallery", "history", "import", "presets", "personas", "styles", "balance", "account",
   "m-analytics", "m-users", "m-keys", "m-finance", "m-reports", "m-log", "m-settings", "m-legal"];
 
 const read = (): Route => {
@@ -26,3 +26,4 @@ export function useRoute(): [Route, (r: Route) => void] {
   }, []);
   return [route, go];
 }
+

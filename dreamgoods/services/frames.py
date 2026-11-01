@@ -96,16 +96,20 @@ def set_prompt(project_id, frame_id, text):
     log.info("[%s #%02d] промпт изменён вручную", sku, pos)
 
 
-def review(project_id, frame_id, verdict, comment, regen):
+def review(project_id, frame_id, verdict, comment, regen, expected_generation=None):
     """Ручное решение по кадру. Брак: генерация уходит в отклонённые; regen — перегенерация с замечанием."""
     with db.session() as s:
         p, f = frame_in(s, project_id, frame_id)
         s.refresh(f, with_for_update=True)
         if s.scalar(select(Job.id).where(Job.frame_id == f.id, Job.status.in_(LIVE))):
             raise ValueError("кадр сейчас в работе")
+        if expected_generation is not None and f.current_generation_id != expected_generation:
+            raise ValueError("Версия кадра изменилась. Обновите приёмку.")
         if not f.current_generation_id:
             raise ValueError("кадр ещё не сгенерирован")
         g = s.get(Generation, f.current_generation_id)
+        if not g or g.status != "ok" or not g.output_asset_id:
+            raise ValueError("Готовая версия кадра недоступна")
         q = s.scalars(select(QCCheck).where(QCCheck.generation_id == g.id).order_by(QCCheck.id.desc()).limit(1)).first()
         ai = ("pass" if q.passed else "fail") if q else ""
         kind = ""

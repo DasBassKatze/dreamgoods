@@ -7,6 +7,7 @@ import { ProjectBar } from "../../components/ProjectBar";
 import { ListBar, Toolbar, type Filter } from "../../components/Toolbar";
 import type { RunOptions } from "../../hooks/useActions";
 import { useProject } from "../../ProjectContext";
+import { StagePanel } from "../workflow/StagePanel";
 import { Composer } from "./Composer";
 import { FrameDetails } from "./FrameDetails";
 import { RunOptionsCtx } from "./runOptions";
@@ -41,6 +42,7 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
           <Composer />
         </div>
       </div>
+      <StagePanel />
       <Toolbar filter={filter} onFilter={onFilter} />
       <div className="layout">
         <div className="main-col">
@@ -68,3 +70,4 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
     </RunOptionsCtx.Provider>
   );
 }
+

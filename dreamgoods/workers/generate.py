@@ -125,7 +125,7 @@ def handle(job_id):
     qc_on = bool(st.get("qc_enabled"))
     check_refs = qc_refs(ids["product"], st, ids, trace) if qc_on else []
     regen = qc_on and bool(st.get("qc_autoregen", True))
-    tries = 1 + (max(0, int(st.get("qc_retries") or 0)) if regen else 0)
+    tries = 1 if run.get("trial_only") else 1 + (max(0, int(st.get("qc_retries") or 0)) if regen else 0)
     log.info("%s модель %s · референсы %d · проверка %s · попыток до %d", trace, st["model"], len(refs),
              "вкл" if qc_on else "выкл", tries)
 
@@ -329,3 +329,4 @@ def _report(sku, pos, project_id, qc_on, best, attempts, total, secs, error, edi
         say("err", f"⚠️ {sku} · кадр {pos:02d} · брак после {len(attempts)} попыток → ручная проверка · {tail}", project_id)
     if error:
         say("err", f"❌ {sku} · кадр {pos:02d} · попытка {len(attempts) + 1} не удалась: {str(error)[:200]}", project_id)
+

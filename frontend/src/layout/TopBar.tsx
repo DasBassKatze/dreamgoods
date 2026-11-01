@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 
 const TABS: [Route, string][] = [
   ["products", "Генерация"],
+  ["review", "Приёмка"],
   ["gallery", "Галерея"],
   ["history", "История"],
   ["balance", "Тарифы"],
@@ -117,3 +118,4 @@ export function TopBar(p: Props) {
     </header>
   );
 }
+

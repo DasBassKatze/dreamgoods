@@ -108,11 +108,22 @@ export interface Selection {
   aspect?: string;
 }
 
+export interface PreflightReport {
+  products: {id:number;sku:string;references:number;issues:{code:string;level:string;text:string}[]}[];
+  errors:number;warnings:number;note:string;
+}
+export interface Trial {id:number;frame_id:number;product_id:number;status:string;error:string;asset:string|null;generation:number|null;approved:boolean;products:number}
+
 /** Методы проекта. */
 export function projectApi(id: number) {
   const p = `/api/projects/${id}`;
   return {
     state: () => get<ProjectState>(`${p}/state`),
+    preflight: (productIds:number[]|null) => post<PreflightReport>(`${p}/preflight`, {product_ids:productIds}),
+    trial: () => get<{trial:Trial|null}>(`${p}/trial`),
+    startTrial: (productIds:number[]|null) => post<{trial:Trial}>(`${p}/trial`, {product_ids:productIds}),
+    approveTrial: (id:number,generationId:number) => post<{added:number;already_approved:boolean}>(`${p}/trial/${id}/approve`, {generation_id:generationId}),
+    reviewBatch: (items:{frame_id:number;generation_id:number}[],verdict:"ok"|"bad",comment:string,regen:boolean) => post<{results:{frame_id:number;ok:boolean;error?:string}[]}>(`${p}/review/batch`, {items,verdict,comment,regen}),
     saveSettings: (values: Partial<Settings> & Record<string, unknown>) => patch<{ ok: true }>(`${p}/settings`, values),
     settingsDefaults: () => get<{ qc_checklist: string }>(`${p}/settings/defaults`),
     catalog: (kind: "image" | "qc", refresh = false) =>
@@ -279,3 +290,4 @@ export const adminApi = {
   setParallel: (n: number) => put<{ parallel: number }>("/api/admin/parallel", { n }),
   resume: () => post<{ resumed: number }>("/api/admin/resume"),
 };
+
