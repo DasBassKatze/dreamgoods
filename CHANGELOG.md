@@ -1,3 +1,13 @@
+# Dev-GPT (test branch)
+
+- Durable reservations, per-call settlement and reconciliation, run/retry budgets, numeric money.
+- Per-client fair queue, configurable client limits, database uniqueness for active jobs.
+- Strict QC response validation and weighted defects; offline QC benchmark.
+- Review desk, version/reference comparison, batch edits, stale-generation protection.
+- Server pagination/search, SSE progress notifications, estimates and preset export.
+- Verified scheduled backups, strong initial admin credential, generic unexpected-error responses.
+- Isolated Windows test launcher and PostgreSQL CI checks.
+
 # История версий DreamGoods
 
 Формат: что изменилось для пользователя. Номер версии — в `dreamgoods/__init__.py`, метка в Git — `vX.Y.Z`.
@@ -23,3 +33,4 @@
 - Модели клиента (свои фото или сгенерированный образ, паспорт стиля, группы товаров).
 - Референсы оформления.
 - Импорт фото кучей с раскладкой по товарам, профили товаров, ИИ-проверка кадров.
+

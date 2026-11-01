@@ -5,7 +5,7 @@ from .. import db
 from ..ai import prompts
 from ..core.events import say
 from ..core.logs import log
-from ..db.models import Frame, Generation, Job, Product, QCCheck, Review
+from ..db.models import Frame, Generation, GenerationRun, Job, Product, QCCheck, Review
 from ..workers.queue import enqueue
 from .common import LIVE, frame_in
 
@@ -47,12 +47,15 @@ def frames_of_project(project_id, frame_ids):
                          .where(Product.project_id == project_id, Frame.id.in_(frame_ids), Frame.status != "retired")).all()
 
 
-def enqueue_frames(project_id, frame_ids, kind="generate", payload=None):
+def enqueue_frames(project_id, frame_ids, kind="generate", payload=None, budget_rub=None, retry_budget_rub=None):
     n = 0
     with db.session() as s:
+        batch = GenerationRun(project_id=project_id, budget_rub=budget_rub, retry_budget_rub=retry_budget_rub)
+        s.add(batch)
+        s.flush()
         for fid in frame_ids:
             f = s.get(Frame, fid)
-            if enqueue(s, kind, project_id, product_id=f.product_id, frame_id=fid, payload=payload):
+            if enqueue(s, kind, project_id, product_id=f.product_id, frame_id=fid, payload=payload, run_id=batch.id):
                 n += 1
     return n
 
@@ -77,7 +80,7 @@ def set_prompt(project_id, frame_id, text):
     log.info("[%s #%02d] промпт изменён вручную", sku, pos)
 
 
-def review(project_id, frame_id, verdict, comment, regen):
+def review(project_id, frame_id, verdict, comment, regen, expected_generation=None):
     """Ручное решение по кадру. Брак: генерация уходит в отклонённые; regen — перегенерация с замечанием."""
     with db.session() as s:
         p, f = frame_in(s, project_id, frame_id)
@@ -85,6 +88,8 @@ def review(project_id, frame_id, verdict, comment, regen):
             raise ValueError("кадр сейчас в работе")
         if not f.current_generation_id:
             raise ValueError("кадр ещё не сгенерирован")
+        if expected_generation is not None and f.current_generation_id != expected_generation:
+            raise ValueError("версия кадра изменилась — обновите список")
         g = s.get(Generation, f.current_generation_id)
         q = s.scalars(select(QCCheck).where(QCCheck.generation_id == g.id).order_by(QCCheck.id.desc()).limit(1)).first()
         ai = ("pass" if q.passed else "fail") if q else ""
@@ -111,7 +116,7 @@ def review(project_id, frame_id, verdict, comment, regen):
 
 # ───────── правка готового фото по промпту и версии кадра ─────────
 
-def edit(project_id, frame_id, instruction, source_id=None):
+def edit(project_id, frame_id, instruction, source_id=None, expected_generation=None):
     """Ставит правку: текущая (или выбранная) версия кадра + фото товара → генератор с просьбой изменить только
     указанное. Результат проходит ИИ-проверку и становится текущей версией; прежняя остаётся в истории."""
     instruction = (instruction or "").strip()
@@ -121,6 +126,8 @@ def edit(project_id, frame_id, instruction, source_id=None):
         p, f = frame_in(s, project_id, frame_id)
         if s.scalar(select(Job.id).where(Job.frame_id == f.id, Job.status.in_(LIVE))):
             raise ValueError("кадр сейчас в работе — дождитесь окончания")
+        if expected_generation is not None and f.current_generation_id != expected_generation:
+            raise ValueError("версия кадра изменилась — обновите список")
         src = int(source_id or f.current_generation_id or 0)
         g = s.get(Generation, src) if src else None
         if not g or g.frame_id != f.id or not g.output_asset_id:
@@ -174,3 +181,4 @@ def restore(project_id, frame_id, generation_id):
         f.status = "unchecked" if q is None else ("pass" if q.passed else "review")
         sku, pos = p.sku, f.position
     log.info("[%s #%02d] возвращена версия #%s", sku, pos, generation_id)
+

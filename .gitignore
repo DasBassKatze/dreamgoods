@@ -21,3 +21,11 @@ Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+
+
+backups/
+.pytest_cache/
+data-dev-gpt/
+logs-dev-gpt/
+exports-dev-gpt/
+backups-dev-gpt/

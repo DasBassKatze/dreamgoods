@@ -119,6 +119,7 @@ export interface Metrics {
 }
 
 export interface ProjectState {
+  pagination: { page: number; page_size: number; total: number; catalog_total: number; todo_products: number; no_prompts: number };
   /** true — мастер-аккаунт (видны себестоимость, баланс Polza, метрики) */
   admin: boolean;
   account: { balance: number; billing: boolean };
@@ -404,6 +405,7 @@ export interface LedgerEntry {
 }
 
 export interface AccountBalance {
+  reserved: number; available: number;
   balance: number | null;
   billing: boolean;
   spent_month: number;
@@ -453,3 +455,18 @@ export interface FinanceView {
     balances: number; margin_month: number };
   entries: LedgerEntry[];
 }
+
+
+export interface GenerationEstimate {
+  count: number; products: number; generation: number; checking: number; expected: number; upper: number;
+  reserved: number; available: number; accepted_frames: number; complete_products: number;
+  cost_per_accepted: number | null; cost_per_complete: number | null;
+  groups: { model: string; block: string; category: string; frames: number; samples: number; source: string }[];
+  note: string;
+}
+export interface ReviewItem {
+  id: number; product_id: number; sku: string; position: number; generation: number; asset: string;
+  status: string; references: string[]; defects: string[];
+  details: { text: string; category: string; severity: string }[];
+}
+export interface ReviewListing { items: ReviewItem[]; total: number; page: number; page_size: number }

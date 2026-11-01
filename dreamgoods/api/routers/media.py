@@ -2,6 +2,8 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Request
+from typing import Literal
+from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, Response
 
 from ... import db
@@ -30,7 +32,9 @@ def asset(asset_id: uuid.UUID, request: Request, w: int = 0):
 
 
 @router.get("/api/projects/{project_id}/export")
-def export_zip(include: str = "accepted", pid: int = Depends(project_id)):
+def export_zip(include: Literal["accepted", "all"] = "accepted", output_format: Literal["original", "jpeg", "png"] = "original",
+               require_complete: bool = False, pid: int = Depends(project_id)):
     """ZIP по артикулам + report.csv. include=accepted — только принятые, all — все готовые."""
-    path, _ = export.export_zip(pid, include if include in ("accepted", "all") else "accepted")
-    return FileResponse(path, media_type="application/zip", filename=path.name)
+    path, _ = export.export_zip(pid, include, output_format, require_complete)
+    return FileResponse(path, media_type="application/zip", filename=path.name, background=BackgroundTask(path.unlink, missing_ok=True))
+

@@ -22,7 +22,12 @@ export function Header({ dialogs, onProjectsChanged }: { dialogs: Dialogs; onPro
     });
     if (!include) return;
     ui.toast("Готовлю архив…");
-    window.location.href = papi.exportUrl(include);
+    const format = await ui.choose({ title: "Формат экспорта", text: "JPEG/PNG: размеры и пропорции из пресета, белые поля без обрезки товара. manifest.json содержит предупреждения.", choices: [
+      { value: "original", label: "Оригиналы", primary: true }, { value: "jpeg", label: "JPEG по пресету" }, { value: "png", label: "PNG по пресету" },
+    ] });
+    if (!format) return;
+    const complete = await ui.confirm({ title: "Комплектность", text: "Выгрузить только товары, у которых приняты все кадры плана?", ok: "Только полные комплекты", cancel: "Все подходящие кадры" });
+    window.location.href = papi.exportUrl(include, format, complete);
   };
 
   const stop = () =>
@@ -67,3 +72,4 @@ export function Header({ dialogs, onProjectsChanged }: { dialogs: Dialogs; onPro
     </div>
   );
 }
+

@@ -76,7 +76,7 @@ def product_in(s, project_id, product_id):
 
 
 def frame_in(s, project_id, frame_id):
-    f = s.get(Frame, int(frame_id))
+    f = s.get(Frame, int(frame_id), with_for_update=True)
     p = s.get(Product, f.product_id) if f else None
     if not f or not p or p.project_id != project_id:
         raise LookupError("кадр не найден")
@@ -110,9 +110,10 @@ def checklist_for(s, st, product, org_id):
 def write_usage(s, org_id, project_id, product_id, frame_id, trace, ref=""):
     """Переносит накопленные в trace расходы в журнал usage_ledger и списывает их с баланса клиента (с наценкой)."""
     from .billing import charge
-    if trace.usage:
-        charge(s, project_id, trace.usage, str(trace))
-    for u in trace.usage:
+    unmanaged = [u for u in trace.usage if not u.get("managed")]
+    if unmanaged:
+        charge(s, project_id, unmanaged, str(trace))
+    for u in unmanaged:
         s.add(UsageEntry(org_id=org_id, project_id=project_id, product_id=product_id, frame_id=frame_id, kind=u["kind"],
                          model=u["model"], provider=u.get("provider", ""), amount_rub=u["cost"], tokens=u["tokens"], ref=ref))
     trace.usage.clear()
@@ -164,3 +165,4 @@ def rebuild_frames(s, product, prof, plan=None):
                 s.delete(f)
     s.flush()
     return len(rows)
+

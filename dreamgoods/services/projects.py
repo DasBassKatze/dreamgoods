@@ -129,3 +129,15 @@ def save_settings(project_id, values, secrets):
     if changed:
         log.info("⚙ Проект %s: изменены настройки %s", project_id, ", ".join(
             f"{k}=***" if "key" in k else f"{k}=…" if k == "qc_checklist" else f"{k}={after.get(k)}" for k in changed))
+
+
+
+def require_project(project_id, user):
+    from ..core.auth import Forbidden
+    with db.session() as s:
+        p = s.get(Project, project_id)
+        if not p or p.archived:
+            raise LookupError("проект не найден")
+        if not user.master and p.client_id != user.client_id:
+            raise Forbidden("нет доступа к проекту")
+        return p.id

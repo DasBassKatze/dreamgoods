@@ -5,6 +5,35 @@ import io
 import re
 
 from PIL import Image, ImageFilter, ImageOps, ImageStat
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from typing import Literal
+
+
+class Defect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, strict=True)
+    category: Literal["identity", "quantity", "anatomy", "text", "composition", "technical"]
+    severity: Literal["critical", "major", "minor"]
+
+
+class QCResponse(BaseModel):
+    defects: list[Defect | str]
+
+
+def validated_defects(res):
+    try:
+        data = QCResponse.model_validate(res, strict=True)
+    except ValidationError as e:
+        raise ValueError("ИИ-проверка не состоялась: неверная структура ответа") from e
+    out = []
+    for d in data.defects:
+        if isinstance(d, str):
+            if not d.strip():
+                raise ValueError("ИИ-проверка не состоялась: пустое описание дефекта")
+            d = Defect(text=d.strip(), category="identity", severity="major")
+        out.append(d.model_dump())
+    return out
+
 
 from .. import db
 from ..core.logs import log, mb
@@ -71,7 +100,9 @@ Do NOT report:
 - background, scene, person and pose choices allowed by the TASK.
 
 Reply with ONLY this JSON, nothing else:
-{"defects": ["короткая причина брака по-русски", "..."]}
+{"defects": [{"text":"короткая причина брака по-русски", "category":"identity", "severity":"major"}]}
+category: identity | quantity | anatomy | text | composition | technical.
+severity: critical (different/broken product), major (unusable photo), minor (small deviation).
 An empty list means the photo is good."""
 
 STRICTNESS_RULES = {
@@ -127,16 +158,10 @@ def vlm_check(st, task, refs, img, trace):
              ", ".join(f"{VIEW_RU.get(r.get('view'), r.get('view') or '?')}{'*' if r.get('tag') == 'same' else ''}" for r in chosen),
              mb(size))
     res, cost, secs = chat(st, st.get("qc_model"), qc_system(st), content, trace, "сверка", 1500, st.get("qc_reasoning"))
-    reasons = []
-    raw = res.get("defects") or []
-    if isinstance(raw, str):        # модель вернула строку вместо списка
-        raw = [x for x in re.split(r";\s*|\n+", raw) if x.strip()]
-    for x in raw if isinstance(raw, list) else []:
-        t = (x.get("text") or x.get("reason") or "") if isinstance(x, dict) else str(x)
-        if t.strip():
-            reasons.append(t.strip())
+    defects = validated_defects(res)
+    reasons = [d["text"] for d in defects]
     log.info("%s сверка: %s", tag, ("БРАК — " + "; ".join(reasons)) if reasons else "без замечаний")
-    return {"reasons": reasons, "cost": cost}
+    return {"reasons": reasons, "cost": cost, "defects": defects}
 
 
 SPEC_PROMPT = """You read a task for an AI image generator (a product photo for a marketplace, any category) and write down
@@ -182,6 +207,8 @@ def task_spec(st, task, trace):
             return hit.data, 0.0
     tag = str(trace)
     res, cost, secs = chat(st, model, SPEC_PROMPT, "TASK:\n" + task, trace, "ожидания", 800, "none")
+    if not isinstance(res, dict) or not {"people", "entities", "forbidden"}.issubset(res) or not isinstance(res["entities"], list) or not isinstance(res["forbidden"], list):
+        raise ValueError("ИИ-проверка не состоялась: неверная структура ожиданий")
     people = _int(res.get("people"))
     ents = []
     for e in res.get("entities") or []:
@@ -233,6 +260,8 @@ def count_check(st, task, img, trace):
     res, c2, secs = chat(st, model, COUNT_PROMPT, content, trace, "подсчёт", 1500, st.get("qc_count_reasoning"))
     cost += c2
 
+    if not isinstance(res, dict) or not {"people", "entities", "anomalies", "problems"}.issubset(res) or any(not isinstance(res[k], list) for k in ("people", "entities", "anomalies")):
+        raise ValueError("ИИ-проверка не состоялась: неверная структура подсчёта")
     issues = []
     people = [p for p in (res.get("people") or []) if isinstance(p, dict)]
     # 1) число людей по заданию
@@ -290,6 +319,7 @@ def run_qc(st, task, refs, img, trace):
     """Проверка кадра: технический фильтр → одна сверка (только причины брака) → по желанию отдельный подсчёт.
     Кадр принят, если причин брака нет."""
     tag = str(trace)
+    defects = []
     issues, info = tech_check(img, st, tag)
     if issues and st.get("qc_cascade", True):
         log.info("%s каскад: техпроверка провалена — модель не вызываю", tag)
@@ -297,13 +327,17 @@ def run_qc(st, task, refs, img, trace):
     else:
         res = vlm_check(st, task, refs, img, trace)
         reasons, cost, counts = issues + res["reasons"], res["cost"], None
+        defects = res["defects"]
         if st.get("qc_count") and not (reasons and st.get("qc_cascade", True)):
             c = count_check(st, task, img, trace)
             cost += c["cost"]
             counts = c["counts"]
             reasons += c["issues"]
     ok = not reasons
-    score = round(1 / (1 + len(reasons)), 2)      # для выбора лучшей из неудачных попыток: меньше причин — лучше
+    weight = sum({"critical": 100, "major": 10, "minor": 1}[d["severity"]] for d in defects) + 100 * len(issues)
+    info["defects"] = defects
+    info["weighted_penalty"] = weight
+    score = round(1 / (1 + weight + max(0, len(reasons) - len(defects) - len(issues)) * 100), 5)      # для выбора лучшей из неудачных попыток: меньше причин — лучше
     log.info("%s итог проверки: %s%s · %.2f ₽", tag, "ПРИНЯТ" if ok else "БРАК",
              "" if ok else " — " + "; ".join(reasons), cost)
     return {"pass": ok, "scores": {}, "min": score, "defects": "; ".join(reasons), "fix": "; ".join(reasons),
@@ -313,3 +347,4 @@ def run_qc(st, task, refs, img, trace):
 def correction(prompt, fix):
     return (prompt + "\n\nIMPORTANT CORRECTION: a previous generation of this exact shot was rejected by quality control "
             f"for these reasons (in Russian): {fix}. Fix them and keep everything else as described above.")
+

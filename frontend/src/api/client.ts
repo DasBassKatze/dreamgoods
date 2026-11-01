@@ -1,5 +1,6 @@
 // Тонкая обёртка над fetch и все вызовы API в одном месте.
 import type {
+  GenerationEstimate, ReviewListing,
   AccountBalance,
   AdminOverview,
   FinanceView,
@@ -77,19 +78,25 @@ export interface Selection {
   product_ids?: number[] | null;
   frame_ids?: number[] | null;
   limit?: number;
+  budget_rub?: number; retry_budget_rub?: number;
 }
 
 /** Методы проекта. */
 export function projectApi(id: number) {
   const p = `/api/projects/${id}`;
   return {
-    state: () => get<ProjectState>(`${p}/state`),
+    state: (options: { page?: number; query?: string; status?: string } = {}) =>
+      get<ProjectState>(`${p}/state?${new URLSearchParams(Object.entries(options).map(([k, v]) => [k, String(v)]))}`),
+    reviews: (options: { page: number; status: string; defect: string; query: string }) =>
+      get<ReviewListing>(`${p}/review?${new URLSearchParams(Object.entries(options).map(([k, v]) => [k, String(v)]))}`),
+    reviewBatch: (items: { frame_id: number; generation_id: number }[], action: "accept" | "reject" | "edit", comment: string) =>
+      post<{ done: number[]; errors: { frame_id: number; error: string }[] }>(`${p}/review/batch`, { items, action, comment }),
     saveSettings: (values: Partial<Settings> & Record<string, unknown>) => patch<{ ok: true }>(`${p}/settings`, values),
     settingsDefaults: () => get<{ qc_checklist: string }>(`${p}/settings/defaults`),
     catalog: (kind: "image" | "qc", refresh = false) =>
       get<{ models: CatalogModel[]; error: string }>(`${p}/catalog?kind=${kind}${refresh ? "&refresh=true" : ""}`),
 
-    previewGenerate: (sel: Selection) => post<{ count: number }>(`${p}/generate/preview`, sel),
+    previewGenerate: (sel: Selection) => post<GenerationEstimate>(`${p}/generate/preview`, sel),
     generate: (sel: Selection) => post<{ added: number }>(`${p}/generate`, sel),
     previewCheck: (sel: Selection & { only_unchecked?: boolean }) => post<{ count: number }>(`${p}/check/preview`, sel),
     check: (sel: Selection & { only_unchecked?: boolean }) => post<{ added: number }>(`${p}/check`, sel),
@@ -122,7 +129,7 @@ export function projectApi(id: number) {
     applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][] }[], label_mode: string, auto_profile: boolean) =>
       post<ImportResult>(`${p}/imports/${sid}/apply`, { groups, label_mode, auto_profile }),
 
-    exportUrl: (include: "accepted" | "all") => `${p}/export?include=${include}`,
+    exportUrl: (include: "accepted" | "all", format = "original", complete = false) => `${p}/export?include=${include}&output_format=${format}&require_complete=${complete}`,
 
     presets: () => get<PresetListing>(`${p}/presets`),
     savePreset: (id: number | null, body: Omit<Preset, "id" | "total" | "is_default" | "products">) =>
@@ -183,6 +190,10 @@ export const authApi = {
 };
 
 export const adminApi = {
+  setClientParallel: (id:number, n:number) => put<{ok:true}>(`/api/admin/clients/${id}/parallel`, { n }),
+  setReservePrices: (image:number, chat:number) => put<{ok:true}>("/api/admin/reserve-prices", { image, chat }),
+  pendingPayments: () => get<{ items: { id:string; client_id:number; task:string; reserved:number; status:string; created:string }[] }>("/api/admin/payments/pending"),
+  resolvePayment: (id:string, cost_rub:number, note:string) => post<{ok:true}>(`/api/admin/payments/${id}/resolve`, { cost_rub, note }),
   users: () => get<UsersListing>("/api/admin/users"),
   createUser: (body: Record<string, unknown>) => post<{ id: number }>("/api/admin/users", body),
   updateUser: (id: number, body: Record<string, unknown>) => patch<{ ok: true }>(`/api/admin/users/${id}`, body),
@@ -199,3 +210,4 @@ export const adminApi = {
   setParallel: (n: number) => put<{ parallel: number }>("/api/admin/parallel", { n }),
   resume: () => post<{ resumed: number }>("/api/admin/resume"),
 };
+

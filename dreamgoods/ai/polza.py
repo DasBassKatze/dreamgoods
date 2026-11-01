@@ -134,6 +134,16 @@ RETRY_CODES = ("INTERNAL_ERROR",)        # сбой у провайдера; о�
 
 
 def generate(st, key, prompt, refs, tag="", on_task=None):
+    from ..services import payments
+    def task(task_id):
+        payments.submitted(task_id)
+        if on_task:
+            on_task(task_id)
+    return payments.invoke("generation", st.get("model", ""),
+        lambda: _generate_unbilled(st, key, prompt, refs, tag, task))
+
+
+def _generate_unbilled(st, key, prompt, refs, tag="", on_task=None):
     """Генерация с защитой от сбоев провайдера: референсы — ссылками из хранилища Polza; если задача упала
     из-за внутренней ошибки (например, провайдер не скачал фото) и не была оплачена — один повтор через 15 с."""
     use_storage = st.get("upload_refs", True)
@@ -178,6 +188,8 @@ def _generate_once(st, key, prompt, refs, tag="", on_task=None):
              ",".join(providers) or "авто", st["resolution"], st["aspect"], len(refs), mb(size))
     log.debug("%s промпт (%d симв.): %s", tag, len(prompt), prompt)
     t0 = time.time()
+    from ..services.payments import submitted
+    submitted()
     data = _submit(headers, body, tag)
     task_id = data.get("id") or data.get("taskId") or data.get("task_id")
     log.info("%s задача Polza %s принята за %.1f с, статус %s", tag, task_id or "—", time.time() - t0, data.get("status"))
@@ -407,6 +419,12 @@ _NO_REASONING = set()      # адреса API, которые не приним�
 
 
 def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=None):
+    from ..services.payments import invoke
+    return invoke(KIND.get(what, what), model,
+        lambda: _chat_unbilled(st, model, system, content, trace, what, max_tokens, reasoning), trace)
+
+
+def _chat_unbilled(st, model, system, content, trace, what, max_tokens=1500, reasoning=None):
     """Запрос к OpenAI-совместимому чату (Polza, vLLM, Ollama). Возвращает (разобранный JSON, стоимость ₽, секунды).
     reasoning: auto — как решит модель; none/minimal/low/medium/high — уровень «размышлений» (они оплачиваются как ответ).
     Расход пишется в trace (потом — в журнал расходов)."""
@@ -425,11 +443,13 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
     attempt = 0
     while attempt < 3:
         try:
+            from ..services.payments import submitted
+            submitted()
             r = http.post(f"{base}/chat/completions", headers=headers, json=body, timeout=(20, 240))
         except requests.RequestException as e:
             attempt += 1
             log.warning("%s %s: модель недоступна (попытка %d/3): %s", tag, what, attempt, e)
-            if attempt == 3:
+            if not _not_sent(e) or attempt == 3:
                 raise RuntimeError(f"{what}: нет связи с моделью: {e}")
             time.sleep(8)
             continue
@@ -438,7 +458,7 @@ def chat(st, model, system, content, trace, what, max_tokens=1500, reasoning=Non
             _NO_REASONING.add(base)
             body.pop("reasoning")
             continue
-        if r.status_code in (429, 500, 502, 503) and attempt < 2:
+        if r.status_code == 429 and attempt < 2:
             attempt += 1
             log.warning("%s %s: HTTP %s (попытка %d/3)", tag, what, r.status_code, attempt)
             time.sleep(10 * attempt)
@@ -557,3 +577,4 @@ def image_models(force=False, kind="image", key=""):
         if _catalog["models"] is None:
             _catalog["models"] = []
     return _catalog
+

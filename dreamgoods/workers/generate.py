@@ -13,7 +13,7 @@ from ..core import storage
 from ..core.events import say
 from ..core.logs import Trace, log
 from ..db.models import Frame, Generation, Job, Product, QCCheck
-from ..services import billing
+from ..services import billing, payments
 from ..services.common import checklist_for, context, frame_status, write_usage
 from .queue import cancelled, set_note
 from .refs import persona_for, qc_refs, ref_photos, style_for
@@ -93,6 +93,8 @@ def handle(job_id):
         if a > 1 and not billing.has_funds(ids["project"]):
             say("err", f"💳 {sku} · кадр {pos:02d}: баланс исчерпан — новые попытки не делаю", ids["project"])
             break
+        from ..services.payments import retry_context
+        retry_context.set(a > 1)
         set_note(job_id, f"попытка {a}/{tries}" if tries > 1 else "генерация")
         ta = time.time()
         gen_prompt = full_prompt(prompt)
@@ -101,7 +103,7 @@ def handle(job_id):
         def on_task(task_id, a=a, gen_prompt=gen_prompt):
             with db.session() as s:
                 g = Generation(frame_id=ids["frame"], job_id=job_id, attempt=a, model=st["model"], prompt=gen_prompt,
-                               status="pending", external_id=task_id, instruction=edit, source_id=source_gen)
+                               status="pending", external_id=task_id, billing_operation_id=payments.operation_context.get(), instruction=edit, source_id=source_gen)
                 s.add(g)
                 s.flush()
                 pend.append(g.id)
@@ -135,7 +137,7 @@ def handle(job_id):
         cost = polza.cost_of(data)
         provider = data.get("provider", "")
         total += cost
-        trace.add("edit" if edit else "generation", st["model"], cost, provider=provider)
+        trace.add("edit" if edit else "generation", st["model"], cost, provider=provider, operation_id=data.get("_billing_operation"))
         with db.session() as s:   # оплаченный результат — сразу в базу и хранилище
             asset = storage.put(s, ids["org"], img, "output", f"{sku}_{pos:02d}_a{a}{'_edit' if edit else ''}.png")
             for gid in pend[:-1]:
@@ -221,3 +223,4 @@ def _report(sku, pos, project_id, qc_on, best, attempts, total, secs, error, edi
         say("err", f"⚠️ {sku} · кадр {pos:02d} · брак после {len(attempts)} попыток → ручная проверка · {tail}", project_id)
     if error:
         say("err", f"❌ {sku} · кадр {pos:02d} · попытка {len(attempts) + 1} не удалась: {str(error)[:200]}", project_id)
+

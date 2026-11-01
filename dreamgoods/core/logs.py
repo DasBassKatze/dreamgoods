@@ -65,8 +65,9 @@ class Trace:
         self.tag = tag
         self.usage = []
 
-    def add(self, kind, model, cost, tokens=None, provider=""):
-        self.usage.append({"kind": kind, "model": model or "", "cost": float(cost or 0), "tokens": tokens or {},
+    def add(self, kind, model, cost, tokens=None, provider="", operation_id=None):
+        from ..services.payments import operation_context
+        self.usage.append({"managed": bool(operation_id or operation_context.get()), "kind": kind, "model": model or "", "cost": float(cost or 0), "tokens": tokens or {},
                            "provider": provider or ""})
 
     def __str__(self):
@@ -75,3 +76,4 @@ class Trace:
 
 def mb(n):
     return f"{n / 1_048_576:.1f} МБ"
+

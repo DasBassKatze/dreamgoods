@@ -14,12 +14,13 @@ from datetime import timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import aliased
+from sqlalchemy.exc import IntegrityError
 
 from .. import db
 from ..core import config
 from ..core.events import say, utcnow
 from ..core.logs import log
-from ..db.models import Frame, Instance, Job, Organization, Product
+from ..db.models import Frame, Instance, Job, Organization, Product, Project, Client
 
 ACTIVE = ("queued", "running", "cancelling")
 HANDLERS = {}          # kind → функция(job_id); заполняет workers/__init__.py
@@ -27,9 +28,13 @@ HANDLERS = {}          # kind → функция(job_id); заполняет wor
 _wake = threading.Event()
 
 
-def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, priority=100):
+def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, priority=100, run_id=None):
     """Ставит задание, если такого же активного ещё нет. Возвращает Job или None."""
     if frame_id is not None:
+        s.get(Frame, frame_id, with_for_update=True)
+        from ..db.models import Generation
+        if kind == "generate" and s.scalar(select(Generation.id).where(Generation.frame_id == frame_id, Generation.status == "pending")):
+            return None
         dup = s.scalar(select(Job.id).where(Job.frame_id == frame_id, Job.status.in_(ACTIVE)))
         if dup:
             return None
@@ -39,8 +44,15 @@ def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, p
             return None
     j = Job(kind=kind, project_id=project_id, product_id=product_id, frame_id=frame_id, payload=payload or {},
             priority=priority)
-    s.add(j)
-    s.flush()
+    j.run_id = run_id
+    try:
+        with s.begin_nested():
+            s.add(j)
+            s.flush()
+    except IntegrityError as e:
+        if getattr(e.orig, "sqlstate", None) == "23505":
+            return None
+        raise
     _wake.set()
     return j
 
@@ -92,6 +104,11 @@ def recover(quiet=False):
             j.status, j.finished_at = "error", utcnow()
             j.error = ("прервано: сервер, выполнявший задание, остановился; повтор не делался, чтобы не заплатить "
                        "дважды. Если Polza успела принять задачу — результат дозагрузится автоматически")
+        from ..db.models import BillingOperation
+        for j in dead:
+            for op in s.scalars(select(BillingOperation).where(BillingOperation.job_id == j.id,
+                    BillingOperation.status.in_(("reserved", "submitted")))).all():
+                op.status = "released" if op.status == "reserved" else "uncertain"
         s.execute(Instance.__table__.delete().where(Instance.heartbeat_at < utcnow() - timedelta(days=1)))
     if dead:
         log.warning("Прерванных заданий (сервер, который их выполнял, остановился): %d — помечены ошибкой без автоповтора",
@@ -104,11 +121,19 @@ def _claim(worker):
     """Честная очередь для многих пользователей: сначала задания проектов, у которых сейчас меньше всего
     запущенных заданий, — один большой запуск не займёт все потоки и не заставит остальных ждать."""
     other = aliased(Job)
-    busy = (select(func.count(other.id)).where(other.project_id == Job.project_id, other.status.in_(("running", "cancelling")))
-            .correlate(Job).scalar_subquery())
+    other_project = aliased(Project)
+    busy = (select(func.count(other.id)).join(other_project, other_project.id == other.project_id)
+            .where(other_project.client_id == Project.client_id, other.status.in_(("running", "cancelling")))
+            .correlate(Project).scalar_subquery())
     with db.session() as s:
-        j = s.scalars(select(Job).where(Job.status == "queued").order_by(Job.priority, busy, Job.id)
-                      .with_for_update(skip_locked=True).limit(1)).first()
+        # Serialize admission decisions across server instances; execution remains parallel.
+        from sqlalchemy import text
+        s.execute(text("SELECT pg_advisory_xact_lock(840621)"))
+        j = s.scalars(select(Job).join(Project, Project.id == Job.project_id)
+                      .join(Client, Client.id == Project.client_id)
+                      .where(Job.status == "queued", busy < func.coalesce(Client.parallel_limit, 2))
+                      .order_by(busy, Job.priority, Job.id)
+                      .with_for_update(of=Job, skip_locked=True).limit(1)).first()
         if not j:
             return None
         j.status, j.started_at, j.worker = "running", utcnow(), f"{INSTANCE_ID}/{worker}"
@@ -202,7 +227,13 @@ def _worker(name, idx=1):
             if not _funds_ok(job_id):
                 _finish(job_id, "error", "баланс исчерпан — пополните баланс и запустите снова")
                 continue
-            HANDLERS[kind](job_id)
+            from ..services.payments import job_context, retry_context
+            jt, rt = job_context.set(job_id), retry_context.set(False)
+            try:
+                HANDLERS[kind](job_id)
+            finally:
+                job_context.reset(jt)
+                retry_context.reset(rt)
             _finish(job_id, "done")
         except Exception as e:
             log.debug("Задание %s: трассировка\n%s", job_id, traceback.format_exc())
@@ -218,3 +249,4 @@ def start_workers(n=None):
     for i in range(1, n + 1):
         threading.Thread(target=_worker, args=(f"worker-{i}", i), daemon=True, name=f"worker-{i}").start()
     log.info("Очередь: одновременных заданий %d (можно до %d — меняется в админ-панели)", parallel(), n)
+

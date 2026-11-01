@@ -21,6 +21,7 @@ interface Props {
 
 const WORK: [Route, string][] = [
   ["products", "Товары и кадры"],
+  ["review", "Приёмка кадров"],
   ["import", "Загрузка фото"],
   ["presets", "Пресеты съёмки"],
   ["personas", "Модели"],
@@ -29,6 +30,7 @@ const WORK: [Route, string][] = [
 const MASTER: [Route, string][] = [
   ["m-users", "Пользователи"],
   ["m-finance", "Финансы"],
+  ["m-payments", "Сверка платежей"],
   ["m-keys", "Ключи Polza"],
   ["m-analytics", "Аналитика"],
   ["m-log", "Журнал сервера"],
@@ -108,3 +110,4 @@ export function Sidebar(p: Props) {
     </>
   );
 }
+

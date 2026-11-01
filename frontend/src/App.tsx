@@ -13,8 +13,10 @@ import { BalancePage } from "./features/account/BalancePage";
 import { AdminPanel } from "./features/admin/AdminPanel";
 import { LoginPage } from "./features/auth/LoginPage";
 import { ModelCatalog, type CatalogKind, type CatalogPick } from "./features/catalog/ModelCatalog";
+import { ReviewDesk } from "./features/frame/ReviewDesk";
 import { FrameViewer } from "./features/frame/FrameViewer";
 import { ImportWizard } from "./features/import/ImportWizard";
+import { PaymentsPage } from "./features/master/PaymentsPage";
 import { FinancePage } from "./features/master/FinancePage";
 import { KeysPage } from "./features/master/KeysPage";
 import { UsersPage } from "./features/master/UsersPage";
@@ -53,7 +55,7 @@ export function App() {
   return <Workspace key={me.id} me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
 }
 
-const NEEDS_PROJECT: Route[] = ["products", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
+const NEEDS_PROJECT: Route[] = ["review", "products", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
 
 function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const ui = useUI();
@@ -62,10 +64,15 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectRef[]>([]);
   const [projectId, setProjectId] = usePersistentState<number | null>(`project_${me.id}`, null);
-  const { state, offline, reload } = useProjectState(projectId);
-  const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
+  const [pageNumber, setPageNumber] = useState(1);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => { const t = window.setTimeout(() => { setDebouncedQuery(query); setPageNumber(1); }, 300); return () => window.clearTimeout(t); }, [query]);
+  useEffect(() => { setPageNumber(1); }, [projectId, filter]);
+  const { state, offline, reload } = useProjectState(projectId, pageNumber, debouncedQuery, filter);
+  const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
+
   const [limit, setLimit] = useState(0);
 
   const [viewer, setViewer] = useState<{ productId: number; frameId: number } | null>(null);
@@ -159,6 +166,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     switch (route) {
       case "m-users": return <UsersPage />;
       case "m-keys": return <KeysPage />;
+      case "m-payments": return <PaymentsPage />;
       case "m-finance": return <FinancePage />;
       case "balance": return <BalancePage />;
       case "account": return <AccountPage me={me} onLogout={onLogout} />;
@@ -168,6 +176,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         : offline ? "Нет связи с сервером. Проверьте, что DreamGoods запущен." : "Загрузка…"}</div>;
     }
     switch (route) {
+      case "review": return <ReviewDesk key={projectId} />;
       case "import": return <PageMode.Provider value><ImportWizard key={projectId} open onClose={toProducts} /></PageMode.Provider>;
       case "presets": return <PageMode.Provider value><PresetManager onClose={toProducts} /></PageMode.Provider>;
       case "personas": return <PageMode.Provider value><PersonaManager onClose={toProducts} /></PageMode.Provider>;
@@ -184,7 +193,12 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <div className="layout">
               <div className="main-col">
                 <ListBar />
-                <ProductList filter={filter} query={query} dialogs={dialogs} />
+                <ProductList filter="all" query="" dialogs={dialogs} />
+                <div className="row pagination">
+                  <button disabled={pageNumber <= 1} onClick={() => setPageNumber((n) => n - 1)}>← Назад</button>
+                  <span>Страница {pageNumber} из {Math.max(1, Math.ceil(state!.pagination.total / state!.pagination.page_size))} · товаров {state!.pagination.total}</span>
+                  <button disabled={pageNumber * state!.pagination.page_size >= state!.pagination.total} onClick={() => setPageNumber((n) => n + 1)}>Далее →</button>
+                </div>
               </div>
               <aside><LogPanel /></aside>
             </div>
@@ -218,3 +232,4 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     </ProjectCtx.Provider>
   );
 }
+

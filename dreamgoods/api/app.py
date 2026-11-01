@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import __version__
 from ..core import auth, storage
 from ..core.logs import log
-from .routers import account, admin, auth as auth_routes, frames, generation, imports, media, personas, presets, products, projects, settings, styles
+from .routers import review, account, admin, auth as auth_routes, frames, generation, imports, media, personas, presets, products, projects, settings, styles
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 NO_BUILD = """<!doctype html><meta charset="utf-8"><title>DreamGoods</title><body style="font:15px system-ui;padding:40px">
@@ -60,9 +60,9 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def _err(request: Request, exc):
         log.exception("Ошибка обработки %s %s", request.method, request.url.path)
-        return JSONResponse({"error": str(exc)}, 500)
+        return JSONResponse({"error": "внутренняя ошибка сервера; подробности в журнале администратора"}, 500)
 
-    for r in (auth_routes, account, admin, projects, settings, generation, frames, products, personas, presets, styles, imports, media):
+    for r in (review, auth_routes, account, admin, projects, settings, generation, frames, products, personas, presets, styles, imports, media):
         app.include_router(r.router)
 
     @app.get("/api/health", tags=["служебное"])
@@ -89,3 +89,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+

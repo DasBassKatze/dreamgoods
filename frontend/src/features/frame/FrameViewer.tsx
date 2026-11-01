@@ -8,6 +8,7 @@ import { useUI } from "../../components/ui";
 import { useActions } from "../../hooks/useActions";
 import { STATE_LABEL, isBusy, pad, qcStatus, rub } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
+import { CompareImages } from "./CompareImages";
 import { QcSummary } from "./QcSummary";
 
 interface Props {
@@ -82,7 +83,7 @@ export function FrameViewer({ productId, frameId, filter, onNavigate, onClose }:
 
   const review = (kind: ReviewKind) =>
     run(async () => {
-      if (!f || !f.asset || isBusy(f)) return;
+      if (!f || !f.asset || isBusy(f) || view != null) return;
       if (kind === "check") {
         await api.check({ frame_ids: [f.id] });
         ui.toast("Кадр отправлен на проверку");
@@ -159,6 +160,9 @@ export function FrameViewer({ productId, frameId, filter, onNavigate, onClose }:
             {img ? <img src={assetUrl(img, 1400)} alt="" /> : <div className="empty">Кадр ещё не сгенерирован</div>}
             {busy && <div className="img-busy"><span className="spinner" />{f.note || label}</div>}
           </div>
+          <details><summary>Сравнить с исходным фото товара</summary>
+            <CompareImages left={p.photos.find((x) => x.selected)?.asset} right={img} />
+          </details>
           {shown && !shown.current && (
             <div className="version-banner">
               Вы смотрите {shown.edit ? "правку" : "вариант"} от {fmtTime(shown.created)}{shown.edit && <> — «{shown.edit}»</>}
@@ -190,14 +194,14 @@ export function FrameViewer({ productId, frameId, filter, onNavigate, onClose }:
 
           {f.asset && (
             <section className="lb-sec">
-              <h4>Оценка</h4>
+              <h4>Оценка текущей версии</h4>{sourceId && <p className="hint">Сначала вернитесь к текущей версии или сделайте выбранную основной.</p>}
               <input type="text" className="w-full" placeholder="замечание к браку: что не так (необязательно)"
                 value={comment} onChange={(e) => setComment(e.target.value)} />
               <div className="row review-buttons">
-                <button className="ok" disabled={busy} onClick={() => review("ok")}>✓ Принять <span className="kbd">1</span></button>
-                <button className="bad" disabled={busy} onClick={() => review("bad")}>✗ Брак <span className="kbd">2</span></button>
-                <button className="bad" disabled={busy} onClick={() => review("badregen")}>✗ Брак и переделать <span className="kbd">3</span></button>
-                <button disabled={busy} onClick={() => review("check")} title="ИИ-проверка этой картинки">🔍</button>
+                <button className="ok" disabled={busy || sourceId != null} onClick={() => review("ok")}>✓ Принять <span className="kbd">1</span></button>
+                <button className="bad" disabled={busy || sourceId != null} onClick={() => review("bad")}>✗ Брак <span className="kbd">2</span></button>
+                <button className="bad" disabled={busy || sourceId != null} onClick={() => review("badregen")}>✗ Брак и переделать <span className="kbd">3</span></button>
+                <button disabled={busy || sourceId != null} onClick={() => review("check")} title="ИИ-проверка этой картинки">🔍</button>
               </div>
             </section>
           )}
@@ -272,3 +276,4 @@ function AdminPrompt({ frameId }: { frameId: number }) {
     </details>
   );
 }
+

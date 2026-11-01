@@ -193,10 +193,12 @@ def master(request: Request) -> CurrentUser:
 def bootstrap_master(org_id):
     """Мастер-аккаунт из .env (DREAMGOODS_ADMIN_EMAIL / DREAMGOODS_ADMIN_PASSWORD), если в базе ещё нет мастера с паролем."""
     email = config.app_env("ADMIN_EMAIL", "admin").strip().lower()
-    password = config.app_env("ADMIN_PASSWORD", "admin")
+    password = config.app_env("ADMIN_PASSWORD", "")
     with db.session() as s:
         if s.scalar(select(User.id).where(User.role == "master", User.password_hash != "")):
             return
+        if not password or password == "admin" or len(password) < 12:
+            raise ValueError("задайте DREAMGOODS_ADMIN_PASSWORD: минимум 12 символов; пароль admin запрещён")
         u = s.scalar(select(User).where(User.role == "master").order_by(User.id)) or \
             s.scalar(select(User).where(User.email == email))
         if not u:
@@ -207,3 +209,4 @@ def bootstrap_master(org_id):
             u.name = "Мастер"
     log.warning("Создан мастер-аккаунт: логин «%s», пароль из DREAMGOODS_ADMIN_PASSWORD%s", email,
                 " (по умолчанию admin — смените после входа!)" if password == "admin" else "")
+

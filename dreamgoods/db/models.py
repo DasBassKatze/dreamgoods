@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
-                        JSON)
+                        JSON, Numeric, text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -83,10 +83,11 @@ class Client(TS, Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(200))
+    parallel_limit: Mapped[int] = mapped_column(Integer, default=2)
     contact: Mapped[str] = mapped_column(String(300), default="")
-    balance_rub: Mapped[float] = mapped_column(Float, default=0.0)   # внутренний баланс клиента, ₽
+    balance_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)   # внутренний баланс клиента, ₽
     billing: Mapped[bool] = mapped_column(Boolean, default=False)     # True — генерации списываются с баланса
-    markup: Mapped[float | None] = mapped_column(Float, nullable=True)  # наценка; None — общая из настроек мастера
+    markup: Mapped[float | None] = mapped_column(Numeric(18, 4, asdecimal=False), nullable=True)  # наценка; None — общая из настроек мастера
     key_id: Mapped[int | None] = mapped_column(ForeignKey("polza_keys.id", ondelete="SET NULL"), nullable=True)
     __table_args__ = (UniqueConstraint("org_id", "name"),)
 
@@ -99,9 +100,9 @@ class BalanceEntry(TS, Base):
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     kind: Mapped[str] = mapped_column(String(20))                       # topup | charge | adjust
-    amount_rub: Mapped[float] = mapped_column(Float)
-    cost_rub: Mapped[float] = mapped_column(Float, default=0.0)
-    balance_after: Mapped[float] = mapped_column(Float, default=0.0)
+    amount_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False))
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
+    balance_after: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
     what: Mapped[str] = mapped_column(String(200), default="")
     ref: Mapped[str] = mapped_column(String(120), default="")
 
@@ -214,7 +215,7 @@ class PersonaPhoto(TS, Base):
     kind: Mapped[str] = mapped_column(String(20), default="photo")   # candidate | main | sheet | photo (загружено)
     view: Mapped[str] = mapped_column(String(40), default="")        # portrait | full front | three-quarter | side
     position: Mapped[int] = mapped_column(Integer, default=0)
-    cost_rub: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
     spec: Mapped[dict] = mapped_column(JSONT, default=dict)          # паспорт образа этого варианта (внешность + стиль + наряд)
     asset: Mapped["Asset"] = relationship()
 
@@ -264,7 +265,7 @@ class ProductProfile(TS, Base):
     data: Mapped[dict] = mapped_column(JSONT, default=dict)
     source: Mapped[str] = mapped_column(String(20), default="ai")      # ai | manual | legacy
     model: Mapped[str] = mapped_column(String(120), default="")
-    cost_rub: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
 
 
 # ───────────── кадры, генерации, проверки, разметка ─────────────
@@ -303,8 +304,9 @@ class Generation(TS, Base):
     error: Mapped[str] = mapped_column(Text, default="")
     output_asset_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"), nullable=True)
     outcome: Mapped[str] = mapped_column(String(20), default="")       # current | rejected | archived
-    cost_rub: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
     seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    billing_operation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     external_id: Mapped[str] = mapped_column(String(120), default="")  # id задачи Polza
     instruction: Mapped[str] = mapped_column(Text, default="")         # правка: что просили изменить на фото
     source_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # правка: исходная версия кадра
@@ -323,7 +325,7 @@ class QCCheck(TS, Base):
     tech: Mapped[list] = mapped_column(JSONT, default=list)
     counts: Mapped[dict | None] = mapped_column(JSONT, nullable=True)
     info: Mapped[dict] = mapped_column(JSONT, default=dict)            # размер, резкость, токены
-    cost_rub: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
     source: Mapped[str] = mapped_column(String(20), default="gen")    # gen | check | legacy
 
 
@@ -364,7 +366,16 @@ class Job(TS, Base):
     worker: Mapped[str] = mapped_column(String(60), default="")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    __table_args__ = (Index("ix_jobs_queue", "status", "priority", "id"),)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("generation_runs.id"), nullable=True, index=True)
+    __table_args__ = (
+        Index("ix_jobs_queue", "status", "priority", "id"),
+        Index("uq_jobs_active_frame", "frame_id", unique=True,
+              postgresql_where=text("frame_id IS NOT NULL AND status IN ('queued','running','cancelling')"),
+              sqlite_where=text("frame_id IS NOT NULL AND status IN ('queued','running','cancelling')")),
+        Index("uq_jobs_active_profile", "product_id", unique=True,
+              postgresql_where=text("kind = 'profile' AND status IN ('queued','running','cancelling')"),
+              sqlite_where=text("kind = 'profile' AND status IN ('queued','running','cancelling')")),
+    )
 
 
 class Instance(Base):
@@ -388,7 +399,7 @@ class UsageEntry(TS, Base):
     kind: Mapped[str] = mapped_column(String(20))      # generation | qc | count | spec | profile | sort
     model: Mapped[str] = mapped_column(String(120), default="")
     provider: Mapped[str] = mapped_column(String(80), default="")
-    amount_rub: Mapped[float] = mapped_column(Float, default=0.0)
+    amount_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
     tokens: Mapped[dict] = mapped_column(JSONT, default=dict)
     ref: Mapped[str] = mapped_column(String(120), default="")
 
@@ -403,7 +414,7 @@ class ImportSession(TS, Base):
     groups: Mapped[list] = mapped_column(JSONT, default=list)
     result: Mapped[dict] = mapped_column(JSONT, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
-    cost_rub: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0.0)
 
 
 class ImportFile(TS, Base):
@@ -415,3 +426,31 @@ class ImportFile(TS, Base):
     analysis: Mapped[dict] = mapped_column(JSONT, default=dict)       # роль, группа, артикул, текст с этикетки
     asset: Mapped["Asset"] = relationship()
     __table_args__ = (UniqueConstraint("session_id", "rel_path"),)
+
+
+
+class GenerationRun(TS, Base):
+    __tablename__ = "generation_runs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    budget_rub: Mapped[float | None] = mapped_column(Numeric(18, 4, asdecimal=False), nullable=True)
+    retry_budget_rub: Mapped[float | None] = mapped_column(Numeric(18, 4, asdecimal=False), nullable=True)
+
+
+class BillingOperation(TS, Base):
+    __tablename__ = "billing_operations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("generation_runs.id"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[str] = mapped_column(String(20), default="reserved", index=True)
+    external_id: Mapped[str] = mapped_column(String(120), default="")
+    reserved_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0)
+    charged_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0)
+    cost_rub: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=0)
+    markup: Mapped[float] = mapped_column(Numeric(18, 4, asdecimal=False), default=1)
+    billable: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_retry: Mapped[bool] = mapped_column(Boolean, default=False)

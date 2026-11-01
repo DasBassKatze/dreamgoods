@@ -6,6 +6,7 @@
 Мастер пополняет балансы вручную. При нулевом балансе новые платные задания не ставятся.
 """
 from sqlalchemy import func, select
+from .payments import money, held
 
 from .. import db
 from ..core.logs import log
@@ -45,7 +46,7 @@ def charge(s, project_id, usage, tag=""):
     amount = round(cost * markup_of(client, s.get(Organization, client.org_id)), 2)
     if amount <= 0:
         return 0.0
-    client.balance_rub = round((client.balance_rub or 0) - amount, 2)
+    client.balance_rub = money(client.balance_rub) - money(amount)
     kinds = []
     for u in usage:
         k = KIND_RU.get(u.get("kind"), u.get("kind") or "")
@@ -58,14 +59,14 @@ def charge(s, project_id, usage, tag=""):
 
 
 def topup(client_id, amount, user_id, note=""):
-    amount = round(float(amount), 2)
+    amount = money(amount)
     if amount == 0:
         raise ValueError("укажите сумму")
     with db.session() as s:
         c = s.get(Client, int(client_id), with_for_update=True)
         if not c:
             raise LookupError("клиент не найден")
-        c.balance_rub = round((c.balance_rub or 0) + amount, 2)
+        c.balance_rub = money(c.balance_rub) + amount
         s.add(BalanceEntry(client_id=c.id, user_id=user_id, kind="topup" if amount > 0 else "adjust", amount_rub=amount,
                            balance_after=c.balance_rub, what=(note or ("пополнение" if amount > 0 else "списание вручную"))[:200]))
         bal = c.balance_rub
@@ -83,7 +84,7 @@ def ensure_funds(project_id):
     """Перед платным заданием: у клиента с балансом должно быть больше нуля."""
     with db.session() as s:
         c = client_of_project(s, project_id)
-        if c and c.billing and (c.balance_rub or 0) <= 0:
+        if c and c.billing and money(c.balance_rub) - held(s, c.id) <= 0:
             raise NoFunds(f"На балансе {c.balance_rub:.2f} ₽ — пополните баланс, чтобы запускать генерацию "
                           "(обратитесь к администратору сервиса)")
 
@@ -91,7 +92,7 @@ def ensure_funds(project_id):
 def has_funds(project_id):
     with db.session() as s:
         c = client_of_project(s, project_id)
-        return not (c and c.billing and (c.balance_rub or 0) <= 0)
+        return not (c and c.billing and money(c.balance_rub) - held(s, c.id) <= 0)
 
 
 def account(client_id, limit=200):
@@ -105,7 +106,8 @@ def account(client_id, limit=200):
         month = s.scalar(select(func.coalesce(func.sum(BalanceEntry.amount_rub), 0)).where(
             BalanceEntry.client_id == c.id, BalanceEntry.kind == "charge",
             BalanceEntry.created_at >= func.date_trunc("month", func.now())))
-        return {"balance": round(c.balance_rub or 0, 2), "billing": c.billing, "markup": markup_of(c, org),
+        return {"balance": round(c.balance_rub or 0, 2), "reserved": float(held(s, c.id)),
+                "available": float(money(c.balance_rub) - held(s, c.id)), "billing": c.billing, "markup": markup_of(c, org),
                 "spent_month": abs(round(float(month or 0), 2)),
                 "entries": [entry_view(e) for e in rows]}
 
@@ -117,3 +119,4 @@ def entry_view(e, master=False):
         v["cost"] = round(e.cost_rub or 0, 2)
         v["client_id"] = e.client_id
     return v
+

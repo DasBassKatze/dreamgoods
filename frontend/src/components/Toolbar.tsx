@@ -10,9 +10,9 @@ export function Toolbar({ filter, onFilter, query, onQuery }: {
 }) {
   const { state } = useProject();
   const { totals: t, runner: r } = state;
-  const todo = state.products.filter((p) => p.done < p.total).length;
+  const todo = state.pagination.todo_products;
   const FILTERS: [Filter, string, number | null][] = [
-    ["all", "Все", state.products.length],
+    ["all", "Все", state.pagination.catalog_total],
     ["todo", "Недоделанные", todo],
     ["review", "На проверке", t.review],
     ["err", "С ошибками", r.errors],
@@ -53,7 +53,7 @@ export function ListBar() {
     });
 
   const newProfiles = async () => {
-    const n = state.products.filter((p) => !p.total).length;
+    const n = state.pagination.no_prompts;
     if (!n) {
       ui.toast("У всех товаров уже есть промпты");
       return;
@@ -67,7 +67,7 @@ export function ListBar() {
     <div className="listbar">
       <label className="check">
         <input type="checkbox" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? allIds : [])} />
-        {selected.size ? <>выбрано <b>{selected.size}</b></> : "выбрать все"}
+        {selected.size ? <>выбрано <b>{selected.size}</b></> : "выбрать страницу"}
       </label>
       {selected.size > 0 && <button className="link" onClick={() => setSelected([])}>снять выбор</button>}
       <label className="check" title="Сколько кадров максимум поставить за один запуск; 0 — все">
@@ -93,3 +93,4 @@ export function ListBar() {
     </div>
   );
 }
+

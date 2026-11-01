@@ -80,6 +80,10 @@ def _resume(gid, created):
         log.debug("%s дозагрузка: задача %s ещё %s", tag, task_id, status)
         return 0
     if status != "completed":
+        from ..services.payments import settle
+        with db.session() as s:
+            oid = s.get(Generation, gid).billing_operation_id
+        settle(oid, polza.cost_of(data))
         err = data.get("error") or {}
         _mark(gid, "error", str(err.get("message") if isinstance(err, dict) else err)[:1000] or status)
         say("err", f"❌ {sku} · кадр {pos:02d}: задача Polza завершилась с ошибкой — перегенерируйте кадр", ids["project"])
@@ -89,10 +93,17 @@ def _resume(gid, created):
         _mark(gid, "error", "в ответе Polza нет картинки")
         return 0
     cost = polza.cost_of(data)
-    trace = Trace(tag)
-    trace.add("edit" if edit else "generation", model, cost, provider=data.get("provider", ""))
+    from ..services import payments
     with db.session() as s:
-        g = s.get(Generation, gid)
+        oid = s.get(Generation, gid).billing_operation_id
+    if oid:
+        payments.settle(oid, cost, provider=data.get("provider", ""))
+        data["_billing_operation"] = oid
+    trace = Trace(tag)
+    trace.add("edit" if edit else "generation", model, cost, provider=data.get("provider", ""), operation_id=data.get("_billing_operation"))
+    with db.session() as s:
+        f = s.get(Frame, ids["frame"], with_for_update=True)
+        g = s.get(Generation, gid, with_for_update=True)
         if g.status != "pending":           # уже забрал кто-то другой
             return 0
         asset = storage.put(s, ids["org"], img, "output", f"{sku}_{pos:02d}_resumed.png")
@@ -139,3 +150,4 @@ def _loop():
 
 def start():
     threading.Thread(target=_loop, daemon=True, name="polza-resume").start()
+

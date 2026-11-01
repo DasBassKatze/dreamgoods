@@ -1,0 +1,18 @@
+name: dreamgoods-dev-gpt
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dreamgoods_dev_gpt
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: studio
+    ports: ['127.0.0.1:5433:5432']
+    volumes: [dev_gpt_pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U studio -d dreamgoods_dev_gpt']
+      interval: 5s
+      retries: 20
+volumes:
+  dev_gpt_pgdata:
+    name: dreamgoods_dev_gpt_pgdata

@@ -68,7 +68,7 @@ def main():
     src = None
     if "--import-legacy" in sys.argv:
         src = sys.argv[sys.argv.index("--import-legacy") + 1]
-    else:
+    elif config.app_env("DISABLE_LEGACY_IMPORT", "false").lower() != "true":
         with db.session() as s:
             empty = not s.scalar(select(func.count(Product.id)))
             done = (s.scalars(select(Organization).order_by(Organization.id)).first().settings or {}).get("legacy_imported")
@@ -95,6 +95,8 @@ def main():
     workers.recover()
     workers.start_workers()
     workers.resume.start()
+    from dreamgoods.services import backups
+    backups.start()
     import uvicorn
     url = f"http://{config.HOST}:{config.PORT}"
     log.info("DreamGoods запущен: %s  (остановить: Ctrl+C)", url)
@@ -105,3 +107,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

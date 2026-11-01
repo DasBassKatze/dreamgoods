@@ -16,8 +16,6 @@ export function useActions() {
         return;
       }
       const s = state.settings;
-      const avg = state.totals.avg_cost;
-      const est = avg ? ` (≈ ${rub(p.count * avg)} по средней цене кадра ${rub(avg)})` : "";
       const qc = !s.qc_enabled
         ? ""
         : s.qc_autoregen && s.qc_retries > 0
@@ -25,11 +23,22 @@ export function useActions() {
           : "ИИ-проверка включена, автоперегенерация выключена: брак не переделывается, а сразу попадает в «На проверке».";
       const ok = await ui.confirm({
         title: "Запуск генерации",
-        text: <>Сгенерировать {p.count} кадр(ов){est}?{qc && <p className="hint">{qc}</p>}</>,
+        text: <>Сгенерировать {p.count} кадр(ов) для {p.products} товаров?
+          <p>Генерация ≈ {rub(p.generation)}, проверки ≈ {rub(p.checking)}. С переделками до ≈ {rub(p.upper)}.</p>
+          <p className="hint">{p.note} {p.groups.some((g) => g.source === "fallback") && "Часть оценок задана резервным тарифом: истории пока мало."}</p>
+          {p.cost_per_accepted != null && <p>Фактическая цена принятого кадра ≈ {rub(p.cost_per_accepted)}; готового комплекта: {rub(p.cost_per_complete)}.</p>}
+          {qc && <p className="hint">{qc}</p>}</>,
         ok: "Запустить",
       });
       if (!ok) return;
-      const r = await api.generate({ product_ids: productIds, limit });
+      const budget = await ui.ask({ title: "Бюджет запуска", ok: "Запустить", fields: [
+        { key: "total", label: `Общий бюджет, ₽ (оценка ${rub(p.expected)}, с переделками до ≈ ${rub(p.upper)})`, value: String(p.upper || 100) },
+        { key: "retry", label: "Из него на автоматические переделки, ₽ (0 — запретить)", value: String(Math.max(0, Math.round(p.upper - p.expected))) },
+      ] });
+      if (!budget) return;
+      const total = Number(budget.total.replace(",", ".")), retry = Number(budget.retry.replace(",", "."));
+      if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(retry) || retry < 0 || retry > total) throw new Error("Проверьте бюджеты: общий больше нуля, переделки — от 0 до общего");
+      const r = await api.generate({ product_ids: productIds, limit, budget_rub: total, retry_budget_rub: retry });
       ui.toast(`В очередь добавлено: ${r.added}`);
       await reload();
     });
@@ -76,3 +85,4 @@ export function useActions() {
 
   return { generate, regenerate, checkReady, profiles };
 }
+
