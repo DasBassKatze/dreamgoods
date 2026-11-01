@@ -258,3 +258,27 @@ def test_benchmark_requires_complete_predictions():
     result=evaluate(truth,[{"generation_id":1,"pass":True},{"generation_id":2,"pass":False}])
     assert result["missed_defects"]==1 and result["false_rejections"]==1
     with pytest.raises(ValueError):evaluate(truth,[])
+
+
+@pytest.mark.postgres
+def test_concurrent_resume_downloads_and_charges_once(database,monkeypatch,tmp_path):
+    engine,ids=database
+    if engine.dialect.name != "postgresql":pytest.skip("requires PostgreSQL locks")
+    monkeypatch.setattr(storage.config,"STORAGE_DIR",tmp_path/"files")
+    jid=job(ids); token=payments.job_context.set(jid)
+    try:oid=payments.reserve("generation","test")
+    finally:payments.job_context.reset(token)
+    with db.session() as s:
+        s.get(Job,jid).status="done"
+        s.get(Project,ids["project"]).settings={"qc_enabled":False}
+        g=Generation(frame_id=ids["frame"],job_id=jid,model="test",status="pending",external_id="task",billing_operation_id=oid)
+        s.add(g);s.flush();gid,created=g.id,g.created_at
+    monkeypatch.setattr(polza,"get_task",lambda *a,**k:{"id":"task","status":"completed","usage":{"cost_rub":10}})
+    monkeypatch.setattr(polza,"extract_image",lambda data:png())
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _:resume._resume(gid,created),range(2)))
+    assert sorted(results)==[0,1]
+    with db.session() as s:
+        assert s.get(Frame,ids["frame"]).current_generation_id==gid
+        assert s.scalar(select(func.count(BalanceEntry.id)))==1
+        assert s.scalar(select(func.count(UsageEntry.id)))==1
