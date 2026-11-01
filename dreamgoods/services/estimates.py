@@ -45,7 +45,7 @@ def preview(project_id, frame_ids):
             lines.append(v)
         complete = s.scalar(select(func.count(Product.id)).where(Product.project_id == project_id,
             ~select(Frame.id).where(Frame.product_id == Product.id, Frame.status != "retired",
-                Frame.status.not_in(("pass", "accepted"))).exists(),
+                (Frame.status.not_in(("pass", "accepted")) | Frame.current_generation_id.is_(None))).exists(),
             select(Frame.id).where(Frame.product_id == Product.id, Frame.status != "retired").exists())) or 0
         accepted = s.scalar(select(func.count(Frame.id)).join(Product).where(Product.project_id == project_id,
             Frame.status.in_(("pass", "accepted")), Frame.current_generation_id.is_not(None))) or 0

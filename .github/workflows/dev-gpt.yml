@@ -32,7 +32,10 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q dreamgoods scripts migrations
       - run: python -m alembic upgrade head
+      - run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client-16
       - run: python -m pytest -q
+        env:
+          DREAMGOODS_PG_BIN: /usr/lib/postgresql/16/bin
       - run: python -m alembic downgrade 0012 && python -m alembic upgrade head
   frontend:
     runs-on: ubuntu-latest

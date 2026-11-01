@@ -217,3 +217,44 @@ def test_queue_duplicate_concurrent_and_client_fairness(database):
         p=Project(client_id=ids['client'],name='Second');s.add(p);s.flush()
         queue.enqueue(s,'profile',p.id)
     assert queue._claim('test2') is None
+
+
+def test_confirmed_rejection_releases_reserve(database):
+    _,ids=database; t=payments.job_context.set(job(ids))
+    def rejected():
+        payments.submitted(); payments.not_charged(); raise ValueError("400 bad request")
+    try:
+        with pytest.raises(ValueError):payments.invoke("generation","test",rejected)
+        with db.session() as s:assert payments.held(s,ids["client"]) == 0
+    finally:payments.job_context.reset(t)
+
+
+def test_incomplete_product_not_exported(database,monkeypatch,tmp_path):
+    _,ids=database;monkeypatch.setattr(storage.config,"STORAGE_DIR",tmp_path/"files")
+    monkeypatch.setattr(export.config,"EXPORT_DIR",tmp_path/"export")
+    add_generation(ids)
+    with db.session() as s:
+        s.get(Frame,ids["frame"]).status="accepted"
+        s.add(Frame(product_id=ids["product"],position=2,prompt="detail"))
+    _,count=export.export_zip(ids["project"],require_complete=True)
+    assert count == 0
+
+
+@pytest.mark.postgres
+def test_full_backup_restore(database,monkeypatch,tmp_path):
+    engine,ids=database
+    if engine.dialect.name != "postgresql":pytest.skip("requires PostgreSQL client tools and CREATEDB")
+    monkeypatch.setattr(storage.config,"STORAGE_DIR",tmp_path/"files")
+    monkeypatch.setenv("DREAMGOODS_BACKUP_DIR",str(tmp_path/"backups"))
+    add_generation(ids)
+    path=backups.create_backup(verify=True)
+    assert (path/"database.dump").is_file()
+    backups.verify_checksums(path)
+
+
+def test_benchmark_requires_complete_predictions():
+    from scripts.qc_benchmark import evaluate
+    truth=[{"generation_id":1,"accepted":False},{"generation_id":2,"accepted":True}]
+    result=evaluate(truth,[{"generation_id":1,"pass":True},{"generation_id":2,"pass":False}])
+    assert result["missed_defects"]==1 and result["false_rejections"]==1
+    with pytest.raises(ValueError):evaluate(truth,[])

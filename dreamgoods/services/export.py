@@ -9,7 +9,7 @@ from PIL import Image, ImageOps
 from .common import context
 from ..core import presets
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 
 from .. import db
 from ..core import config, storage
@@ -31,8 +31,10 @@ def export_zip(project_id, include="accepted", output_format="original", require
                          .where(Product.project_id == project_id).order_by(func.lower(Product.sku), Frame.position)).all()
         items = []
         complete = {}
-        for sku, pos, status, block, g, fid in rows:
-            complete[sku] = complete.get(sku, True) and status in ("pass", "accepted")
+        for product in s.scalars(select(Product).where(Product.project_id == project_id)):
+            missing = s.scalar(select(Frame.id).where(Frame.product_id == product.id, Frame.status != "retired",
+                or_(Frame.current_generation_id.is_(None), Frame.status.not_in(("pass", "accepted")))).limit(1))
+            complete[product.sku] = missing is None
         manifest = []
         for sku, pos, status, block, g, fid in rows:
             if include == "accepted" and status not in ("pass", "accepted"):
@@ -53,7 +55,7 @@ def export_zip(project_id, include="accepted", output_format="original", require
     w.writerow(["артикул", "кадр", "статус", "блок", "модель", "проверка", "причины брака", "затраты, ₽"])
     with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as z:
         for sku, pos, status, block, asset, model, q, cost, st in items:
-            ext = ".png" if asset.mime == "image/png" else ".jpg"
+            ext = {"image/png":".png", "image/jpeg":".jpg", "image/webp":".webp"}.get(asset.mime, ".bin")
             data = storage.get(asset)
             issues = []
             if output_format != "original":

@@ -214,17 +214,22 @@ def _submit(headers, body, tag):
                 time.sleep(5 * (attempt + 1))
                 continue
             if _not_sent(e):
+                from ..services.payments import not_charged
+                not_charged()
                 raise RuntimeError(f"нет соединения с Polza: {e}")
             log.error("%s связь с Polza оборвалась после отправки запроса — повтор не делаю (риск двойной оплаты): %s", tag, e)
             raise RuntimeError("связь с Polza оборвалась сразу после отправки запроса; повтор не делался, чтобы не "
                                "заплатить дважды. Если в кабинете Polza генерация списана — перегенерируйте кадр позже")
-        if r.status_code in (429, 502, 503, 504) and attempt < 3:
+        if r.status_code == 429 and attempt < 3:
             wait = int(r.headers.get("Retry-After") or 0) or 10 * (attempt + 1)
             log.warning("%s Polza занята: HTTP %s (попытка %d/4), жду %d с: %s", tag, r.status_code, attempt + 1, wait,
                         r.text[:200])
             time.sleep(min(wait, 60))
             continue
         if r.status_code >= 400:
+            if r.status_code < 500:
+                from ..services.payments import not_charged
+                not_charged()
             try:
                 msg = r.json().get("error", {}).get("message") or r.text
             except Exception:
@@ -450,6 +455,9 @@ def _chat_unbilled(st, model, system, content, trace, what, max_tokens=1500, rea
             attempt += 1
             log.warning("%s %s: модель недоступна (попытка %d/3): %s", tag, what, attempt, e)
             if not _not_sent(e) or attempt == 3:
+                if _not_sent(e):
+                    from ..services.payments import not_charged
+                    not_charged()
                 raise RuntimeError(f"{what}: нет связи с моделью: {e}")
             time.sleep(8)
             continue
@@ -464,6 +472,9 @@ def _chat_unbilled(st, model, system, content, trace, what, max_tokens=1500, rea
             time.sleep(10 * attempt)
             continue
         if r.status_code >= 400:
+            if r.status_code < 500:
+                from ..services.payments import not_charged
+                not_charged()
             log.error("%s %s: HTTP %s: %s", tag, what, r.status_code, r.text[:500])
             raise RuntimeError(f"{what}: HTTP {r.status_code}: {r.text[:300]}")
         break

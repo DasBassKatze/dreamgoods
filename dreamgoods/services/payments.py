@@ -43,6 +43,11 @@ def reserve(kind, model):
         job = s.get(Job, jid)
         if not job.project_id:
             return None
+        if kind == "generation":
+            if job.kind == "persona":
+                kind = "persona_image"
+            elif (job.payload or {}).get("edit"):
+                kind = "edit"
         p = s.get(Project, job.project_id)
         c = s.get(Client, p.client_id, with_for_update=True)
         org = s.get(Organization, c.org_id)
@@ -136,3 +141,13 @@ def invoke(kind, model, fn, trace=None):
         raise
     finally:
         operation_context.reset(token)
+
+
+def not_charged():
+    """Provider explicitly rejected the request, or transport proved it was never sent."""
+    oid = operation_context.get()
+    if oid:
+        with db.session() as s:
+            op = s.get(BillingOperation, oid, with_for_update=True)
+            if op.status != "settled":
+                op.status = "released"

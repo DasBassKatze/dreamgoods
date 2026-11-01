@@ -48,7 +48,7 @@ export function ReviewDesk() {
   };
   useEffect(() => {
     const keys = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input,textarea,select,button,[contenteditable=true]") || busy || e.repeat) return;
+      if ((e.target as HTMLElement).closest("input,textarea,select,[contenteditable=true]") || busy || e.repeat) return;
       if (e.key === "1") { e.preventDefault(); void act("accept", true); }
       if (e.key === "2") { e.preventDefault(); void act("reject", true); }
       if (["ArrowLeft", "ArrowRight"].includes(e.key) && d) {
