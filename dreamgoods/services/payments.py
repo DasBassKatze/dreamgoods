@@ -27,10 +27,12 @@ def estimate_call(s,org_id,model,kind):
         UsageEntry.kind==kind,UsageEntry.amount_rub>0).order_by(UsageEntry.id.desc()).limit(100)).all()
     st=s.get(Organization,org_id).settings or {}
     image=kind in ('generation','edit','persona_image')
-    fallback=decimal(st.get('reserve_image_rub' if image else 'reserve_chat_rub',50 if image else 5))
+    configured=st.get('reserve_image_rub' if image else 'reserve_chat_rub')
+    fallback=decimal(configured if configured is not None else 50 if image else 5)
     fallback=max(decimal('0.01'),fallback)
     mean=sum((decimal(x) for x in samples),decimal(0))/len(samples) if samples else fallback
-    upper=max(fallback,max((decimal(x) for x in samples),default=fallback)*decimal('1.25'))
+    upper=max((decimal(x) for x in samples),default=fallback)*decimal('1.25')
+    if configured is not None:upper=max(fallback,upper)
     return money(mean),money(upper),len(samples)
 
 

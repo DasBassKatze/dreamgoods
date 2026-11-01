@@ -343,3 +343,23 @@ def test_recovered_result_uses_existing_paid_operation(database,monkeypatch,tmp_
         assert s.get(Client,ids['client']).balance_rub==190
         assert s.scalar(select(func.count(UsageEntry.id)))==1
         assert s.scalar(select(func.count(BalanceEntry.id)))==1
+
+
+def test_historical_price_replaces_initial_fallback(database):
+    _,ids=database;jid,_=make_job(ids)
+    with scope(jid):oid=payments.reserve('generation','fake')
+    payments.settle(oid,4)
+    with scope(jid):oid2=payments.reserve('generation','fake')
+    with db.session() as s:assert s.get(PaidOperation,oid2).reserved_rub==5
+
+
+def test_manual_reconciliation_cannot_change_active_request(database):
+    _,ids=database;jid,_=make_job(ids)
+    with scope(jid):oid=payments.reserve('generation','fake')
+    from dreamgoods.api.routers.budgets import reconcile,Reconcile
+    from dreamgoods.core.auth import CurrentUser
+    user=CurrentUser(1,ids['org'],'master','Master','master',ids['client'])
+    request=SimpleNamespace(state=SimpleNamespace(user=user))
+    with pytest.raises(ValueError,match='только для операций'):
+        reconcile(oid,Reconcile(action='release',note='checked no charge'),request,pid=ids['project'])
+    with db.session() as s:assert s.get(PaidOperation,oid).status=='reserved'

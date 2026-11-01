@@ -46,6 +46,8 @@ def reconcile(operation_id:str,body:Reconcile,request:Request,pid:int=Depends(pr
     with db.session() as s:
         o=s.get(PaidOperation,operation_id)
         if not o or o.project_id!=pid:raise LookupError('Операция не найдена')
+        if body.action!='refresh' and o.status!='uncertain':
+            raise ValueError('Ручная сверка доступна только для операций с неизвестным результатом. Дождитесь завершения активного запроса.')
         external_id=o.external_id
         org=s.get(Organization,cu.org_id)
         secrets=keys.all_secrets(s,org.id)
