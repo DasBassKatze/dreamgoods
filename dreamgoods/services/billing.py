@@ -30,7 +30,8 @@ class NoFunds(ValueError):
 
 def default_markup(org):
     try:
-        return max(0.0, float((org.settings or {}).get("markup") or 1.0))
+        value = (org.settings or {}).get("markup")
+        return max(0.0, float(decimal(1 if value is None else value)))
     except (TypeError, ValueError):
         return 1.0
 

@@ -213,6 +213,11 @@ def task_spec(st, task, trace):
         raise ValueError("ИИ вернул неверные списки ожидаемых объектов")
     if res["people"] is not None and (type(res["people"]) is not int or res["people"] < 0):
         raise ValueError("ИИ вернул неверное число людей")
+    if any(not isinstance(e, dict) or not isinstance(e.get("name"), str) or not e["name"].strip()
+           or type(e.get("expected")) is not int or e["expected"] < 0 for e in res["entities"]):
+        raise ValueError("ИИ вернул неверное описание ожидаемого объекта")
+    if any(not isinstance(x, str) for x in res["forbidden"]):
+        raise ValueError("ИИ вернул неверный список запрещённых объектов")
     people = _int(res.get("people"))
     ents = []
     for e in res.get("entities") or []:
@@ -275,7 +280,12 @@ def count_check(st, task, img, trace):
         raise ValueError("ИИ-подсчёт вернул неверное поле problems")
     if any(not isinstance(p, dict) or not all(type(p.get(k)) is int and p[k] >= 0 for k in ("heads", "arms", "hands", "legs", "feet")) for p in res["people"]):
         raise ValueError("ИИ-подсчёт вернул неверные числа частей тела")
-    if any(not isinstance(e, dict) or not isinstance(e.get("name"), str) or type(e.get("count")) is not int or e["count"] < 0 for e in res["entities"]):
+    if any(not isinstance(p.get("fingers_per_visible_hand"), list)
+           or any(type(n) is not int or n < 0 for n in p["fingers_per_visible_hand"]) for p in res["people"]):
+        raise ValueError("ИИ-подсчёт вернул неверные числа пальцев")
+    if any(not isinstance(a, str) for a in res["anomalies"]):
+        raise ValueError("ИИ-подсчёт вернул неверный список аномалий")
+    if any(not isinstance(e, dict) or not isinstance(e.get("name"), str) or not e["name"].strip() or type(e.get("count")) is not int or e["count"] < 0 for e in res["entities"]):
         raise ValueError("ИИ-подсчёт вернул неверное число объектов")
     if any(not any(_same(e["name"], name) for e in res["entities"]) for name in names):
         raise ValueError("ИИ-подсчёт пропустил запрошенный объект")

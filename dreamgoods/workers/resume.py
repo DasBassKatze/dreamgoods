@@ -130,7 +130,7 @@ def _resume(gid, created):
 
 def _mark(gid, status, error):
     with db.session() as s:
-        g = s.get(Generation, gid)
+        g = s.get(Generation, gid, with_for_update=True)
         if g and g.status == "pending":
             g.status, g.error = status, error
 

@@ -331,3 +331,18 @@ def test_local_bootstrap_keeps_default_login(database,monkeypatch,configured):
     with db.session() as s:
         u=s.scalar(select(User).where(User.role=='master'))
         assert u.email=='admin' and auth.check_password('admin',u.password_hash)
+
+
+def test_zero_markup_is_preserved(database):
+    _,ids=database
+    with db.session() as s:
+        s.get(Organization,ids['org']).settings={'markup':0}
+    with db.session() as s:
+        assert billing.charge(s,ids['project'],[{'cost':10}])==0
+        assert s.get(Client,ids['client']).balance_rub==200
+
+
+@pytest.mark.parametrize('entity',[{'name':'shoe','expected':'2'},{'name':'shoe','expected':-1},{}])
+def test_invalid_expected_object_is_not_silently_dropped(database,monkeypatch,entity):
+    monkeypatch.setattr(qc,'chat',lambda *a:({'people':0,'entities':[entity],'forbidden':[]},0,0))
+    with pytest.raises(ValueError):qc.task_spec({'qc_model':'fake'},'two shoes',Trace('test'))
