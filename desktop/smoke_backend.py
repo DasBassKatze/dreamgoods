@@ -30,7 +30,10 @@ with (root/'smoke-backend.log').open('w',encoding='utf-8') as log:
             if time.monotonic()>until: raise RuntimeError('Backend startup timed out')
             time.sleep(.2)
     except Exception:
-        log.flush();print((root/'smoke-backend.log').read_text(encoding='utf-8',errors='replace'));raise
+        log.flush()
+        for name in ('smoke-backend.log','postgres.log'):
+            if (root/name).exists(): print((root/name).read_text(encoding='utf-8',errors='replace'))
+        raise
     finally:
         if child.poll() is None:
             child.stdin.close()

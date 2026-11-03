@@ -16,10 +16,22 @@ def free_port():
 
 
 def run(command, **kwargs):
-    return subprocess.run([str(x) for x in command], check=kwargs.pop("check", True), capture_output=True,
-                          text=True, encoding='utf-8', errors='replace',
-                          cwd=kwargs.pop('cwd', str(Path(command[0]).parent)),
-                          creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, **kwargs)
+    # Windows pg_ctl starts a daemon that may inherit stdout handles. PIPE would
+    # make communicate() wait for EOF until PostgreSQL exits, even after pg_ctl
+    # itself returned. Files keep diagnostics without waiting on daemon handles.
+    import tempfile
+    argv = [str(x) for x in command]
+    check = kwargs.pop('check', True)
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        result = subprocess.run(argv, check=False, stdout=out, stderr=err,
+            cwd=kwargs.pop('cwd', str(Path(command[0]).parent)),
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, **kwargs)
+        out.seek(0); err.seek(0)
+        result.stdout = out.read().decode('utf-8', 'replace')
+        result.stderr = err.read().decode('utf-8', 'replace')
+    if check and result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, argv, output=result.stdout, stderr=result.stderr)
+    return result
 
 
 def main():
