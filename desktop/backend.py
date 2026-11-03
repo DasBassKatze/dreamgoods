@@ -42,6 +42,16 @@ def main():
     else:
         import fcntl
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if os.name == 'nt':
+        # initdb deliberately drops the Administrators SID. Give the actual user
+        # an inheritable ACE even when Windows created the directory with an
+        # Administrators-only default DACL (for example on build machines).
+        import re
+        system32 = Path(os.environ['SystemRoot']) / 'System32'
+        identity = run([system32 / 'whoami.exe', '/user', '/fo', 'csv', '/nh']).stdout
+        sid = re.search(r'S-1-(?:\d+-)+\d+', identity)
+        if not sid: raise RuntimeError('Не удалось определить владельца локальной базы')
+        run([system32 / 'icacls.exe', root, '/grant:r', f'*{sid.group(0)}:(OI)(CI)F'])
     pgroot = root
     pg = args.postgres_dir.resolve() / 'bin'
     ext = '.exe' if os.name == 'nt' else ''
