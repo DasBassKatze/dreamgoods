@@ -1,6 +1,4 @@
 """Frozen entry point. Own database only; no Docker, services or elevated privileges."""
-import atexit
-from contextlib import contextmanager, ExitStack
 import json
 import os
 from pathlib import Path
@@ -24,50 +22,6 @@ def run(command, **kwargs):
                           creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, **kwargs)
 
 
-@contextmanager
-def ascii_pg_path(path):
-    """EDB programs use ANSI argv. Alias Unicode paths without moving or copying user data.
-
-    NTFS junctions require no administrator privileges. Parent and target are checked;
-    deleting a junction removes only the link, never the database directory.
-    """
-    if os.name != 'nt' or str(path).isascii():
-        yield path
-        return
-    import ctypes
-    import tempfile
-    import _winapi
-    buf = ctypes.create_unicode_buffer(32768)
-    size = ctypes.windll.kernel32.GetShortPathNameW(str(path), buf, len(buf))
-    if 0 < size < len(buf) and buf.value.isascii():
-        yield Path(buf.value)
-        return
-    candidates = [Path(tempfile.gettempdir()), path.parent]
-    if os.environ.get('PUBLIC'):
-        candidates.append(Path(os.environ['PUBLIC']) / 'Documents')
-    folder = None
-    for parent in candidates:
-        if not str(parent).isascii() or not parent.is_dir():
-            continue
-        try:
-            folder = Path(tempfile.mkdtemp(prefix='DreamGoods-PG-', dir=parent))
-            break
-        except OSError:
-            continue
-    if folder is None:
-        raise RuntimeError('Не удалось подготовить путь PostgreSQL. Выберите папку без кириллицы.')
-    junction = folder / 'data'
-    try:
-        _winapi.CreateJunction(str(path), str(junction))
-        if not os.path.samefile(junction, path):
-            raise RuntimeError('Не удалось проверить путь PostgreSQL')
-        yield junction
-    finally:
-        if junction.exists():
-            os.rmdir(junction)
-        folder.rmdir()
-
-
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -86,10 +40,8 @@ def main():
     else:
         import fcntl
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    aliases = ExitStack()
-    atexit.register(aliases.close)
-    pgroot = aliases.enter_context(ascii_pg_path(root))
-    pg = aliases.enter_context(ascii_pg_path(args.postgres_dir.resolve())) / 'bin' 
+    pgroot = root
+    pg = args.postgres_dir.resolve() / 'bin'
     ext = '.exe' if os.name == 'nt' else ''
     ctl = pg / ('pg_ctl' + ext)
     cluster = pgroot / 'postgres'
@@ -146,7 +98,6 @@ def main():
     finally:
         if started:
             run([ctl, '-D', cluster, '-m', 'fast', '-w', '-t', '60', 'stop'])
-        aliases.close()
         lock.close()
 
 

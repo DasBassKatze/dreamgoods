@@ -1,4 +1,4 @@
-# DreamGoods Desktop для Windows 10/11 x64
+# DreamGoods Desktop для Windows 10 (1903+)/11 x64
 
 Установщик `DreamGoods-Setup-0.11.0-x64.exe` собирается в GitHub Actions → **Windows desktop installer** → **Artifacts → DreamGoods-Windows-x64**.
 Распакуйте скачанный ZIP, запустите EXE, выберите папку. Права администратора, Docker, Python и Node.js на ПК не нужны.
@@ -39,6 +39,8 @@ npm ci
 npm run build
 cd ..
 # Скопируйте bin, lib, share, doc из PostgreSQL 17 в desktop/vendor/postgresql.
+python desktop/prepare_postgres.py desktop/vendor/postgresql
+python desktop/smoke_backend.py
 pyinstaller --noconfirm desktop/backend.spec
 cd desktop
 npm ci

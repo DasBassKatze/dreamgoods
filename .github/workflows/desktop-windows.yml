@@ -37,6 +37,10 @@ jobs:
           New-Item -ItemType Directory -Force desktop/vendor/postgresql/doc | Out-Null
           & "$source\bin\postgres.exe" --version | Out-File desktop/vendor/postgresql/doc/bundled-version.txt
           Get-FileHash desktop/vendor/postgresql/bin/postgres.exe | Format-List | Out-File desktop/vendor/postgresql/doc/bundled-sha256.txt
+      - name: Enable UTF-8 paths in bundled PostgreSQL
+        run: python desktop/prepare_postgres.py desktop/vendor/postgresql
+      - name: Check Unicode database startup before packaging
+        run: python desktop/smoke_backend.py
       - name: Freeze server and migrations
         run: pyinstaller --noconfirm desktop/backend.spec
       - run: npm ci
