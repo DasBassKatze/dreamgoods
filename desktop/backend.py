@@ -23,6 +23,8 @@ def run(command, **kwargs):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'): stream.reconfigure(encoding='utf-8', errors='replace')
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-dir', type=Path, required=True)
@@ -69,6 +71,8 @@ def main():
     if (cluster / 'postmaster.pid').exists() and run([ctl, '-D', cluster, 'status'], check=False).returncode == 0:
         run([ctl, '-D', cluster, '-m', 'fast', '-w', 'stop'])
     dbport = free_port()
+    while dbport == args.port:
+        dbport = free_port()
     env = dict(os.environ, PGPASSWORD=password, PGCONNECT_TIMEOUT='5')
     started = False
     try:

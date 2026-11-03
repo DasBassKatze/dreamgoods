@@ -8,6 +8,8 @@ import tempfile
 import time
 import urllib.request
 
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 repo = Path(__file__).resolve().parent.parent
 root = Path(tempfile.mkdtemp(prefix='DreamGoods-проверка '))
 with socket.socket() as sock:
