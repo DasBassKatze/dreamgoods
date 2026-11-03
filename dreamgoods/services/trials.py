@@ -29,9 +29,13 @@ def _signature(s,products):
             [persona.id,persona.description,persona.style,[str(a.id) for a in persona_assets]] if persona else None,
             [style.id,style.description,style.note,[str(a.id) for a in style_assets]] if style else None,
         ]
+        for f in frames:
+            if f.shot_reference_id:
+                ref, assets = style_for(s,p,st,f.shot_reference_id)
+                appearance.append([ref.id,ref.description,ref.note,[str(a.id) for a in assets]])
         values.append([p.id,p.current_profile_id,profile.data if profile else None,p.label_data,st,appearance,
                        [[str(x.asset_id),x.is_reference,x.role] for x in photos],
-                       [[f.id,f.prompt,f.model,f.block] for f in frames]])
+                       [[f.id,f.prompt,f.model,f.block,f.shot_reference_id] for f in frames]])
     return hashlib.sha256(json.dumps(values,sort_keys=True,default=str).encode()).hexdigest()
 
 

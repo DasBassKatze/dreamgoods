@@ -26,6 +26,8 @@ ACTIVE = ("queued", "running", "cancelling", "paused")
 HANDLERS = {}          # kind → функция(job_id); заполняет workers/__init__.py
 
 _wake = threading.Event()
+_shutdown = threading.Event()
+_worker_threads = []
 
 
 def enqueue(s, kind, project_id, product_id=None, frame_id=None, payload=None, priority=100, batch_id=None):
@@ -159,6 +161,8 @@ def _claim(worker):
             s.execute(text("SELECT pg_advisory_xact_lock(7430019)"))
         offset = 0
         while True:
+            if _shutdown.is_set():
+                return None
             cands = s.scalars(select(Job).outerjoin(Project, Project.id == Job.project_id)
                               .where(Job.status == "queued", ~select(BudgetBatch.id).where(
                                   BudgetBatch.id == Job.batch_id, BudgetBatch.state == "paused").exists()).order_by(Job.priority, busy, Job.id)
@@ -309,7 +313,7 @@ def _run_handler(job_id, kind):
 
 
 def _worker(name, idx=1):
-    while True:
+    while not _shutdown.is_set():
         if idx > parallel():          # «лишние» потоки спят, пока админ не разрешит больше параллельных заданий
             time.sleep(3)
             continue
@@ -343,6 +347,16 @@ def _worker(name, idx=1):
 def start_workers(n=None):
     n = n or MAX_WORKERS
     for i in range(1, n + 1):
-        threading.Thread(target=_worker, args=(f"worker-{i}", i), daemon=True, name=f"worker-{i}").start()
+        thread = threading.Thread(target=_worker, args=(f"worker-{i}", i), daemon=True, name=f"worker-{i}")
+        _worker_threads.append(thread)
+        thread.start()
     log.info("Очередь: одновременных заданий %d (можно до %d — меняется в админ-панели)", parallel(), n)
 
+
+
+def shutdown_workers():
+    """Desktop: stop claiming jobs and finish already paid work before stopping PostgreSQL."""
+    _shutdown.set()
+    _wake.set()
+    for thread in _worker_threads:
+        thread.join()

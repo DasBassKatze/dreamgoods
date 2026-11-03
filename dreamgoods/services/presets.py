@@ -142,6 +142,12 @@ def save(project_id, preset_id, data, master=False):
         p.plan = P.clean_plan(data.get("plan"))
         p.plan_mode = "manual" if data.get("plan_mode") == "manual" else "auto"
         p.manual = P.clean_manual(data.get("manual"))
+        from .styles import _ref
+        for item in p.manual:
+            if item.get("reference_id"):
+                _ref(s, project_id, item["reference_id"])
+                if p.client_id is None:
+                    raise ValueError("референс клиента можно сохранить только в собственном пресете")
         p.block_models = P.clean_block_models(data.get("block_models"))
         p.market = P.clean_market(data.get("market"))
         p.strictness = data.get("strictness") if data.get("strictness") in P.STRICTNESS else "normal"
@@ -310,3 +316,4 @@ def _fallback_plan(s, project_id):
     if pr and not pr.archived:
         return P.clean_plan(pr.plan)
     return P.plan_of(effective(org_of_project(s, project_id), project))
+

@@ -1,7 +1,7 @@
 name: Dev-GPT checks
 on:
   push:
-    branches: [Dev-GPT, dev-gpt]
+    branches: [Dev-GPT, dev-gpt, desktop-windows]
   pull_request:
     branches: [dev-ui, main]
 jobs:

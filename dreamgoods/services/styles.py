@@ -91,6 +91,17 @@ def _count(s, ref_id):
 
 
 def upload_photo(project_id, ref_id, data, filename):
+    import io
+    from PIL import Image, UnidentifiedImageError
+    if not data or len(data) > 20 * 1024 * 1024:
+        raise ValueError("размер референса: не больше 20 МБ")
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            if im.width * im.height > 40_000_000:
+                raise ValueError("референс слишком большой: максимум 40 мегапикселей")
+            im.verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as e:
+        raise ValueError("не удалось прочитать изображение референса") from e
     with db.session() as s:
         r = _ref(s, project_id, ref_id)
         if _count(s, r.id) >= 3:
@@ -155,3 +166,4 @@ def set_product(project_id, product_id, ref_id):
         if ref_id:
             _ref(s, project_id, ref_id)
         pr.style_ref_id = int(ref_id) if ref_id else None
+

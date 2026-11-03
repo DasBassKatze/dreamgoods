@@ -368,6 +368,8 @@ export interface PresetListing {
 }
 
 export interface ManualItem {
+  reference_id?: number;
+  reference_description?: string;
   title: string;
   prompt: string;
   block: BlockKey;

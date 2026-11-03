@@ -152,7 +152,9 @@ def clean_manual(items):
         total += n
         out.append({"title": (str(it.get("title") or "").strip() or "Кадр")[:60], "prompt": prompt,
                     "block": it.get("block") if it.get("block") in BLOCKS else "studio", "count": n,
-                    "model": str(it.get("model") or "").strip()[:120]})
+                    "model": str(it.get("model") or "").strip()[:120],
+                    "reference_id": max(0, int(it.get("reference_id") or 0)),
+                    "reference_description": str(it.get("reference_description") or "").strip()[:2000]})
     return out
 
 
@@ -262,3 +264,4 @@ def model_for(st, block_key, frame_model=""):
     if not m or m == st.get("model"):
         return st
     return dict(st, model=m, providers="")
+

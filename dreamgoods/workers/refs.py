@@ -34,14 +34,21 @@ def persona_for(s, product, st):
     return p, [x.asset for x in photos[:max(1, int(st.get("persona_refs") or 2))]]
 
 
-def style_for(s, product, st):
+def style_for(s, product, st, shot_reference_id=None):
     """Референс оформления товара: свой или проекта. Возвращает (StyleRef, [Asset]) или (None, [])."""
-    sid = product.style_ref_id or int(st.get("style_ref_id") or 0)
+    sid = shot_reference_id or product.style_ref_id or int(st.get("style_ref_id") or 0)
     r = s.get(StyleRef, sid) if sid else None
-    if not r or r.status != "ready":
+    if shot_reference_id:
+        from ..db.models import Project
+        project = s.get(Project, product.project_id)
+        if not r or r.client_id != project.client_id or r.status == "archived":
+            raise ValueError("референс метода недоступен — замените его в ручном плане")
+    if not r or (r.status != "ready" and not shot_reference_id):
         return None, []
     photos = s.scalars(select(StyleRefPhoto).where(StyleRefPhoto.style_ref_id == r.id)
                        .order_by(StyleRefPhoto.position, StyleRefPhoto.id).limit(2)).all()
+    if shot_reference_id and not photos:
+        raise ValueError("в референсе метода нет фото — загрузите его заново")
     return r, [x.asset for x in photos]
 
 
@@ -100,3 +107,4 @@ def _qc_refs(product_id, st, ids, trace):
         v2, n2 = labels.get(pid, (v, note))
         out.append({"url": _qc_url(a), "view": v2 or "", "note": n2 or ""})
     return out
+

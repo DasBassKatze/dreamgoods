@@ -1,0 +1,60 @@
+{
+  "name": "dreamgoods-desktop",
+  "version": "0.11.0",
+  "private": true,
+  "description": "DreamGoods — локальная студия карточек товаров",
+  "author": "DreamGoods",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "ru.dreamgoods.desktop",
+    "productName": "DreamGoods",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/DreamGoodsBackend",
+        "to": "backend"
+      },
+      {
+        "from": "vendor/postgresql",
+        "to": "postgresql",
+        "filter": [
+          "bin/**",
+          "lib/**",
+          "share/**",
+          "doc/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false,
+      "artifactName": "DreamGoods-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "ru_RU",
+        "en_US"
+      ]
+    }
+  }
+}

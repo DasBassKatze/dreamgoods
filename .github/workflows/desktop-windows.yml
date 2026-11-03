@@ -1,0 +1,79 @@
+name: Windows desktop installer
+on:
+  push:
+    branches: [desktop-windows]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install -r requirements.txt pyinstaller==6.19.0
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - name: Bundle private PostgreSQL 17 (runner distribution)
+        shell: pwsh
+        run: |
+          $source = 'C:\Program Files\PostgreSQL\17'
+          if (!(Test-Path "$source\bin\pg_ctl.exe")) { throw 'PostgreSQL 17 is missing on the build runner' }
+          New-Item -ItemType Directory -Force desktop/vendor/postgresql | Out-Null
+          foreach ($dir in @('bin','lib','share','doc')) {
+            if (Test-Path "$source\$dir") { Copy-Item "$source\$dir" desktop/vendor/postgresql -Recurse }
+          }
+          foreach ($dll in @('vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll','concrt140.dll')) {
+            if (Test-Path "$env:WINDIR\System32\$dll") { Copy-Item "$env:WINDIR\System32\$dll" desktop/vendor/postgresql/bin }
+          }
+          & "$source\bin\postgres.exe" --version | Out-File desktop/vendor/postgresql/doc/bundled-version.txt
+          Get-FileHash desktop/vendor/postgresql/bin/postgres.exe | Format-List | Out-File desktop/vendor/postgresql/doc/bundled-sha256.txt
+      - name: Freeze server and migrations
+        run: pyinstaller --noconfirm desktop/backend.spec
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run dist
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Install and smoke-test actual desktop twice (data survives restart)
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem desktop/release/DreamGoods-Setup-*.exe | Select-Object -First 1).FullName
+          $install = Join-Path $env:RUNNER_TEMP 'DreamGoods-installed'
+          $p = Start-Process $installer -ArgumentList @('/S',"/D=$install") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installer failed: $($p.ExitCode)" }
+          $env:DREAMGOODS_DESKTOP_DATA_DIR = Join-Path $env:RUNNER_TEMP 'DreamGoods-тест data'
+          $env:DREAMGOODS_DESKTOP_SMOKE = '1'
+          foreach ($attempt in 1..2) {
+            $p = Start-Process "$install\DreamGoods.exe" -PassThru
+            if (!$p.WaitForExit(240000)) { Stop-Process -Id $p.Id; throw 'Desktop timed out' }
+            if ($p.ExitCode -ne 0) { throw "Desktop failed: $($p.ExitCode)" }
+            $smoke = Get-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\smoke.json" | ConvertFrom-Json
+            if ($smoke.node -ne 'undefined') { throw 'Renderer has Node access' }
+            if (!(Test-Path "$env:DREAMGOODS_DESKTOP_DATA_DIR\postgres\PG_VERSION")) { throw 'No database created' }
+            if (Test-Path "$env:DREAMGOODS_DESKTOP_DATA_DIR\postgres\postmaster.pid") { throw 'Database did not stop' }
+            if ($attempt -eq 1) { Set-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\keep-me.txt" 'preserved' }
+            if ($attempt -eq 2 -and !(Test-Path "$env:DREAMGOODS_DESKTOP_DATA_DIR\keep-me.txt")) { throw 'Data was lost' }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-logs
+          path: |
+            ${{ runner.temp }}/DreamGoods-тест data/desktop.log
+            ${{ runner.temp }}/DreamGoods-тест data/postgres.log
+            ${{ runner.temp }}/DreamGoods-тест data/smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DreamGoods-Windows-x64
+          path: desktop/release/DreamGoods-Setup-*.exe
+          retention-days: 90

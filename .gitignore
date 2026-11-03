@@ -27,3 +27,11 @@ desktop.ini
 .vscode/
 
 .pytest_cache/
+
+# desktop build outputs
+desktop/node_modules/
+desktop/vendor/
+desktop/release/
+desktop/dev-resources/
+build/
+dist/

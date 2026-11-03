@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+import { ManualReference } from "./ManualReference";
 import type { BlockKey, CatalogModel, ManualItem, PresetListing } from "../../api/types";
 import { ModelSelect } from "./ModelSelect";
 
@@ -27,7 +29,9 @@ interface Props {
 
 /** Ручной план: свои методы съёмки — название, промпт, тип кадра, количество, своя модель. */
 export function ManualPlan({ listing, items, onChange, models, baseModel, blockModels, resolution }: Props) {
-  const set = (i: number, patch: Partial<ManualItem>) => onChange(items.map((it, n) => (n === i ? { ...it, ...patch } : it)));
+  const latest = useRef(items); latest.current = items;
+  const [uploading, setUploading] = useState(false);
+  const set = (i: number, patch: Partial<ManualItem>) => onChange(latest.current.map((it, n) => (n === i ? { ...it, ...patch } : it)));
   const move = (i: number, d: number) => {
     const j = i + d;
     if (j < 0 || j >= items.length) return;
@@ -59,12 +63,13 @@ export function ManualPlan({ listing, items, onChange, models, baseModel, blockM
               <span className="hint">шт.</span>
             </div>
             <span className="spacer" />
-            <button title="Выше" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
-            <button title="Ниже" onClick={() => move(i, 1)} disabled={i === items.length - 1}>↓</button>
-            <button className="danger" title="Удалить метод" onClick={() => onChange(items.filter((_, n) => n !== i))}>✕</button>
+            <button title="Выше" onClick={() => move(i, -1)} disabled={uploading || i === 0}>↑</button>
+            <button title="Ниже" onClick={() => move(i, 1)} disabled={uploading || i === items.length - 1}>↓</button>
+            <button disabled={uploading} className="danger" title="Удалить метод" onClick={() => onChange(items.filter((_, n) => n !== i))}>✕</button>
           </div>
           <textarea className="short" value={it.prompt} placeholder="как снимать: сцена, ракурс, свет, поза…"
             onChange={(e) => set(i, { prompt: e.target.value })} />
+          <ManualReference locked={uploading} item={it} onChange={patch => set(i, patch)} onBusy={setUploading} />
           <div className="mi-model">
             <span className="form-label">Модель для генерации</span>
             <ModelSelect value={it.model} onChange={(m) => set(i, { model: m })} models={models}
@@ -84,3 +89,4 @@ export function ManualPlan({ listing, items, onChange, models, baseModel, blockM
     </div>
   );
 }
+

@@ -52,7 +52,7 @@ def test_upgrade_preserves_data_and_handles_legacy_0013(monkeypatch, legacy):
             assert c.scalar(text('SELECT status FROM paid_operations'))=='uncertain'
             assert c.scalar(text('SELECT paid_operation_id FROM generations WHERE id=:id'),{'id':gid})==f'legacy-{gid}'
             assert float(c.scalar(text('SELECT balance_rub FROM clients WHERE id=1'))) == pytest.approx(123.45)
-            assert c.scalar(text('SELECT version_num FROM alembic_version')) == '0020'
+            assert c.scalar(text('SELECT version_num FROM alembic_version')) == '0021'
             assert inspect(c).has_table('topup_requests')
             assert 'months' in {x['name'] for x in inspect(c).get_columns('topup_requests')}
             assert inspect(c).get_columns('clients')[0] is not None

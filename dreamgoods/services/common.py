@@ -146,17 +146,25 @@ def plan_rows(s, product, prof, plan=None):
     return [(t, "", "", "") for t in prompts.build_prompts(prof, plan, st.get("market"))]
 
 
+def shot_references(s, product):
+    st = context(s, product)[2]
+    if st.get("plan_mode") != "manual":
+        return []
+    return [it.get("reference_id") or None for it in presets.clean_manual(st.get("manual")) for _ in range(it["count"])]
+
+
 def frames_differ(s, product, rows, keep_edited=True):
     """Сколько кадров товара разойдётся с планом пресета: (изменятся/добавятся, уже готовых из них — переснимутся)."""
     frames = {f.position: f for f in s.scalars(select(Frame).where(Frame.product_id == product.id, Frame.status != "retired")).all()}
     changed = redo = 0
+    refs = shot_references(s, product)
     for i, (text, title, _, model) in enumerate(rows, 1):
         f = frames.get(i)
         if f is None:
             changed += 1
-        elif (f.prompt != text and not (keep_edited and f.prompt_edited)) or (f.title or "") != title or (f.model or "") != model:
+        elif f.shot_reference_id != (refs[i-1] if i <= len(refs) else None) or (f.prompt != text and not (keep_edited and f.prompt_edited)) or (f.title or "") != title or (f.model or "") != model:
             changed += 1
-            redo += bool(f.current_generation_id) and f.prompt != text and not (keep_edited and f.prompt_edited)
+            redo += bool(f.current_generation_id) and (f.shot_reference_id != (refs[i-1] if i <= len(refs) else None) or (f.prompt != text and not (keep_edited and f.prompt_edited)))
     extra = [f for pos, f in frames.items() if pos > len(rows)]
     return changed + len(extra), redo + sum(1 for f in extra if f.current_generation_id)
 
@@ -166,14 +174,20 @@ def rebuild_frames(s, product, prof, plan=None, keep_edited=False):
     уходит в историю (не удаляется), а кадр становится «не сгенерирован». Кадры с историей не удаляются.
     keep_edited — не трогать промпты, исправленные вручную (при автоматической сверке перед генерацией)."""
     rows = plan_rows(s, product, prof, plan)
+    refs = shot_references(s, product)
     frames = {f.position: f for f in s.scalars(select(Frame).where(Frame.product_id == product.id)).all()}
     for i, (text, title, _, model) in enumerate(rows, 1):
         f = frames.get(i)
+        reference_id = refs[i-1] if i <= len(refs) else None
         if f:
+            reference_changed = f.shot_reference_id != reference_id
+            if keep_edited and f.prompt_edited:
+                text = f.prompt
+            f.shot_reference_id = reference_id
             f.title, f.model = title, model
-            if keep_edited and f.prompt_edited and f.status != "retired":
+            if keep_edited and f.prompt_edited and f.status != "retired" and not reference_changed:
                 continue
-            if f.prompt != text and f.current_generation_id:
+            if (f.prompt != text or reference_changed) and f.current_generation_id:
                 g = s.get(Generation, f.current_generation_id)
                 if g:
                     g.outcome = "archived"
@@ -183,7 +197,7 @@ def rebuild_frames(s, product, prof, plan=None, keep_edited=False):
                 f.status = "missing"
         else:
             s.add(Frame(product_id=product.id, position=i, prompt=text, prompt_source="profile", block=prompts.block_of(text),
-                        title=title, model=model))
+                        title=title, model=model, shot_reference_id=reference_id))
     for pos, f in frames.items():
         if pos > len(rows):
             has = s.scalar(select(Generation.id).where(Generation.frame_id == f.id).limit(1))

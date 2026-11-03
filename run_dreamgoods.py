@@ -26,7 +26,7 @@ def _has(module):
     return importlib.util.find_spec(module) is not None
 
 
-def main():
+def main(stop_event=None):
     setup_logging()
     where = f"S3 {config.S3_ENDPOINT}/{config.S3_BUCKET}" if config.STORAGE == "s3" else f"папка {config.STORAGE_DIR}"
     log.info("DreamGoods %s · база %s · файлы: %s", __import__("dreamgoods").__version__, config.DATABASE_URL.split("@")[-1], where)
@@ -128,7 +128,19 @@ def main():
     log.info("DreamGoods запущен: %s  (остановить: Ctrl+C)", url)
     if "--no-browser" not in sys.argv:
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
-    uvicorn.run("dreamgoods.api.app:app", host=config.HOST, port=config.PORT, log_level="warning")
+    server = uvicorn.Server(uvicorn.Config("dreamgoods.api.app:app", host=config.HOST, port=config.PORT, log_level="warning"))
+    if stop_event is not None:
+        def shutdown():
+            stop_event.wait()
+            server.should_exit = True
+        threading.Thread(target=shutdown, daemon=True).start()
+    try:
+        server.run()
+    finally:
+        if stop_event is not None:
+            from dreamgoods.workers.queue import shutdown_workers
+            shutdown_workers()
+            db.engine.dispose()
 
 
 if __name__ == "__main__":

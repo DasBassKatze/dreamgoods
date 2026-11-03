@@ -346,6 +346,7 @@ class Frame(TS, Base):
     title: Mapped[str] = mapped_column(String(80), default="", server_default="")    # подпись ручного метода съёмки
     model: Mapped[str] = mapped_column(String(120), default="", server_default="")   # своя модель ручного метода
     prompt: Mapped[str] = mapped_column(Text)
+    shot_reference_id: Mapped[int | None] = mapped_column(ForeignKey("style_refs.id", ondelete="SET NULL"), nullable=True)
     prompt_source: Mapped[str] = mapped_column(String(20), default="profile")   # profile | manual | legacy
     prompt_edited: Mapped[bool] = mapped_column(Boolean, default=False)
     current_generation_id: Mapped[int | None] = mapped_column(ForeignKey("generations.id", ondelete="SET NULL",

@@ -310,6 +310,8 @@ def build_manual(prof, items, market=None):
     rows, first = [], True
     for it in items:
         text = it["prompt"].replace("{товар}", f"the {noun}").replace("{product}", f"the {noun}").strip().rstrip(".")
+        if it.get("reference_description"):
+            text += ". Reference composition and lighting: " + it["reference_description"].strip().rstrip(".")
         for i in range(1, it["count"] + 1):
             var = (f" Variant {i} of {it['count']}: vary the camera angle and pose slightly, keep the same idea."
                    if it["count"] > 1 else "")
@@ -472,3 +474,4 @@ def edit_prompt(instruction, n_product, person=False):
             "angle, crop, lighting, colors, background and props. The product must remain identical to the real product "
             "— never redesign, recolor, simplify or invent details of it." + keep_person + refs +
             "\nReturn one photorealistic photo with the same aspect ratio, no text, no watermarks, no collages.")
+

@@ -71,8 +71,10 @@ def handle(job_id):
                                    else (None, []))
         persona_name, persona_desc = (persona.name, persona.description) if persona else ("", "")
         persona_style = dict(persona.style or {}) if persona else {}
-        sref, style_assets = style_for(s, product, st) if not edit else (None, [])
-        if sref and not styleref.applies(P.block_of(base_prompt), sref.blocks, "main marketplace cover" in base_prompt.lower()):
+        sref, style_assets = style_for(s, product, st, frame.shot_reference_id) if not edit else (None, [])
+        if sref and not frame.shot_reference_id and not styleref.applies(P.block_of(base_prompt), sref.blocks, "main marketplace cover" in base_prompt.lower()):
+            sref, style_assets = None, []
+        if "main marketplace cover" in base_prompt.lower():
             sref, style_assets = None, []
         style_name, style_desc, style_note = (sref.name, sref.description, sref.note) if sref else ("", "", "")
         emotion, anchor_id = "", None
