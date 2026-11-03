@@ -51,6 +51,7 @@ interface Props {
 export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onApply }: Props) {
   const { state, api } = useProject();
   const [d, setD] = useState<Draft>(initial);
+  const [referenceBusy, setReferenceBusy] = useState(false);
   const [models, setModels] = useState<CatalogModel[] | null>(null);
   useEffect(() => {
     api.catalog("image").then((r) => setModels(r.models || [])).catch(() => setModels([]));
@@ -213,7 +214,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         {manual ? (
           <>
             <label className="form-label">Методы съёмки</label>
-            <ManualPlan listing={listing} items={d.manual} onChange={(m) => setD({ ...d, manual: m })} models={models} baseModel={baseModel}
+            <ManualPlan listing={listing} items={d.manual} onBusy={setReferenceBusy} onChange={(m) => setD(current => ({ ...current, manual: m }))} models={models} baseModel={baseModel}
               blockModels={d.block_models} resolution={resolution} />
           </>
         ) : (
@@ -241,7 +242,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         {onDelete && <button className="danger" onClick={onDelete}>Удалить</button>}
         <span className="spacer" />
         {onApply && !changed && <button onClick={onApply}>Применить к товарам…</button>}
-        <button className="primary" disabled={!changed && !isNew || !total || !d.name.trim() || coverProblem} onClick={() => onSave(d)}>
+        <button className="primary" disabled={referenceBusy || !changed && !isNew || !total || !d.name.trim() || coverProblem} onClick={() => onSave(d)}>
           {isNew ? "Создать пресет" : "Сохранить"}
         </button>
       </div>
@@ -287,3 +288,4 @@ function PlanRow({ label, hint, max, value, onChange }: { label: string; hint: s
     </>
   );
 }
+

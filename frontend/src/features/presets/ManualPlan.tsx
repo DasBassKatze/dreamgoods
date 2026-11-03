@@ -25,10 +25,11 @@ interface Props {
   baseModel: string;
   blockModels?: Partial<Record<string, string>>;
   resolution?: string;
+  onBusy?: (busy: boolean) => void;
 }
 
 /** Ручной план: свои методы съёмки — название, промпт, тип кадра, количество, своя модель. */
-export function ManualPlan({ listing, items, onChange, models, baseModel, blockModels, resolution }: Props) {
+export function ManualPlan({ listing, items, onChange, models, baseModel, blockModels, resolution, onBusy }: Props) {
   const latest = useRef(items); latest.current = items;
   const [uploading, setUploading] = useState(false);
   const set = (i: number, patch: Partial<ManualItem>) => onChange(latest.current.map((it, n) => (n === i ? { ...it, ...patch } : it)));
@@ -69,7 +70,7 @@ export function ManualPlan({ listing, items, onChange, models, baseModel, blockM
           </div>
           <textarea className="short" value={it.prompt} placeholder="как снимать: сцена, ракурс, свет, поза…"
             onChange={(e) => set(i, { prompt: e.target.value })} />
-          <ManualReference locked={uploading} item={it} onChange={patch => set(i, patch)} onBusy={setUploading} />
+          <ManualReference locked={uploading} item={it} onChange={patch => set(i, patch)} onBusy={busy => { setUploading(busy); onBusy?.(busy); }} />
           <div className="mi-model">
             <span className="form-label">Модель для генерации</span>
             <ModelSelect value={it.model} onChange={(m) => set(i, { model: m })} models={models}

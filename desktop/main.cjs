@@ -6,8 +6,8 @@ const net = require('node:net');
 const http = require('node:http');
 let backend, win, splash, quitting = false, backendEnded = false;
 const dataDir = process.env.DREAMGOODS_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'DreamGoodsDesktop');
+fs.mkdirSync(path.join(dataDir, 'window'), { recursive: true });
 app.setPath('userData', path.join(dataDir, 'window'));
-fs.mkdirSync(dataDir, { recursive: true });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => { if (win) { win.restore(); win.show(); win.focus(); } });
@@ -49,7 +49,7 @@ async function start() {
   backend = spawn(exe, ['--data-dir', dataDir, '--postgres-dir', path.join(resources, 'postgresql'), '--port', String(port)],
     { stdio: ['pipe', log, log], windowsHide: true, cwd: dataDir });
   fs.closeSync(log);
-  backend.on('error', fail);
+  backend.on('error', error => { backendEnded = true; void fail(error); });
   backend.on('exit', code => {
     backendEnded = true;
     if (quitting) app.exit(process.exitCode || 0);
@@ -83,7 +83,10 @@ async function start() {
   await win.loadURL(`${origin}/studio`);
   // CI verifies an actual packaged window, HTTP API and isolated renderer; no paid calls.
   if (process.env.DREAMGOODS_DESKTOP_SMOKE === '1') {
-    const result = await win.webContents.executeJavaScript(`({title:document.title, node:typeof require, body:document.body.innerText.length, origin:location.origin})`);
+    const result = await win.webContents.executeJavaScript(`(async () => {
+      for(let i=0; i<300 && document.body.innerText.length < 30; i++) await new Promise(r => setTimeout(r,100));
+      return {title:document.title, node:typeof require, body:document.body.innerText.length, origin:location.origin};
+    })()`);
     if (result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
     const project = await win.webContents.executeJavaScript(`(async () => {
       const login = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin',password:'admin'})});
