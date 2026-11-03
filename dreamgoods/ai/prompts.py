@@ -310,8 +310,6 @@ def build_manual(prof, items, market=None):
     rows, first = [], True
     for it in items:
         text = it["prompt"].replace("{товар}", f"the {noun}").replace("{product}", f"the {noun}").strip().rstrip(".")
-        if it.get("reference_description"):
-            text += ". Reference composition and lighting: " + it["reference_description"].strip().rstrip(".")
         for i in range(1, it["count"] + 1):
             var = (f" Variant {i} of {it['count']}: vary the camera angle and pose slightly, keep the same idea."
                    if it["count"] > 1 else "")
@@ -335,7 +333,9 @@ def build_manual(prof, items, market=None):
             else:
                 head = (f"Vertical full-body fashion photo. Model: {person}, tasteful high-fashion editorial style. "
                         f"The {noun} {be} sharp and fully visible. {anatomy}")
-            rows.append((f"{lock} {head} Shot: {text}.{var} {TAIL}", it["title"], b, it.get("model") or ""))
+            ref_hint = (" Reference composition and lighting: " + it["reference_description"].strip().rstrip(".") + "."
+                        if it.get("reference_description") and "Main marketplace cover photo" not in head else "")
+            rows.append((f"{lock} {head} Shot: {text}.{ref_hint}{var} {TAIL}", it["title"], b, it.get("model") or ""))
             first = False
     return rows
 

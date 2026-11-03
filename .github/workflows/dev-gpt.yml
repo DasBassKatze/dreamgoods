@@ -47,3 +47,9 @@ jobs:
           'PLAYWRIGHT_MODULE="$(dirname "$(readlink -f "$(command -v playwright)")")"
           CHROME_BIN="$(command -v google-chrome || command -v chromium)"
           node tests/browser-budget-smoke.cjs'
+      - name: Browser manual reference smoke test (mocked paid AI)
+        run: >-
+          npm exec --yes --package=playwright@1.51.1 -- sh -c
+          'PLAYWRIGHT_MODULE="$(dirname "$(readlink -f "$(command -v playwright)")")"
+          CHROME_BIN="$(command -v google-chrome || command -v chromium)"
+          node tests/browser-manual-reference-smoke.cjs'

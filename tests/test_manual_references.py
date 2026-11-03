@@ -61,3 +61,11 @@ def test_upload_rejects_bad_or_oversized_reference(database):
     rid=styles.create(ids['project'],'Ref','',[])
     with pytest.raises(ValueError,match='прочитать'): styles.upload_photo(ids['project'],rid,b'not an image','x.png')
     with pytest.raises(ValueError,match='20'): styles.upload_photo(ids['project'],rid,b'X'*(20*1024*1024+1),'x.png')
+
+
+def test_reference_only_method_and_cover_rules():
+    item=P.clean_manual([dict(reference_id=7,reference_description='neon purple wall',block='studio',count=2)])[0]
+    assert item['prompt']
+    rows=prompts.build_manual({'noun':'shoe'},[item],{'cover':True,'name':'WB'})
+    assert 'neon purple wall' not in rows[0][0]
+    assert 'neon purple wall' in rows[1][0]

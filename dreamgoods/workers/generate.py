@@ -77,6 +77,8 @@ def handle(job_id):
         if "main marketplace cover" in base_prompt.lower():
             sref, style_assets = None, []
         style_name, style_desc, style_note = (sref.name, sref.description, sref.note) if sref else ("", "", "")
+        if frame.shot_reference_id:
+            style_desc, style_note = "", ""  # editable method brief is already in the frame prompt
         emotion, anchor_id = "", None
         if not edit and st.get("series", True):     # серия товара как одна фотосессия (ai/series.py)
             mates = s.scalars(select(Frame).where(Frame.product_id == product.id, Frame.status != "retired")

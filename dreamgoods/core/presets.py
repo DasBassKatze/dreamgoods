@@ -143,6 +143,8 @@ def clean_manual(items):
         if not isinstance(it, dict):
             continue
         prompt = str(it.get("prompt") or "").strip()[:2000]
+        if not prompt and it.get("reference_id"):
+            prompt = "Follow the shooting reference composition and lighting; retain the original product identity"
         if not prompt:
             continue
         n = max(1, min(MANUAL_MAX_COUNT, int(it.get("count") or 1)))

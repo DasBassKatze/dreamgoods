@@ -85,7 +85,20 @@ async function start() {
   if (process.env.DREAMGOODS_DESKTOP_SMOKE === '1') {
     const result = await win.webContents.executeJavaScript(`({title:document.title, node:typeof require, body:document.body.innerText.length, origin:location.origin})`);
     if (result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
-    fs.writeFileSync(path.join(dataDir, 'smoke.json'), JSON.stringify(result));
+    const project = await win.webContents.executeJavaScript(`(async () => {
+      const login = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin',password:'admin'})});
+      if (!login.ok) throw new Error('Local login failed');
+      const r = await fetch('/api/projects');
+      if (!r.ok) throw new Error('Projects API failed');
+      const body = await r.json();
+      const project = body.projects[0];
+      if (!project) throw new Error('Default project missing');
+      return {id:project.id, name:project.name};
+    })()`);
+    const marker = path.join(dataDir, 'smoke-project.json');
+    if (fs.existsSync(marker) && JSON.parse(fs.readFileSync(marker, 'utf8')).id !== project.id) throw new Error('Project did not survive restart');
+    fs.writeFileSync(marker, JSON.stringify(project));
+    fs.writeFileSync(path.join(dataDir, 'smoke.json'), JSON.stringify({ ...result, project }));
     app.quit();
   }
 }
