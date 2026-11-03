@@ -1,5 +1,7 @@
 """Build smoke: exercise Unicode data paths before spending time packaging the installer."""
 import os
+import json
+import http.cookiejar
 from pathlib import Path
 import socket
 import subprocess
@@ -30,7 +32,13 @@ with (root/'smoke-backend.log').open('w',encoding='utf-8') as log:
                 pass
             if time.monotonic()>until: raise RuntimeError('Backend startup timed out')
             time.sleep(.2)
-    except Exception:
+        opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        request=urllib.request.Request(f'http://127.0.0.1:{port}/api/auth/login',data=json.dumps({'email':'admin','password':'admin'}).encode(),headers={'Content-Type':'application/json'})
+        with opener.open(request,timeout=10) as response: assert response.status==200
+        with opener.open(f'http://127.0.0.1:{port}/api/projects',timeout=10) as response:
+            assert json.load(response)['projects'], 'No initial projects'
+    except Exception as error:
+        if isinstance(error,urllib.error.HTTPError): print(error.read().decode('utf-8','replace'))
         log.flush()
         for name in ('smoke-backend.log','postgres.log'):
             if (root/name).exists(): print((root/name).read_text(encoding='utf-8',errors='replace'))

@@ -87,12 +87,13 @@ async function start() {
       for(let i=0; i<300 && document.body.innerText.length < 30; i++) await new Promise(r => setTimeout(r,100));
       return {title:document.title, node:typeof require, body:document.body.innerText.length, origin:location.origin};
     })()`);
+    fs.appendFileSync(path.join(dataDir, 'desktop.log'), '[desktop smoke] ' + JSON.stringify(result) + '\n');
     if (result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
     const project = await win.webContents.executeJavaScript(`(async () => {
       const login = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin',password:'admin'})});
-      if (!login.ok) throw new Error('Local login failed');
+      if (!login.ok) throw new Error('Local login failed: ' + login.status + ' ' + await login.text());
       const r = await fetch('/api/projects');
-      if (!r.ok) throw new Error('Projects API failed');
+      if (!r.ok) throw new Error('Projects API failed: ' + r.status + ' ' + await r.text());
       const body = await r.json();
       const project = body.projects[0];
       if (!project) throw new Error('Default project missing');
@@ -106,6 +107,7 @@ async function start() {
   }
 }
 async function fail(error) {
+  fs.appendFileSync(path.join(dataDir, 'desktop.log'), '[desktop error] ' + (error.stack || String(error)) + '\n');
   if (quitting) return;
   if (process.env.DREAMGOODS_DESKTOP_SMOKE === '1') { console.error(error); process.exitCode = 1; app.quit(); return; }
   dialog.showErrorBox('DreamGoods: ошибка запуска', `${error.message}\n\nВаши данные сохранены. Журналы: ${dataDir}`);
