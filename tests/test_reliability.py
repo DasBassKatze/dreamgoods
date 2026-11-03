@@ -331,6 +331,8 @@ def test_local_bootstrap_keeps_default_login(database,monkeypatch,configured):
     with db.session() as s:
         u=s.scalar(select(User).where(User.role=='master'))
         assert u.email=='admin' and auth.check_password('admin',u.password_hash)
+    token,user=auth.login('admin','admin')
+    assert token and user.master
 
 
 def test_zero_markup_is_preserved(database):
@@ -346,3 +348,18 @@ def test_zero_markup_is_preserved(database):
 def test_invalid_expected_object_is_not_silently_dropped(database,monkeypatch,entity):
     monkeypatch.setattr(qc,'chat',lambda *a:({'people':0,'entities':[entity],'forbidden':[]},0,0))
     with pytest.raises(ValueError):qc.task_spec({'qc_model':'fake'},'two shoes',Trace('test'))
+
+
+def test_bootstrap_repairs_only_provisioned_master_without_changing_password(database,monkeypatch):
+    _,ids=database
+    monkeypatch.setattr(auth.config,'app_env',lambda name,default='':default)
+    original=auth.hash_password('saved-local-password')
+    with db.session() as s:
+        s.add(User(org_id=ids['org'],email='admin',role='master',password_hash=original))
+        s.add(User(org_id=ids['org'],email='unverified@example.test',role='user',password_hash=auth.hash_password('unchanged')))
+    auth.bootstrap_master(ids['org'])
+    with db.session() as s:
+        assert s.scalar(select(User).where(User.email=='admin')).password_hash==original
+        assert s.scalar(select(User).where(User.email=='unverified@example.test')).email_verified_at is None
+    assert auth.login('admin','saved-local-password')[1].master
+    with pytest.raises(auth.Forbidden,match='почта не подтверждена'): auth.login('unverified@example.test','unchanged')

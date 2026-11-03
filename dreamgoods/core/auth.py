@@ -242,6 +242,7 @@ def reset_master(org_id):
             s.add(u)
             s.flush()
         u.email, u.role, u.active, u.password_hash = email, "master", True, hash_password(password)
+        u.email_verified_at = utcnow()
         s.query(WebSession).filter(WebSession.user_id == u.id).delete()
     log.warning("Вход мастера сброшен: логин «%s», пароль из DREAMGOODS_ADMIN_PASSWORD в .env", email)
 
@@ -251,7 +252,12 @@ def bootstrap_master(org_id):
     email = config.app_env("ADMIN_EMAIL", "admin").strip().lower()
     password = config.app_env("ADMIN_PASSWORD", "admin") or "admin"
     with db.session() as s:
-        if s.scalar(select(User.id).where(User.role == "master", User.password_hash != "")):
+        existing = s.scalar(select(User).where(User.role == "master", User.password_hash != "").order_by(User.id))
+        if existing:
+            # Provisioned locally, not through public registration. Repair older
+            # bootstrap records without changing their password or other users.
+            if existing.email == email and existing.email_verified_at is None:
+                existing.email_verified_at = utcnow()
             return
         u = s.scalar(select(User).where(User.role == "master").order_by(User.id)) or \
             s.scalar(select(User).where(User.email == email))
@@ -259,6 +265,7 @@ def bootstrap_master(org_id):
             u = User(org_id=org_id, email=email, name="Мастер", role="master")
             s.add(u)
         u.email, u.role, u.active, u.password_hash = email, "master", True, hash_password(password)
+        u.email_verified_at = utcnow()
         if not u.name or u.name == "Владелец":
             u.name = "Мастер"
     log.warning("Создан мастер-аккаунт: логин «%s», пароль из DREAMGOODS_ADMIN_PASSWORD%s", email,
