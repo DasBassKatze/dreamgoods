@@ -5,7 +5,7 @@ from sqlalchemy import select
 from dreamgoods import db
 from dreamgoods.ai import prompts
 from dreamgoods.core import presets as P, storage
-from dreamgoods.db.models import Frame, StyleRef, StyleRefPhoto, Product, Project, Client, GenerationPreset, Generation
+from dreamgoods.db.models import Frame, StyleRef, StyleRefPhoto, Product, Project, Client, GenerationPreset, Generation, Job
 from dreamgoods.services import presets, styles
 from dreamgoods.services.common import rebuild_frames
 from dreamgoods.workers.refs import style_for
@@ -74,3 +74,19 @@ def test_reference_only_method_and_cover_rules():
     rows=prompts.build_manual({'noun':'shoe'},[item],{'cover':True,'name':'WB'})
     assert 'neon purple wall' not in rows[0][0]
     assert 'neon purple wall' in rows[1][0]
+
+
+def test_description_budget_pause_is_visible_and_explicitly_retryable(database):
+    _,ids=database
+    with db.session() as s:
+        ref=StyleRef(client_id=ids['client'],name='Shot',status='draft');s.add(ref);s.flush();rid=ref.id
+        s.add(StyleRefPhoto(style_ref_id=rid,asset=storage.put(s,ids['org'],b'photo','style','x.png'),position=1))
+        job=Job(project_id=ids['project'],kind='styleref',status='paused',error='Not enough available funds',payload={'style_ref_id':rid})
+        s.add(job);s.flush();jid=job.id
+    row=next(r for r in styles.listing(ids['project'])['refs'] if r['id']==rid)
+    assert row['job']['state']=='error' and row['job']['error']=='Not enough available funds'
+    styles.describe(ids['project'],rid)
+    with db.session() as s:
+        assert s.get(Job,jid).status=='cancelled'
+        assert len(s.scalars(select(Job).where(Job.kind=='styleref',Job.status=='queued')).all())==1
+    with pytest.raises(ValueError,match='уже идёт'): styles.describe(ids['project'],rid)

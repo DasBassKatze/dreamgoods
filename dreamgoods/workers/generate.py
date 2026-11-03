@@ -79,6 +79,9 @@ def handle(job_id):
         style_name, style_desc, style_note = (sref.name, sref.description, sref.note) if sref else ("", "", "")
         if frame.shot_reference_id:
             style_desc, style_note = "", ""  # editable method brief is already in the frame prompt
+            # A different method's anchor must not replace this explicit brief,
+            # lighting or pose. Product/persona identity references are retained.
+            st = dict(st, series=False)
         emotion, anchor_id = "", None
         if not edit and st.get("series", True):     # серия товара как одна фотосессия (ai/series.py)
             mates = s.scalars(select(Frame).where(Frame.product_id == product.id, Frame.status != "retired")

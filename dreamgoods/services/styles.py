@@ -55,7 +55,7 @@ def listing(project_id):
             out.append({"id": r.id, "name": r.name, "note": r.note, "description": r.description, "blocks": _blocks(r.blocks),
                         "status": r.status, "photos": by.get(r.id, []), "products": used.get(r.id, 0),
                         "is_default": r.id == default,
-                        "job": None if not j else {"state": "error" if j.status == "error" else "running", "error": j.error}})
+                        "job": None if not j else {"state": "error" if j.status in ("error", "paused") else "running", "error": j.error}})
         return {"refs": out, "default_id": default if default in ids else 0,
                 "blocks": [{"key": k, "name": v} for k, v in BLOCKS_RU.items()]}
 
@@ -130,11 +130,18 @@ def describe(project_id, ref_id):
     """ИИ разбирает стиль по фото и пожеланию клиента."""
     with db.session() as s:
         r = _ref(s, project_id, ref_id)
+        s.refresh(r, with_for_update=True)
         if not _count(s, r.id):
             raise ValueError("сначала загрузите фото-пример")
-        if s.scalar(select(Job.id).where(Job.kind == "styleref", Job.status.in_(LIVE),
-                                         Job.payload["style_ref_id"].as_integer() == r.id)):
+        active = s.scalars(select(Job).where(Job.kind == "styleref", Job.status.in_(LIVE),
+                                            Job.payload["style_ref_id"].as_integer() == r.id)).all()
+        if any(j.status != "paused" for j in active):
             raise ValueError("разбор уже идёт")
+        # A denied budget reserve sent no provider request. Retry only after an
+        # explicit paid click; do not leave the reference spinning indefinitely.
+        for j in active:
+            j.status = "cancelled"
+        s.flush()
         enqueue(s, "styleref", project_id, payload={"style_ref_id": r.id}, priority=15)
 
 
