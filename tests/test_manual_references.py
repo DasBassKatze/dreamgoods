@@ -5,7 +5,7 @@ from sqlalchemy import select
 from dreamgoods import db
 from dreamgoods.ai import prompts
 from dreamgoods.core import presets as P, storage
-from dreamgoods.db.models import Frame, StyleRef, StyleRefPhoto, Product, Project, Client, GenerationPreset
+from dreamgoods.db.models import Frame, StyleRef, StyleRefPhoto, Product, Project, Client, GenerationPreset, Generation
 from dreamgoods.services import presets, styles
 from dreamgoods.services.common import rebuild_frames
 from dreamgoods.workers.refs import style_for
@@ -51,9 +51,14 @@ def test_frame_rebuild_tracks_reference_and_rejects_archived(database,monkeypatc
         ref,assets=style_for(s,product,{},frame.shot_reference_id);assert ref.id==rid and len(assets)==1
         ref.status='archived';s.flush()
         with pytest.raises(ValueError,match='недоступен'): style_for(s,product,{},rid)
+        gen=Generation(frame_id=frame.id,status='ok',outcome='current');s.add(gen);s.flush()
+        frame.current_generation_id=gen.id
+        frame.prompt='My edited shooting instructions';frame.prompt_edited=True;frame.prompt_source='manual'
         manual[0]['reference_id']=0
-        rebuild_frames(s,product,{'noun':'shoe'})
+        rebuild_frames(s,product,{'noun':'shoe'},keep_edited=True)
         assert frame.shot_reference_id is None
+        assert frame.prompt=='My edited shooting instructions' and frame.prompt_edited
+        assert frame.current_generation_id is None and gen.outcome=='archived'
 
 
 def test_upload_rejects_bad_or_oversized_reference(database):

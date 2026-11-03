@@ -181,7 +181,8 @@ def rebuild_frames(s, product, prof, plan=None, keep_edited=False):
         reference_id = refs[i-1] if i <= len(refs) else None
         if f:
             reference_changed = f.shot_reference_id != reference_id
-            if keep_edited and f.prompt_edited:
+            preserve_prompt = keep_edited and f.prompt_edited
+            if preserve_prompt:
                 text = f.prompt
             f.shot_reference_id = reference_id
             f.title, f.model = title, model
@@ -192,7 +193,7 @@ def rebuild_frames(s, product, prof, plan=None, keep_edited=False):
                 if g:
                     g.outcome = "archived"
                 f.current_generation_id, f.status = None, "missing"
-            f.prompt, f.prompt_source, f.prompt_edited, f.block = text, "profile", False, prompts.block_of(text)
+            f.prompt, f.prompt_source, f.prompt_edited, f.block = text, (f.prompt_source if preserve_prompt else "profile"), preserve_prompt, prompts.block_of(text)
             if f.status == "retired":
                 f.status = "missing"
         else:
