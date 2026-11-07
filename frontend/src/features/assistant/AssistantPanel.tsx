@@ -44,7 +44,7 @@ export function AssistantPanel(p: Props) {
     window.addEventListener("keydown", escape);
     return () => { current = false; clearTimeout(timer); window.removeEventListener("keydown", escape); };
   }, [open, p.projectId]);
-  useEffect(() => { if (open && list.current) list.current.scrollTop = list.current.scrollHeight; }, [turns, busy, error, open]);
+  useEffect(() => { if (open && list.current) list.current.scrollTop = turns.length || busy || error ? list.current.scrollHeight : 0; }, [turns, busy, error, open]);
 
   const send = async (question = text) => {
     const message = question.trim();
@@ -98,10 +98,13 @@ export function AssistantPanel(p: Props) {
         {p.selected.length > 0 && <span> · {p.selected.slice(0, 5).map(v => v.sku).join(", ")}{p.selected.length > 5 ? " · первые 5 товаров" : ""}</span>}
       </div>
       <div className="assistant-messages" ref={list} role="log" aria-live="polite" aria-relevant="additions">
+        {config && !config.enabled && <div className="assistant-error">Помощник выключен в технических настройках.</div>}
+        {config && !config.configured && <div className="assistant-error">Для ответов ИИ нужен ключ Polza.
+          {p.master ? <button onClick={() => p.go("m-keys")}>Открыть ключи Polza</button> : " Обратитесь к администратору."}</div>}
         {!turns.length && <div className="assistant-welcome">
           <div className="assistant-orbit"><Icon name="spark" size={34} /></div>
           <h3>С чего начнём?</h3><p>Помогу разобраться с загрузкой, планом кадров и настройками. Вижу текущий раздел и выбранные товары.</p>
-          {["Как загрузить товары?", "Как добавить референс в план кадров?", "Что делать после обрыва генерации?"].map(q =>
+          {ready && ["Как загрузить товары?", "Как добавить референс в план кадров?", "Что делать после обрыва генерации?"].map(q =>
             <button key={q} disabled={!ready || busy} onClick={() => void send(q)}>{q}<span>↗</span></button>)}
         </div>}
         {turns.map((turn, i) => <div key={i} className={`assistant-turn ${turn.role}`}>
@@ -111,9 +114,7 @@ export function AssistantPanel(p: Props) {
         </div>)}
         {busy && <div className="assistant-thinking" role="status"><i /><i /><i /><span>Готовлю ответ…</span></div>}
         {(error || configError) && <div className="assistant-error" role="alert">{error || configError}</div>}
-        {config && !config.enabled && <div className="assistant-error">Помощник выключен в технических настройках.</div>}
-        {config && !config.configured && <div className="assistant-error">Для ответов ИИ нужен ключ Polza.
-          {p.master ? <button onClick={() => p.go("m-keys")}>Открыть ключи Polza</button> : " Обратитесь к администратору."}</div>}
+
       </div>
       <form className="assistant-compose" onSubmit={e => { e.preventDefault(); void send(); }}>
         <label className="sr-only" htmlFor="assistant-question">Вопрос помощнику</label>

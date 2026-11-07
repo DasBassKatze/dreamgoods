@@ -1,7 +1,7 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');const fs=require('fs'),http=require('http'),path=require('path'),assert=require('assert');
 const root=path.resolve(__dirname,'../dreamgoods/web');
 const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?')[0]);if(!fs.existsSync(p)||fs.statSync(p).isDirectory())p=path.join(root,'index.html');res.setHeader('Content-Type',p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(p));});
-(async()=>{await new Promise(r=>server.listen(43279,'127.0.0.1',r));const browser=await chromium.launch({executablePath:process.env.CHROME_BIN || undefined,headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));let started=null,resumed=null;let assistantRequests=[],assistantFail=false;let loggedIn=false,keyCalls=0,keyValue=100,deleted=[],removed=[];
+(async()=>{await new Promise(r=>server.listen(43279,'127.0.0.1',r));const browser=await chromium.launch({executablePath:process.env.CHROME_BIN || undefined,headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));let started=null,resumed=null;let assistantRequests=[],assistantFail=false,assistantConfigured=true;let loggedIn=false,keyCalls=0,keyValue=100,deleted=[],removed=[];
 await page.clock.install();
 await page.addInitScript(() => { window.dgDesktop={minimize:async()=>{},maximize:async()=>{},close:async()=>{},mode:async mode=>window.desktopMode=mode,state:async()=>({maximized:false})}; });
 const imported={id:7,project_id:1,status:'upload',count:2,progress:null,error:'',photos:[{id:1,name:'one.png',asset:'one',role:'product'},{id:2,name:'two.png',asset:'two',role:'product'}],groups:[],result:{}};
@@ -16,7 +16,7 @@ else if(p==='/api/auth/me')data={id:1,org_id:1,email:'test',name:'Тест',role
 else if(p==='/api/auth/storage')data={used:1024,quota:1e9};
 else if(p==='/api/projects')data={projects:[state.project]};
 else if(p.endsWith('/assistant')) {
-  if(route.request().method()==='GET')data={enabled:true,configured:true,model:'openai/gpt-4.1-mini',routes:{import:'Загрузка товаров',products:'Генерация',budgets:'Бюджеты'}};
+  if(route.request().method()==='GET')data={enabled:true,configured:assistantConfigured,model:'openai/gpt-4.1-mini',routes:{import:'Загрузка товаров',products:'Генерация',budgets:'Бюджеты'}};
   else {
     assistantRequests.push(route.request().postDataJSON());
     if(assistantFail){await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Нет связи с моделью'})});return;}
@@ -90,6 +90,15 @@ await page.screenshot({path:'/tmp/dgdesktop-assistant-mobile.png'});
 await page.setViewportSize({width:1440,height:960});
 await page.screenshot({path:'/tmp/dgdesktop-assistant.png'});
 await page.getByRole('button',{name:'Свернуть помощника',exact:true}).click();
+assistantConfigured=false;
+await page.setViewportSize({width:1024,height:720});
+await page.getByRole('button',{name:'Открыть ИИ-помощника',exact:true}).click();
+await page.getByRole('button',{name:'Открыть ключи Polza',exact:true}).waitFor();
+assert.equal(await page.locator('.assistant-messages').evaluate(e=>e.scrollTop),0);
+assert(await page.getByRole('heading',{name:'С чего начнём?',exact:true}).isVisible());
+await page.screenshot({path:'/tmp/dgdesktop-assistant-small.png'});
+await page.getByRole('button',{name:'Свернуть помощника',exact:true}).click();
+await page.setViewportSize({width:1440,height:960});
 await page.goto('http://127.0.0.1:43279/studio#/products');
 await page.getByRole('button',{name:'Удалить товар ART123'}).click();
 await page.getByRole('dialog').getByRole('button',{name:'Удалить',exact:true}).click();
