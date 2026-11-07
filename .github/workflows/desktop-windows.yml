@@ -95,6 +95,8 @@ jobs:
             Install-DreamGoods $previous
             Test-DreamGoods
             $credentials = (Get-FileHash "$env:DREAMGOODS_DESKTOP_DATA_DIR\database.json").Hash
+            $baselineVersion = 'legacy'
+            if (Test-Path "$env:DREAMGOODS_DESKTOP_DATA_DIR\application.json") { $baselineVersion = (Get-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\application.json" | ConvertFrom-Json).version }
           }
           Install-DreamGoods $installer
           Test-DreamGoods
@@ -102,7 +104,7 @@ jobs:
           $credentials = (Get-FileHash "$env:DREAMGOODS_DESKTOP_DATA_DIR\database.json").Hash
           $retention = Get-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\smoke-retention.json" -Raw
           $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
-          if (Test-Path $baseline) {
+          if ((Test-Path $baseline) -and $baselineVersion -ne $version) {
             $copies = Get-ChildItem "$env:DREAMGOODS_DESKTOP_DATA_DIR\backups" -Filter database.dump -Recurse
             if (!$copies) { throw 'Upgrade did not create database checkpoint' }
           }

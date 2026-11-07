@@ -69,6 +69,8 @@ await page.getByText('Добавьте фото и проверьте групп
 assert.equal(assistantRequests.length,1);
 assert.deepEqual(assistantRequests[0].product_ids,[11]);
 assert.equal(assistantRequests[0].route,'products');
+const desktopBox=await page.locator('.assistant-panel').boundingBox();assert(Math.abs(desktopBox.y+desktopBox.height-(960-84))<2);
+await page.screenshot({path:'/tmp/dgdesktop-assistant-conversation.png'});
 await page.locator('.assistant-actions').getByRole('button',{name:'Загрузка товаров'}).click();
 await page.waitForURL('**/studio#/import');
 assert.equal(await page.getByLabel('Вопрос помощнику').isVisible(),true);
