@@ -1,3 +1,4 @@
+import { DocumentLink } from "../../desktop/DocumentLink";
 import { useRef, useState } from "react";
 import { useUI } from "../../components/ui";
 import { rub } from "../../lib/format";
@@ -123,8 +124,7 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
             <label className="form-label">Согласие</label>
             <label className="check">
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> у меня есть согласие этого
-              человека на использование его фото для создания изображений товаров — <a href="/legal/persona_photo" target="_blank"
-                rel="noreferrer">что это значит</a>. Отметка сохраняется в журнале согласий
+              человека на использование его фото для создания изображений товаров — <DocumentLink kind="persona_photo">что это значит</DocumentLink>. Отметка сохраняется в журнале согласий
             </label>
           </>
         )}

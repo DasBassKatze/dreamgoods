@@ -44,3 +44,15 @@ def catalog(kind: str = "image", refresh: bool = False, pid: int = Depends(proje
     c = polza.image_models(force=refresh, kind="qc" if kind == "qc" else "image",
                            key=projects.project_settings(pid).get("api_key", ""))
     return {"models": c["models"], "error": c["error"]}
+
+
+@router.get("/key-status")
+def key_status(request: Request, pid: int = Depends(project_id)):
+    """Lightweight cached key status; no paid calls and no key secrets in response."""
+    admin.required(request)
+    key = projects.project_settings(pid).get("api_key") or ""
+    if not key:
+        return {"value": None, "error": "Ключ Polza не настроен", "checking": False, "checked_at": 0, "configured": False}
+    snapshot = dict(polza.balance(key))
+    return {"value": snapshot["value"], "error": snapshot["error"], "checking": snapshot["busy"],
+            "checked_at": snapshot["t"], "configured": True}

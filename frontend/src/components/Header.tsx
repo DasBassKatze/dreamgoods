@@ -1,3 +1,4 @@
+import { isDesktop } from "../desktop/runtime";
 import type { Dialogs } from "../App";
 import { api } from "../api/client";
 import { Icon } from "../layout/Icon";
@@ -16,6 +17,10 @@ export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
 
   const toggleNotify = async () => {
     const res = await setNotify(!notify);
+    if (isDesktop) {
+      ui.toast(res === "on" ? "Уведомления о готовности включены" : res === "off" ? "Уведомления выключены" : "Включён звуковой сигнал о готовности");
+      return;
+    }
     ui.toast(res === "on" ? "Уведомления включены: когда кадры будут готовы — сигнал и уведомление, даже если вкладка свёрнута"
       : res === "off" ? "Уведомления о готовности выключены"
         : res === "denied" ? "Включён звуковой сигнал. Системные уведомления браузер запретил — их можно разрешить в настройках сайта (значок слева от адреса)"

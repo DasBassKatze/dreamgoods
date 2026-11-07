@@ -25,6 +25,7 @@ export function KeysPage() {
   const act = (fn: () => Promise<unknown>, msg?: string) => async () => {
     try {
       await fn();
+      window.dispatchEvent(new Event("dg:key-status-changed"));
       if (msg) ui.toast(msg);
       load();
     } catch (e) {

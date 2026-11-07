@@ -27,7 +27,8 @@ small stickers. For EACH image return:
 Reply with ONLY one JSON object, no markdown:
 {"photos":[{"id":1,"article":"","codes":[],"text":""}]}"""
 
-VERIFY_PROMPT = """You check one group of a seller's photos that an automatic sorter put together as ONE product.
+VERIFY_PROMPT = """HARD RULE: photos with the same recognized article/model code must stay in ONE product, even across folders, colors, angles or shooting batches. Do not invent suffixes such as Article_2. Different explicit codes remain separate.
+You check one group of a seller's photos that an automatic sorter put together as ONE product.
 Photos are in shooting order; each is preceded by its id and its role (product / label / packaging).
 Decide which photos show the SAME physical product. Compare the model carefully: type, silhouette, shape of toe and
 heel, sole, height, fastening (zip, laces, buckles), decor, material and texture, color. Different angles, close-ups

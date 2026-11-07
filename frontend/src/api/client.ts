@@ -1,3 +1,5 @@
+import { isDesktop } from "../desktop/runtime";
+import type { KeyStatus } from "../hooks/useKeyStatus";
 // Тонкая обёртка над fetch и все вызовы API в одном месте.
 import type {
   ConsentRow,
@@ -63,7 +65,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     res = await fetch(path, init);
   } catch {
-    throw new ApiError("Нет связи с сервером. Проверьте, что окно консоли DreamGoods открыто.", 0);
+    throw new ApiError(isDesktop ? "Нет связи с приложением. Повторите попытку через несколько секунд." : "Нет связи с сервером. Проверьте, что окно консоли DreamGoods открыто.", 0);
   }
   let data: unknown = null;
   try {
@@ -76,6 +78,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (res.status === 401 && !path.startsWith("/api/auth/")) window.dispatchEvent(new Event(AUTH_EVENT));
     throw new ApiError(msg, res.status);
   }
+  if (method !== "GET" && (/\/settings$/.test(path) || path.includes("/api/admin/keys") || path.includes("/api/admin/clients"))) window.dispatchEvent(new Event("dg:key-status-changed"));
   return data as T;
 }
 
@@ -123,6 +126,8 @@ export interface Trial {id:number;frame_id:number;product_id:number;status:strin
 export function projectApi(id: number) {
   const p = `/api/projects/${id}`;
   return {
+    deleteProducts: (ids: number[]) => post<{ deleted: number; ids: number[] }>(`${p}/products/delete`, { product_ids: ids }),
+    removeImportFiles: (id: number, paths: string[]) => request<ImportView>("DELETE", `${p}/imports/${id}/files`, { paths }),
     state: () => get<ProjectState>(`${p}/state`),
     preflight: (productIds:number[]|null) => post<PreflightReport>(`${p}/preflight`, {product_ids:productIds}),
     trial: () => get<{trial:Trial|null}>(`${p}/trial`),
@@ -172,7 +177,7 @@ export function projectApi(id: number) {
       request<{ added: number; total: number }>("POST", `${p}/imports/${sid}/files?path=${encodeURIComponent(path)}`, file),
     analyzeImport: (sid: number, group_mode: string, label_mode: string, rules?: ImportRules) =>
       post<{ ok: true }>(`${p}/imports/${sid}/analyze`, { group_mode, label_mode, rules }),
-    applyImport: (sid: number, groups: { name: string; photos: [string, PhotoRole][]; description?: string; sort_error?: boolean }[], label_mode: string,
+    applyImport: (sid: number, groups: { name: string; article?: string; photos: [string, PhotoRole][]; description?: string; sort_error?: boolean }[], label_mode: string,
       auto_profile: boolean) =>
       post<ImportResult>(`${p}/imports/${sid}/apply`, { groups, label_mode, auto_profile }),
 
@@ -188,6 +193,7 @@ export function projectApi(id: number) {
     applyPreset: (id: number, body: { product_ids?: number[]; categories?: string[]; everything?: boolean;
       make_default?: boolean; rebuild?: boolean; dry_run?: boolean }) => post<PresetApplyResult>(`${p}/presets/${id}/apply`, body),
 
+    keyStatus: () => get<KeyStatus>(`${p}/key-status`),
     styles: () => get<StyleListing>(`${p}/styles`),
     createStyle: (body: { name?: string; note?: string; blocks?: string[] }) => post<{ id: number }>(`${p}/styles`, body),
     updateStyle: (id: number, body: { name?: string; note?: string; description?: string; blocks?: string[] }) =>

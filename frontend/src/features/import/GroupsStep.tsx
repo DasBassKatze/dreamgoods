@@ -18,9 +18,10 @@ interface Props {
   onBack: () => void;
   onApply: () => void;
   onRestart: () => void;
+  onRemove: (paths: string[]) => Promise<void>;
 }
 
-export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, onBack, onApply, onRestart }: Props) {
+export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, onBack, onApply, onRestart, onRemove }: Props) {
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -65,7 +66,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
         : g.id === fromId ? { ...g, photos: [] } : g));
   };
 
-  const rename = (id: string, name: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, name } : g)));
+  const rename = (id: string, name: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, name, article: name, articles: name.trim() ? [name.trim()] : [] } : g)));
   const describe = (id: string, description: string) => onGroups(groups.map((g) => (g.id === id ? { ...g, description } : g)));
   const flag = (id: string, sort_error: boolean) => onGroups(groups.map((g) => (g.id === id ? { ...g, sort_error } : g)));
   // все артикулы, которые ИИ прочитал на бирках этой загрузки, — для выбора названия товара
@@ -93,6 +94,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
             <option value="__new">новый товар</option>
             {groups.some((g) => g.junk) && <option value="junk">не использовать</option>}
           </select>
+          <button className="danger" onClick={() => void onRemove([...picked]).then(() => setPicked(new Set()))}>Удалить выбранные фото</button>
           <button onClick={() => setPicked(new Set())}>Снять выбор</button>
         </div>
       )}
@@ -103,6 +105,7 @@ export function GroupsStep({ view, groups, roles, labelMode, onGroups, onRoles, 
           return (
             <div key={g.id} className={`ig ${g.junk ? "junk" : ""} ${over === g.id ? "over" : ""}`} {...dropProps(g.id)}>
               <div className="ig-h">
+                <button className="danger" aria-label={`Удалить группу ${g.name}`} onClick={() => void onRemove(g.photos)}>Удалить группу</button>
                 {g.junk ? (
                   <><b>Не использовать</b><span className="hint">размытые, случайные и лишние фото — в товары не попадут</span></>
                 ) : (

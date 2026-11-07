@@ -1,3 +1,4 @@
+import { useDeleteProducts } from "../hooks/useDeleteProducts";
 import { useActions } from "../hooks/useActions";
 import { useProject } from "../ProjectContext";
 import { useUI } from "./ui";
@@ -36,6 +37,7 @@ export function Toolbar({ filter, onFilter }: { filter: Filter; onFilter: (f: Fi
 
 /** Строка над списком: выбор товаров и групповые действия. */
 export function ListBar() {
+  const remove = useDeleteProducts();
   const { state, api, reload, run, selected, setSelected, pickedFrames, setPicked } = useProject();
   const { checkReady, profiles } = useActions();
   const ui = useUI();
@@ -67,6 +69,7 @@ export function ListBar() {
         <input type="checkbox" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? allIds : [])} />
         {selected.size ? <>выбрано <b>{selected.size}</b></> : "выбрать все"}
       </label>
+      {selected.size > 0 && <button className="danger" onClick={() => void remove([...selected])}>Удалить выбранные</button>}
       {selected.size > 0 && <button className="link" onClick={() => setSelected([])}>снять выбор</button>}
       {pickedFrames.size > 0 && (
         <span className="hint" title="Выделенные кадры можно скачать отдельно: «Скачать ZIP» → «Выделенные кадры»">

@@ -2,6 +2,7 @@
 (с перекрытием 4) определяет роль каждого фото и группы товаров, читает артикул с этикеток →
 клиент подтверждает группы → товары и их фото в базе (файлы не копируются: товар ссылается на загруженные)."""
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import PurePosixPath
 
@@ -24,7 +25,8 @@ from .common import write_usage
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 SORT_CHUNK, SORT_OVERLAP = 20, 4
 
-SORT_PROMPT = """You sort a seller's raw photos of products for a marketplace. Photos are given in shooting order,
+SORT_PROMPT = """HARD RULE: the same recognized article/model code MUST form ONE product group. Never create Article_2 or split the same article by angle, color, photo batch, or folder. Different printed articles remain distinct.
+You sort a seller's raw photos of products for a marketplace. Photos are given in shooting order,
 each preceded by its id and shooting time. A seller usually photographs one product from several angles, often together
 with a photo of its label/tag/box, then moves on to the next product.
 
@@ -106,7 +108,30 @@ def save_upload(session_id, rel, data):
 
 def _art(a):
     """Артикул для сравнения: без пробелов, в верхнем регистре."""
-    return re.sub(r"\s+", "", str(a or "")).upper()
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(a or ""))).upper()
+
+
+def merge_article_groups(groups):
+    """A recognized article is one product, irrespective of angle, color or source folder."""
+    out, by_article = [], {}
+    for source in groups:
+        g = {**source, "photos": list(source.get("photos") or [])}
+        articles = [a for a in (g.get("articles") or [g.get("article")]) if _art(a)]
+        key = _art(articles[0]) if len({_art(a) for a in articles}) == 1 and not g.get("junk") else ""
+        if not key:
+            out.append(g); continue
+        if key not in by_article:
+            g["name"] = _safe_name(articles[0])
+            by_article[key] = g; out.append(g); continue
+        target = by_article[key]
+        seen = {p[0] if isinstance(p, (list,tuple)) else p for p in target["photos"]}
+        for photo in g["photos"]:
+            name = photo[0] if isinstance(photo, (list,tuple)) else photo
+            if name not in seen: target["photos"].append(photo); seen.add(name)
+        target["articles"] = list(dict.fromkeys((target.get("articles") or []) + articles))
+        target["exists"] = bool(target.get("exists") or g.get("exists"))
+        target["description"] = "\n".join(dict.fromkeys(d for d in (target.get("description"),g.get("description")) if d))
+    return out
 
 
 def _split_by_articles(g, order="auto"):
@@ -464,8 +489,12 @@ def analyze(session_id, job_id=None):
                 name = f"без_артикула_{noname:02d}"
             name = _safe_name(name)
             base, n = name, 2
-            while name.lower() in used:
-                name, n = f"{base}_{n}", n + 1
+            same_article = bool(arts) and len({_art(a) for a in arts}) == 1
+            if same_article:
+                name = _safe_name(arts[0])
+            else:
+                while name.lower() in used:
+                    name, n = f"{base}_{n}", n + 1
             used.add(name.lower())
             out.append({"id": f"g{len(out) + 1}", "name": name, "article": arts[0] if arts else "",
                         "articles": sorted(set(arts)), "text": "; ".join(dict.fromkeys(texts)),
@@ -475,6 +504,7 @@ def analyze(session_id, job_id=None):
         if "_junk" in groups:
             out.append({"id": "junk", "name": "Не использовать", "article": "", "articles": [], "text": "",
                         "product": "", "photos": [r["name"] for r in groups["_junk"]], "exists": False, "junk": True})
+        out = merge_article_groups(out)
         photos = [{k: r[k] for k in ("id", "name", "asset", "time", "src", "role", "product", "article", "text", "dir",
                                      "kind", "color")}
                   for r in rows]
@@ -563,7 +593,22 @@ def apply(session_id, groups, label_mode, auto_profile):
     tag = f"[импорт {session_id}]"
     with db.session() as s:
         sess = s.get(ImportSession, session_id)
+        s.get(Project, sess.project_id, with_for_update=True)
         files = {f.rel_path: f for f in s.scalars(select(ImportFile).where(ImportFile.session_id == session_id)).all()}
+        normalized = []
+        for g in groups:
+            recognized = g.get("article") or ""
+            if not recognized:
+                candidates = {(files[n].analysis or {}).get("article", "") for n, _ in g.get("photos", []) if n in files}
+                candidates = [a for a in candidates if _art(a)]
+                if len({_art(a) for a in candidates}) == 1: recognized = candidates[0]
+            normalized.append({**g, "article": recognized, "articles": [recognized] if recognized else []})
+        groups = merge_article_groups(normalized)
+        existing_products = s.scalars(select(Product).where(Product.project_id == sess.project_id).order_by(Product.id)).all()
+        by_sku = {_art(p.sku): p for p in existing_products}
+        by_label = {}
+        for p in existing_products:
+            for article in (p.label_data or {}).get("articles", []): by_label.setdefault(_art(article), p)
         _feedback(sess, files, groups, tag)
         made, added, labels, merged, new_ids = [], 0, 0, [], []
         for g in groups:
@@ -575,7 +620,7 @@ def apply(session_id, groups, label_mode, auto_profile):
                     log.warning("%s группа «%s»: только этикетки, без фото товара — пропущена", tag, g.get("name"))
                 continue
             sku = _safe_name(g.get("name") or "без_названия")
-            p = s.scalar(select(Product).where(Product.project_id == sess.project_id, func.lower(Product.sku) == sku.lower()))
+            p = by_sku.get(_art(sku)) or by_label.get(_art(sku))
             if p:
                 merged.append(sku)
             else:
@@ -583,6 +628,8 @@ def apply(session_id, groups, label_mode, auto_profile):
                 s.add(p)
                 s.flush()
                 new_ids.append(p.id)
+                by_sku[_art(sku)] = p
+            sku = p.sku
             pos = (s.scalar(select(func.max(ProductPhoto.position)).where(ProductPhoto.product_id == p.id)) or 0)
             have = set(s.scalars(select(ProductPhoto.asset_id).where(ProductPhoto.product_id == p.id)).all())
             for n in prods:
@@ -592,6 +639,7 @@ def apply(session_id, groups, label_mode, auto_profile):
                 s.add(ProductPhoto(product_id=p.id, asset_id=files[n].asset_id, role=dict(items)[n], is_reference=True,
                                    position=pos))
                 added += 1
+                have.add(files[n].asset_id)
             tagged = [n for n in prods if (files[n].analysis or {}).get("article") or (files[n].analysis or {}).get("text")]
             if (labs or tagged) and label_mode != "skip":
                 arts = set((p.label_data or {}).get("articles") or [])
@@ -602,6 +650,7 @@ def apply(session_id, groups, label_mode, auto_profile):
                         s.add(ProductPhoto(product_id=p.id, asset_id=files[n].asset_id, role="label", is_reference=False,
                                            position=pos))
                         labels += 1
+                        have.add(files[n].asset_id)
                     an = files[n].analysis or {}
                     if an.get("article"):
                         arts.add(an["article"])
@@ -614,7 +663,7 @@ def apply(session_id, groups, label_mode, auto_profile):
             made.append(sku)
             log.info("%s → товар %s: фото товара %d, этикеток %d%s", tag, sku, len(prods), len(labs) if label_mode != "skip" else 0,
                      " (товар уже был — фото добавлены)" if sku in merged else "")
-        res = {"folders": made, "photos": added, "labels": labels, "merged": merged}
+        res = {"folders": list(dict.fromkeys(made)), "photos": added, "labels": labels, "merged": list(dict.fromkeys(merged))}
         sess.status, sess.result = "done", {**(sess.result or {}), **res}
         project_id = sess.project_id
         if auto_profile:
@@ -671,7 +720,10 @@ def view(session_id):
         _unstick(s, sess)
         count = s.scalar(select(func.count(ImportFile.id)).where(ImportFile.session_id == sess.id))
         return {"id": sess.id, "project_id": sess.project_id, "status": sess.status, "progress": sess.progress,
-                "error": sess.error, "photos": (sess.result or {}).get("photos", []), "groups": sess.groups or [],
+                "error": sess.error, "photos": (sess.result or {}).get("photos") or [
+                    {"id": f.id, "name": f.rel_path, "asset": str(f.asset_id), "role": (f.analysis or {}).get("role", "product"),
+                     "article": (f.analysis or {}).get("article", ""), "text": (f.analysis or {}).get("text", "")}
+                    for f in s.scalars(select(ImportFile).where(ImportFile.session_id == sess.id).order_by(ImportFile.id)).all()], "groups": sess.groups or [],
                 "cost": round(sess.cost_rub or 0, 2), "count": count,
                 "result": {k: v for k, v in (sess.result or {}).items() if k != "photos"}}
 
@@ -760,3 +812,35 @@ def apply_request(session_id, groups, label_mode, auto_profile):
     except Exception:
         _update(session_id, status="ready")
         raise
+
+
+def remove_files(session_id, paths):
+    wanted = set(paths or [])
+    if not wanted:
+        raise ValueError("выберите фото для удаления")
+    with db.session() as s:
+        sess = s.get(ImportSession, int(session_id), with_for_update=True)
+        if not sess: raise LookupError("загрузка не найдена")
+        _unstick(s, sess)
+        if sess.status not in ("upload", "ready", "error"):
+            raise ValueError("дождитесь окончания анализа или создания товаров")
+        files = s.scalars(select(ImportFile).where(ImportFile.session_id == sess.id, ImportFile.rel_path.in_(wanted))).all()
+        if len(files) != len(wanted): raise LookupError("фото не найдено в этой загрузке")
+        aids = {f.asset_id for f in files}
+        for f in files: s.delete(f)
+        sess.groups = [{**g, "photos": [n for n in g.get("photos", []) if n not in wanted]} for g in (sess.groups or [])]
+        sess.groups = [g for g in sess.groups if g["photos"]]
+        sess.result = {**(sess.result or {}), "photos": [p for p in (sess.result or {}).get("photos", []) if p["name"] not in wanted]}
+        s.flush()
+        keys = set()
+        for asset in s.scalars(select(Asset).where(Asset.id.in_(aids))).all():
+            if not _asset_used(s, asset.id):
+                keys.add(asset.storage_key); s.delete(asset)
+        s.flush()
+        used = set(s.scalars(select(Asset.storage_key).where(Asset.storage_key.in_(keys))).all())
+    for key in keys - used:
+        try: storage.remove(key)
+        except Exception: log.warning("Не удалось удалить файл загрузки %s", session_id)
+    from .projects import _storage_cache
+    _storage_cache.clear()
+    return view(session_id)

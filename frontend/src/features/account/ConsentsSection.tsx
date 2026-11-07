@@ -1,3 +1,4 @@
+import { DocumentLink } from "../../desktop/DocumentLink";
 import { useEffect, useState } from "react";
 import { authApi } from "../../api/client";
 import type { MyConsent } from "../../api/types";
@@ -24,7 +25,7 @@ export function ConsentsSection() {
         <thead><tr><th>Документ</th><th>Редакция</th><th>Согласие</th><th /></tr></thead>
         <tbody>{items.map((c) => (
           <tr key={c.kind}>
-            <td><a href={`/legal/${c.kind}`} target="_blank" rel="noreferrer">{c.title}</a>
+            <td><DocumentLink kind={c.kind}>{c.title}</DocumentLink>
               {!c.required && <span className="hint"> · необязательно</span>}</td>
             <td className="hint">{c.version}</td>
             <td>{c.granted
@@ -37,7 +38,7 @@ export function ConsentsSection() {
         ))}</tbody>
       </table></div>
       <p className="hint">Обязательные согласия нужны для работы сервиса. Чтобы отозвать их и удалить учётную запись,
-        напишите оператору сервиса — контакты указаны в <a href="/legal/privacy" target="_blank" rel="noreferrer">политике</a>.</p>
+        напишите оператору сервиса — контакты указаны в <DocumentLink kind="privacy">политике</DocumentLink>.</p>
     </>
   );
 }

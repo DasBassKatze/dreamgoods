@@ -85,3 +85,34 @@ def profile_jobs(project_id, product_ids, build):
             if enqueue(s, "profile", project_id, product_id=p.id, payload={"build": bool(build)}, priority=20):
                 n += 1
     return n
+
+
+def delete_products(project_id, product_ids):
+    """Delete only an explicit selection; keep financial ledger and refuse in-flight work."""
+    from sqlalchemy import delete, or_
+    from ..db.models import Generation, Job, PaidOperation
+    from ..workers.queue import ACTIVE
+    from .payments import HELD
+    ids = list(dict.fromkeys(int(i) for i in (product_ids or [])))
+    if not ids:
+        raise ValueError("выберите товары для удаления")
+    with db.session() as s:
+        rows = s.scalars(select(Product).where(Product.project_id == project_id, Product.id.in_(ids))
+                         .order_by(Product.id).with_for_update()).all()
+        if len(rows) != len(ids):
+            raise LookupError("товар не найден в проекте")
+        frames = s.scalars(select(Frame).where(Frame.product_id.in_(ids)).order_by(Frame.id).with_for_update()).all()
+        fids = [f.id for f in frames]
+        jobs = s.scalars(select(Job).where(or_(Job.product_id.in_(ids), Job.frame_id.in_(fids)))
+                         .order_by(Job.id).with_for_update()).all()
+        if any(j.status in ACTIVE for j in jobs):
+            raise ValueError("у товара есть активные задания — остановите их и дождитесь завершения")
+        if s.scalar(select(Generation.id).where(Generation.frame_id.in_(fids), Generation.status == "pending").limit(1)):
+            raise ValueError("ожидается оплаченный результат — дождитесь его получения перед удалением")
+        if s.scalar(select(PaidOperation.id).where(PaidOperation.product_id.in_(ids), PaidOperation.status.in_(HELD)).limit(1)):
+            raise ValueError("есть незавершённые платные операции — сначала выполните сверку в бюджетах")
+        s.execute(delete(Product).where(Product.project_id == project_id, Product.id.in_(ids)))
+    say("info", f"Удалено товаров: {len(ids)}", project_id)
+    from .projects import _storage_cache
+    _storage_cache.clear()
+    return {"deleted": len(ids), "ids": ids}

@@ -1,3 +1,4 @@
+import { isDesktop } from "../../desktop/runtime";
 import { useEffect, useState } from "react";
 import { adminApi } from "../../api/client";
 import type { PlansAdmin, PricePlan, QualityLevel } from "../../api/types";
@@ -10,7 +11,7 @@ type Row = { key: keyof PricePlan; label: string; kind: "text" | "money" | "num"
 const ROWS: Row[] = [
   { key: "name", label: "Название", kind: "text" },
   { key: "price", label: "Платёж в месяц, ₽ (идёт на баланс)", kind: "money" },
-  { key: "who", label: "Для кого (подпись на сайте)", kind: "text" },
+  { key: "who", label: isDesktop ? "Для кого" : "Для кого (подпись на сайте)", kind: "text" },
   { key: "qualities", label: "Уровни качества", kind: "qualities" },
   { key: "parallel", label: "Генераций одновременно", kind: "num" },
   { key: "storage_gb", label: "Хранилище, ГБ", kind: "num" },
@@ -48,7 +49,7 @@ export function PlansEditor({ onClose }: { onClose: () => void }) {
       const d = await adminApi.savePlans(body);
       setData(d);
       setPlans(d.plans);
-      ui.toast(reset ? "Условия тарифов сброшены к исходным" : "Условия тарифов сохранены — сайт и лимиты уже по ним");
+      ui.toast(reset ? "Условия тарифов сброшены к исходным" : (isDesktop ? "Условия тарифов сохранены" : "Условия тарифов сохранены — сайт и лимиты уже по ним"));
     } catch (e) {
       ui.toast((e as Error).message, 5000);
     } finally {
@@ -87,7 +88,7 @@ export function PlansEditor({ onClose }: { onClose: () => void }) {
         <button onClick={onClose}>Закрыть</button>
         <button className="primary" onClick={() => save()} disabled={busy || !plans.length}>Сохранить</button>
       </>}>
-      <p className="hint">Изменения сразу действуют на сайте («Цены и оплата») и в лимитах кабинетов. Пустое поле в лимите — без
+      <p className="hint">{isDesktop ? "Изменения применяются к лимитам кабинетов." : "Изменения сразу действуют на сайте («Цены и оплата») и в лимитах кабинетов."} Пустое поле в лимите — без
         ограничений, 0 — недоступно. Цена кадра от тарифа не зависит. Изменённые значения подсвечены.</p>
       {!plans.length ? <p className="hint">Загружаю…</p> : (
         <div className="table-wrap"><table className="tbl plans-edit">

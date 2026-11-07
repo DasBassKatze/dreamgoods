@@ -1,0 +1,47 @@
+html.desktop { background: transparent; --accent:#7554d8; --bg:#f5f5fa; --panel:#fff; --line:#e5e3ee; --ink:#282537; --muted:#817c90; }
+.desktop body { background:transparent; }
+.desktop-shell { height:100vh; overflow:hidden; border-radius:14px; border:1px solid #e3dfed; background:var(--bg); display:flex; flex-direction:column; }
+.desktop-shell.maximized { border-radius:0; border:0; }
+.desktop-titlebar { height:42px; flex:none; display:flex; align-items:center; gap:9px; padding:0 0 0 18px; background:#faf9fd; color:#706982; border-bottom:1px solid #e8e5ef; user-select:none; -webkit-app-region:drag; }
+.desktop-titlebar b { font-size:12px; font-weight:650; color:#3f3654; letter-spacing:.2px; }
+.desktop-emblem { font-size:21px; color:#8057d8; }
+.desktop-title-hint { color:#b1a9bc; font-size:11px; }
+.desktop-window-controls { display:flex; height:100%; -webkit-app-region:no-drag; }
+.desktop-window-controls button { width:46px; border:0; border-radius:0; padding:0; background:transparent; color:#837b91; font:15px 'Segoe UI',sans-serif; }
+.desktop-window-controls button:hover { background:#ebe7f3; color:#332847; }
+.desktop-window-controls .desktop-window-close:hover { color:#fff; background:#d85365; }
+.desktop-content { min-height:0; overflow:auto; flex:1; }
+.desktop .app { min-height:100%; }
+.desktop .topbar { position:sticky; top:0; background:rgba(255,255,255,.97); padding:12px 22px; border-color:#e8e4ee; box-shadow:0 3px 14px #3e245705; }
+.desktop .tabs-top button { border-radius:9px; }
+.desktop .menu { border-radius:14px; padding:7px; border-color:#e5dfed; box-shadow:0 14px 45px #34284b20; }
+.desktop .menu button, .desktop .menu-link { border-radius:8px; }
+.desktop .card, .desktop .panel, .desktop .gen-setup, .desktop .composer { border-radius:16px; border-color:#e5e1ed; box-shadow:0 3px 14px #3d235305; }
+.desktop .modal { position:fixed; inset:42px 0 0; background:#21172d66; backdrop-filter:blur(5px); }
+.desktop .modal .box { border-radius:18px; box-shadow:0 24px 90px #29153e33; border:1px solid #e7e0f0; overflow:hidden; max-height:calc(100vh - 80px); }
+.desktop .box-head { padding:16px 22px; background:#fbfafd; border-color:#ebe6f1; }
+.desktop .box-head button { border:0; background:#f0ecf6; border-radius:9px; }
+.desktop input:focus, .desktop textarea:focus, .desktop select:focus { outline:2px solid #8e6bd540; border-color:#8e6bd5; }
+.desktop button.primary { background:linear-gradient(125deg,#8055df,#6753cb); border-color:transparent; box-shadow:0 3px 8px #7854d524; }
+.desktop-login { min-height:100%; display:flex; flex-direction:column; align-items:center; padding:34px 45px 22px; background:radial-gradient(ellipse at 12% 0,#e8dffd 0,transparent 55%),radial-gradient(at 100% 100%,#edf0ff,transparent 55%),#faf9fd; }
+.desktop-login-mark { display:grid; place-items:center; width:62px; height:62px; margin-bottom:18px; border-radius:20px; background:linear-gradient(135deg,#9365e9,#6155c6); color:#fff; font-size:36px; box-shadow:0 10px 30px #7853cf30; }
+.desktop-eyebrow { color:#9d8cb6; font-size:9px; font-weight:650; letter-spacing:2px; }
+.desktop-login h1 { font-size:30px; font-weight:650; letter-spacing:-1px; margin:5px 0 3px; color:#30283f; }
+.desktop-login-caption { margin:0 0 27px; color:#9b91a8; font-size:12px; }
+.desktop-login form { width:100%; display:flex; flex-direction:column; gap:8px; }
+.desktop-login label { font-size:12px; color:#736581; font-weight:550; }
+.desktop-login input { height:44px; background:#ffffffd9; border-radius:10px; border-color:#e2daed; padding:11px 14px; font-size:13px; margin-bottom:8px; }
+.desktop-login button.primary { display:flex; justify-content:center; gap:18px; align-items:center; height:44px; border-radius:10px; margin-top:7px; font-size:13px; font-weight:600; }
+.desktop-login-foot { margin-top:auto; padding-top:20px; color:#b1a6bc; font-size:10px; }
+.desktop-login-error { color:#ac3750; background:#fff0f3; border:1px solid #f1d1db; border-radius:9px; padding:10px; font-size:12px; }
+.desktop-shell:has(.desktop-login) .desktop-window-controls button:nth-child(2) { opacity:.3; pointer-events:none; }
+.key-checking { display:inline-block; width:9px; height:9px; border:2px solid #b2a2d8; border-top-color:transparent; border-radius:50%; animation:dg-spin .8s linear infinite; }
+@keyframes dg-spin { to { transform:rotate(360deg); } }
+.upload-review { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:10px; max-height:340px; overflow:auto; }
+.upload-review article { border:1px solid var(--line); border-radius:12px; padding:8px; background:var(--panel); }
+.upload-review img { width:100%; height:90px; object-fit:contain; border-radius:7px; }
+.upload-review span { display:block; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; font-size:11px; margin:5px 0; }
+.upload-review button { width:100%; font-size:11px; }
+@media (max-height:600px) { .desktop-login { padding-top:18px; } .desktop-login-mark { width:44px; height:44px; margin-bottom:9px; font-size:28px; } .desktop-login-caption { margin-bottom:14px; } }
+
+.desktop .app-body { min-height:calc(100vh - var(--top) - 42px); }

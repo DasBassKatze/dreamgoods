@@ -1,3 +1,4 @@
+import { useDeleteProducts } from "../hooks/useDeleteProducts";
 import type { Dialogs } from "../App";
 import { assetUrl } from "../api/client";
 import type { Product } from "../api/types";
@@ -27,6 +28,7 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
   const { api, reload, run, selected, toggleSelected, state, pickedFrames, togglePicked } = useProject();
   const { generate, regenerate, profiles, quick } = useActions();
   const opts = useRunOptions();
+  const remove = useDeleteProducts();
   const ui = useUI();
   const zoomRefs = (i: number) => ui.zoom(p.photos.map((x) => ({ asset: x.asset,
     caption: `${p.sku}${x.view ? ` · ${VIEW_RU[x.view] || x.view}` : ""} · ${x.selected ? "идёт в генерацию" : "не используется"}` })), i);
@@ -71,6 +73,7 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
         )}
         <span className="mk-chip" title="Площадка и формат по пресету товара">{label}</span>
         <span className="spacer" />
+        <button className="danger" aria-label={`Удалить товар ${p.sku}`} onClick={() => void remove([p.id])}>Удалить товар</button>
         <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие (с пожеланиями из строки запуска)"
           onClick={() => generate([p.id], 0, opts)}>Сгенерировать</button>
       </div>

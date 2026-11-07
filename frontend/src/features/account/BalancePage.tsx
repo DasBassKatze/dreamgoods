@@ -1,3 +1,4 @@
+import { isDesktop } from "../../desktop/runtime";
 import { useEffect, useState } from "react";
 import { authApi } from "../../api/client";
 import type { AccountBalance, MyPlan } from "../../api/types";
@@ -17,8 +18,8 @@ export function BalancePage() {
   return (
     <section className="page narrow">
       <div className="page-head"><h1>Тарифы и баланс</h1><span className="spacer" />
-        <a className="btn" href="/pricing">Все цены</a>
-        {d?.billing && <a className="btn primary" href="/pricing#packages">Пополнить баланс</a>}</div>
+        {!isDesktop && <a className="btn" href="/pricing">Все цены</a>}
+        {!isDesktop && d?.billing && <a className="btn primary" href="/pricing#packages">Пополнить баланс</a>}</div>
       {!d ? <div className="empty">Загрузка…</div> : (
         <>
           <div className="balance-hero">
@@ -49,8 +50,7 @@ export function BalancePage() {
             </>
           )}
           <p className="lead">Каждая генерация, правка и ИИ-проверка списывается сразу после выполнения. Если баланс закончился,
-            новые задания не запускаются — уже начатые доделывают текущую попытку. Пополнить баланс или сменить тариф можно
-            на странице «Цены и оплата».</p>
+            новые задания не запускаются — уже начатые доделывают текущую попытку. {!isDesktop && <>Пополнить баланс или сменить тариф можно на странице «Цены и оплата».</>}</p>
           <h2>История операций</h2>
           <Ledger rows={d.entries} />
         </>
@@ -72,7 +72,7 @@ function PlanCard({ plan }: { plan: MyPlan }) {
         <div><small>Тариф</small><b>{plan.name}</b>
           {plan.until && plan.effective !== "start" && <span className="hint"> до {new Date(plan.until).toLocaleDateString("ru-RU")}</span>}
           {ended && <span className="bad-text"> — оплаченный тариф закончился</span>}</div>
-        <a className="btn" href="/pricing#plans">{plan.effective === "agency" ? "Продлить" : "Сменить тариф"}</a>
+        {!isDesktop && <a className="btn" href="/pricing#plans">{plan.effective === "agency" ? "Продлить" : "Сменить тариф"}</a>}
       </div>
       <div className="plan-limits">
         <span>Качество: <b>{l.qualities.map((q) => QN[q] || q).join(", ")}</b></span>

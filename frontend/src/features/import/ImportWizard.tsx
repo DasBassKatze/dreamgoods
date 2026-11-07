@@ -1,3 +1,4 @@
+import { assetUrl } from "../../api/client";
 import { useEffect, useRef, useState } from "react";
 import type { ImportGroup, ImportResult, ImportView, PhotoRole } from "../../api/types";
 import { Modal } from "../../components/Modal";
@@ -40,6 +41,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
       setStep("analyzing");
       watch(oi.id);
     }
+    if (oi.status === "upload" || oi.status === "error") api.getImport(oi.id).then(setView).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, state.open_import]);
 
@@ -55,6 +57,20 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     window.clearTimeout(poll.current);
     setSid(null); setTotal(0); setView(null); setGroups([]); setRoles({}); setStep("upload");
     await reload();
+  };
+
+  const removePhotos = async (paths: string[]) => {
+    if (sid == null || uploading) return;
+    if (!(await ui.confirm({ title: `Удалить фото (${paths.length})?`, text: "Фото будут удалены из этой загрузки. Уже созданные товары сохранятся.", ok: "Удалить", danger: true }))) return;
+    try {
+      const v = await api.removeImportFiles(sid, paths);
+      setView(v); setTotal(v.count);
+      const removed = new Set(paths);
+      setGroups(gs => gs.map(g => ({ ...g, photos: g.photos.filter(n => !removed.has(n)) })).filter(g => g.photos.length));
+      setRoles(rs => Object.fromEntries(Object.entries(rs).filter(([n]) => !removed.has(n))));
+      if (!v.count) setStep("upload");
+      await reload();
+    } catch (e) { ui.toast((e as Error).message); }
   };
 
   const ensure = async () => {
@@ -89,6 +105,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
       }
     };
     await Promise.all([worker(), worker(), worker()]);
+    try { setView(await api.getImport(id)); } catch { /* keep upload result */ }
     if (failed) ui.toast(`Не загрузились: ${failed}`);
   };
 
@@ -135,11 +152,11 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     if (sid == null) return;
     const real = groups
       .filter((g) => !g.junk && g.photos.length)
-      .map((g) => ({ name: g.name.trim(), photos: g.photos.map((n) => [n, roles[n] || "product"] as [string, PhotoRole]),
+      .map((g) => ({ name: g.name.trim(), article: g.article || "", photos: g.photos.map((n) => [n, roles[n] || "product"] as [string, PhotoRole]),
         description: (g.description || "").trim(), sort_error: !!g.sort_error }));
     const names = real.map((g) => g.name.toLowerCase());
-    if (names.some((n, i) => !n || names.indexOf(n) !== i)) {
-      ui.toast("У групп должны быть разные непустые названия");
+    if (names.some(n => !n)) {
+      ui.toast("Укажите артикулы товаров");
       return;
     }
     const empty = real.filter((g) => !g.photos.some(([, r]) => r !== "label" && r !== "junk"));
@@ -176,8 +193,12 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
     <Modal title={<>Загрузка фото{sid != null && <span className="hint"> · сессия {sid}</span>}</>} width={1280}
       onClose={step === "done" ? finish : onClose}>
       {step === "upload" && (
-        <UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze}
+        <><UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze}
           onRestart={sid != null && total > 0 ? restart : undefined} />
+        {view?.photos.length ? <div className="upload-review">{view.photos.map(ph => <article key={ph.name}>
+          <img src={assetUrl(ph.asset, 200)} alt="" loading="lazy" /><span title={ph.name}>{ph.name}</span>
+          <button className="danger" disabled={!!uploading} aria-label={`Удалить фото ${ph.name}`} onClick={() => void removePhotos([ph.name])}>Удалить фото</button>
+        </article>)}</div> : null}</>
       )}
       {step === "analyzing" && (
         <div className="empty">
@@ -188,7 +209,7 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
         </div>
       )}
       {step === "groups" && view && (
-        <GroupsStep view={view} groups={groups} roles={roles} labelMode={modes.label_mode}
+        <GroupsStep onRemove={removePhotos} view={view} groups={groups} roles={roles} labelMode={modes.label_mode}
           onGroups={setGroups} onRoles={setRoles} onBack={() => setStep("upload")} onApply={apply} onRestart={restart} />
       )}
       {step === "done" && result && (

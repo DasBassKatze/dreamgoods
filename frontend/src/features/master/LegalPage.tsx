@@ -1,3 +1,5 @@
+import { DocumentLink } from "../../desktop/DocumentLink";
+import { isDesktop } from "../../desktop/runtime";
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "../../api/client";
 import type { ConsentRow, LegalAdmin } from "../../api/types";
@@ -51,7 +53,7 @@ export function LegalPage() {
   return (
     <section className="page">
       <div className="page-head"><h1>Документы и согласия</h1></div>
-      {data && (
+      {data && !isDesktop && (
         <div className="legal-top">
           <label className="check"><input type="checkbox" checked={data.registration_open} onChange={toggleReg} />
             {" "}регистрация на сайте открыта</label>
@@ -73,7 +75,7 @@ export function LegalPage() {
               <span className="hint">{d.where === "persona" ? "при загрузке фото модели" : "при регистрации"} · согласий: {d.consents}</span>
               {d.body.startsWith("ЧЕРНОВИК") && <span className="tag warn">черновик</span>}
               <span className="spacer" />
-              <a href={`/legal/${d.kind}`} target="_blank" rel="noreferrer">открыть</a>
+              <DocumentLink kind={d.kind}>открыть</DocumentLink>
               <button onClick={() => edit(d.kind)}>{open === d.kind ? "Свернуть" : "Изменить"}</button>
             </div>
             {open === d.kind && (

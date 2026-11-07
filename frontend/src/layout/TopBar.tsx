@@ -1,3 +1,4 @@
+import { isDesktop } from "../desktop/runtime";
 import { useEffect, useRef, useState } from "react";
 import type { Me } from "../api/types";
 import type { Route } from "../hooks/useRoute";
@@ -29,7 +30,7 @@ interface Props {
   route: Route;
   go: (r: Route) => void;
   balance: { balance: number; billing: boolean; client?: string } | null;
-  polza?: { value: number | null; error: string } | null;
+  polza?: { value: number | null; error: string; checking?: boolean; checked_at?: number; configured?: boolean } | null;
   reviewCount: number;
   busy: boolean;
   onLogout: () => void;
@@ -68,7 +69,7 @@ export function TopBar(p: Props) {
           const on = r === "products" ? UNDER_GEN.includes(p.route) : p.route === r;
           return (
           <button key={tab} className={on ? "on" : ""} aria-current={on ? "page" : undefined} onClick={() => pick(r)}>
-            {label}
+            {isDesktop && tab === "balance" ? "Расходы" : label}
             {r === "products" && p.busy && <i className="dot-run" title="Идёт генерация" />}
             {r === "products" && p.reviewCount > 0 && <em className="tab-badge" title="Кадры ждут вашего решения">{p.reviewCount}</em>}
           </button>
@@ -92,9 +93,10 @@ export function TopBar(p: Props) {
       <span className="spacer" />
       {master && p.polza ? (
         <button className={`pill-balance ${p.polza.error ? "warn" : ""}`} onClick={() => pick("m-keys")}
-          title={p.balance?.billing ? `Баланс Polza. Внутренний баланс кабинета «${p.balance.client}»: ${rub(p.balance.balance)}` : "Баланс Polza по ключу открытого проекта"}>
+          aria-live="polite" title={p.polza.error || (p.polza.checking ? "Проверяю ключ…" : p.polza.checked_at ? `Проверено в ${new Date(p.polza.checked_at * 1000).toLocaleTimeString("ru-RU")}` : p.balance?.billing ? `Баланс Polza. Внутренний баланс кабинета «${p.balance.client}»: ${rub(p.balance.balance)}` : "Баланс Polza по ключу открытого проекта")}>
           <span className="coin"><Icon name="coin" size={16} /></span>
-          {p.polza.value == null ? (p.polza.error ? "ошибка ключа" : "…") : rub(p.polza.value)}
+          {p.polza.error ? (p.polza.configured === false ? "Добавить ключ" : "Ошибка ключа") : p.polza.value == null ? "Проверяем…" : rub(p.polza.value)}
+          {p.polza.checking && <i className="key-checking" aria-label="Обновление статуса ключа" />}
           <small>Polza</small>
         </button>
       ) : p.balance?.billing ? (
@@ -109,9 +111,9 @@ export function TopBar(p: Props) {
             <div className="menu-head"><b>{p.me.name}</b><small>{master ? "мастер-аккаунт" : p.me.email}</small></div>
             <button onClick={() => pick("account")}>Учётная запись</button>
             {!master && <button onClick={() => pick("balance")}>{p.balance?.billing ? "Баланс и история" : "Расходы"}</button>}
-            {!master && p.balance?.billing && <a className="menu-link" href="/pricing#packages">Пополнить баланс</a>}
-            <a className="menu-link" href="/">Сайт DreamGoods</a>
-            <a className="menu-link" href="/pricing">Цены и оплата</a>
+            {!isDesktop && !master && p.balance?.billing && <a className="menu-link" href="/pricing#packages">Пополнить баланс</a>}
+            <a className="menu-link" href="/" target={isDesktop ? "_blank" : undefined} rel="noreferrer">Сайт DreamGoods</a>
+            {!isDesktop && <a className="menu-link" href="/pricing">Цены и оплата</a>}
             <button className="danger" onClick={p.onLogout}><Icon name="logout" size={16} />Выйти</button>
           </div>
         )}

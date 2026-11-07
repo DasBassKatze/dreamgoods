@@ -1,6 +1,6 @@
 {
   "name": "dreamgoods-desktop",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "description": "DreamGoods — локальная студия карточек товаров",
   "author": "DreamGoods",
@@ -21,7 +21,8 @@
     },
     "files": [
       "main.cjs",
-      "package.json"
+      "package.json",
+      "preload.cjs"
     ],
     "extraResources": [
       {

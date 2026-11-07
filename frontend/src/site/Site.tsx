@@ -1,3 +1,4 @@
+import { isDesktop } from "../desktop/runtime";
 import { lazy, Suspense } from "react";
 const App = lazy(() => import("../App").then((m) => ({ default: m.App })));
 import { Landing } from "./Landing";
@@ -8,6 +9,7 @@ const PricingPage = lazy(() => import("./PricingPage").then((m) => ({ default: m
 /** Страницы сайта по адресу: / — главная, /pricing — цены и оплата, /legal/<вид> — документы, /verify — подтверждение
  *  почты по ссылке из письма, /studio — студия (вход, регистрация и работа). */
 export function Site() {
+  if (isDesktop) return <Suspense fallback={<div className="empty">Загрузка…</div>}><App /></Suspense>;
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   // старые ссылки вида /#/products ведут в студию
   if (path === "/" && window.location.hash.startsWith("#/")) {

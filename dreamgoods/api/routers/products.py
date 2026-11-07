@@ -35,3 +35,11 @@ def generate_profiles(body: ProfileGenerate, pid: int = Depends(project_id)):
     if added:
         say("info", f"🧠 Составляю профили товара по фото: {added}", pid)
     return {"added": added}
+
+
+@router.post("/products/delete")
+def delete_products(body: dict, pid: int = Depends(project_id)):
+    ids = body.get("product_ids")
+    if not isinstance(ids, list) or not ids or len(ids) > 1000 or any(type(i) is not int or i <= 0 for i in ids):
+        raise ValueError("передайте от 1 до 1000 выбранных товаров")
+    return products.delete_products(pid, ids)

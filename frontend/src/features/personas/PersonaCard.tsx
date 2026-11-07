@@ -1,3 +1,4 @@
+import { DocumentLink } from "../../desktop/DocumentLink";
 import { useEffect, useRef, useState } from "react";
 import { assetUrl } from "../../api/client";
 import type { Persona, PersonaGroupTree, PersonaPhoto, PersonaStyle } from "../../api/types";
@@ -100,7 +101,7 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
     act(async () => {
       if (!p.consent) {
         const ok = await ui.confirm({ text: <>У вас есть согласие этого человека на использование его фото для изображений товаров?{" "}
-          <a href="/legal/persona_photo" target="_blank" rel="noreferrer">Подробнее</a>. Отметка сохранится в журнале согласий.</>, ok: "Да, есть" });
+          <DocumentLink kind="persona_photo">Подробнее</DocumentLink>. Отметка сохранится в журнале согласий.</>, ok: "Да, есть" });
         if (!ok) return;
         await api.updatePersona(p.id, { consent: true });
       }

@@ -53,3 +53,11 @@ def analyze(body: ImportAnalyze, request: Request, sid: int = Depends(session_id
 def apply(body: ImportApply, request: Request, sid: int = Depends(session_id), pid: int = Depends(project_id)):
     moderation.guard("описание товара", [g.description for g in body.groups], project_id=pid, user=auth.user(request))
     return importer.apply_request(sid, [g.model_dump() for g in body.groups], body.label_mode, body.auto_profile)
+
+
+@router.delete("/{import_id}/files")
+def remove_files(body: dict, sid: int = Depends(session_id)):
+    paths = body.get("paths")
+    if not isinstance(paths, list) or not paths or len(paths) > 5000 or any(not isinstance(p, str) for p in paths):
+        raise ValueError("выберите фото для удаления")
+    return importer.remove_files(sid, paths)

@@ -1,3 +1,4 @@
+import { isDesktop } from "../../desktop/runtime";
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "../../api/client";
 import type { PolzaKeyView, SiteUser, UsersListing } from "../../api/types";
@@ -249,7 +250,7 @@ function UserEditor({ user, keys, free, planNames, onClose, onSaved }: {
           <>
             <label className="form-label">Доступ</label>
             <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => set("active", e.target.checked)} />
-              {" "}может входить на сайт</label>
+              {" "}{isDesktop ? "может входить в приложение" : "может входить на сайт"}</label>
           </>
         )}
       </div>

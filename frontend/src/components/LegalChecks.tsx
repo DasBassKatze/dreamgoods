@@ -1,3 +1,4 @@
+import { DocumentLink } from "../desktop/DocumentLink";
 import type { LegalDocBrief } from "../api/types";
 
 /** Галочки согласий: подпись документа со ссылкой на его текст (/legal/<вид>, в новой вкладке). */
@@ -27,8 +28,7 @@ export function LegalChecks({ docs, checked, onChange }: {
             <input type="checkbox" checked={checked.has(d.kind)} onChange={(e) => toggle(d.kind, e.target.checked)} />
             <span>
               {before}
-              <a href={`/legal/${d.kind}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-                {linkText}</a>
+              <DocumentLink kind={d.kind}>{linkText}</DocumentLink>
               {after}
               {d.required && <span className="req" title="обязательно">*</span>}
             </span>

@@ -1,3 +1,6 @@
+import { isDesktop } from "./desktop/runtime";
+import { DesktopLogin } from "./desktop/DesktopLogin";
+import { useKeyStatus } from "./hooks/useKeyStatus";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, authApi, onAuthLost, projectApi } from "./api/client";
 import type { Me, ProjectRef } from "./api/types";
@@ -55,8 +58,11 @@ export function App() {
     authApi.me().then(setMe).catch(() => setMe(null));
     return onAuthLost(() => setMe(null));
   }, []);
+  useEffect(() => {
+    if (isDesktop && me !== undefined) void window.dgDesktop!.mode(me ? "workspace" : "login");
+  }, [me]);
   if (me === undefined) return <div className="empty">Загрузка…</div>;
-  if (!me) return <LoginPage onLogin={setMe} />;
+  if (!me) return isDesktop ? <DesktopLogin onLogin={setMe} /> : <LoginPage onLogin={setMe} />;
   if (me.consents_required?.length)
     return <ConsentGate me={me} onDone={setMe} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
   return <Workspace key={me.id} me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
@@ -73,6 +79,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [projectId, setProjectId] = usePersistentState<number | null>(`project_${me.id}`, null);
   const { state, offline, reload } = useProjectState(projectId);
   useReadyNotify(state, ui.toast);
+  const keyStatus = useKeyStatus(projectId, master && isDesktop);
   const [selectedByProject, setSelectedByProject] = usePersistentState<Record<string, number[]>>("selected", {});
   const [pickedByProject, setPickedByProject] = usePersistentState<Record<string, number[]>>("picked-frames", {});
   const [filter, setFilter] = useState<Filter>("all");
@@ -219,7 +226,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const body = (
     <div className="app">
       <TopBar me={me} route={route} go={go} balance={account}
-        polza={master && state ? { value: state.balance, error: state.balance_error } : null}
+        polza={keyStatus || (master && state ? { value: state.balance, error: state.balance_error } : null)}
         reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
         onMenu={() => setMenuOpen((x) => !x)} />
       <div className="app-body">

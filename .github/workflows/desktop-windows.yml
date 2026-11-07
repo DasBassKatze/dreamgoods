@@ -79,6 +79,8 @@ jobs:
             ${{ runner.temp }}/DreamGoods-тест data/desktop.log
             ${{ runner.temp }}/DreamGoods-тест data/postgres.log
             ${{ runner.temp }}/DreamGoods-тест data/smoke.json
+            ${{ runner.temp }}/DreamGoods-тест data/login.png
+            ${{ runner.temp }}/DreamGoods-тест data/workspace.png
       - uses: actions/upload-artifact@v4
         with:
           name: DreamGoods-Windows-x64

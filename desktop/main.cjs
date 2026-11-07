@@ -1,10 +1,11 @@
-const { app, BrowserWindow, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, dialog, shell, Menu, ipcMain, screen } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const net = require('node:net');
 const http = require('node:http');
-let backend, win, splash, quitting = false, backendEnded = false;
+let backend, win, splash, desktopOrigin, workspaceBounds, restoreMaximized = false, windowMode = "login", quitting = false, backendEnded = false;
 const dataDir = process.env.DREAMGOODS_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'DreamGoodsDesktop');
 fs.mkdirSync(path.join(dataDir, 'window'), { recursive: true });
 app.setPath('userData', path.join(dataDir, 'window'));
@@ -13,13 +14,66 @@ else {
   app.on('second-instance', () => { if (win) { win.restore(); win.show(); win.focus(); } });
   app.whenReady().then(start).catch(fail);
 }
+function roundWindow(window) {
+  // Native DWM rounding on Windows 11; a shape fallback keeps Windows 10 rounded too.
+  if (process.platform !== 'win32' || Number(os.release().split('.')[2]) >= 22000) return;
+  const shape = () => {
+    if (window.isDestroyed()) return;
+    if (window.isMaximized() || window.isFullScreen()) { window.setShape([]); return; }
+    const [width, height] = window.getSize(), radius = 14;
+    const rects = [{ x: 0, y: radius, width, height: height - radius * 2 }];
+    for (let y = 0; y < radius; y++) {
+      const inset = Math.ceil(radius - Math.sqrt(radius ** 2 - (radius - y - .5) ** 2));
+      rects.push({ x: inset, y, width: width - 2 * inset, height: 1 },
+        { x: inset, y: height - 1 - y, width: width - 2 * inset, height: 1 });
+    }
+    window.setShape(rects);
+  };
+  window.on('resize', shape); window.on('maximize', shape); window.on('unmaximize', shape); shape();
+}
 function status(text) {
   if (!splash || splash.isDestroyed()) {
-    splash = new BrowserWindow({ width: 550, height: 260, resizable: false, autoHideMenuBar: true,
+    splash = new BrowserWindow({ width: 520, height: 280, resizable: false, frame: false, roundedCorners: true,
+      backgroundColor: '#f8f7fc', hasShadow: true, autoHideMenuBar: true,
       webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    roundWindow(splash);
   }
-  splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>DreamGoods</title><body style="background:#15191f;color:#eee;font:17px system-ui;padding:36px"><h1>DreamGoods</h1><p>${text}</p></body>`));
+  splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>DG Desktop</title><style>body{margin:0;padding:38px;font:14px/1.5 'Segoe UI',sans-serif;color:#242237;background:radial-gradient(at 0 0,#eae4ff,transparent 65%),#f8f7fc;border-radius:14px;app-region:drag}i{font-style:normal;color:#7954dc;font-size:36px}h1{font-size:24px;margin:8px 0}p{color:#777285}progress{width:100%;height:5px;accent-color:#7954dc}</style><i>✦</i><h1>DG Desktop</h1><p>${text}</p><progress></progress>`)).catch(() => {});
 }
+function trusted(event) {
+  return win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
+    && new URL(event.senderFrame.url).origin === desktopOrigin;
+}
+ipcMain.handle('dg:window', (event, action) => {
+  if (!trusted(event)) throw new Error('Unknown window');
+  if (action === 'close') win.close();
+  else if (action === 'minimize') win.minimize();
+  else if (action === 'maximize' && windowMode === 'workspace') { if (win.isMaximized()) win.unmaximize(); else win.maximize(); }
+});
+ipcMain.handle('dg:state', event => {
+  if (!trusted(event)) throw new Error('Unknown window');
+  return { maximized: win.isMaximized() };
+});
+ipcMain.handle('dg:mode', (event, mode) => {
+  if (!trusted(event) || !['login','workspace'].includes(mode)) throw new Error('Unknown window mode');
+  if (windowMode === mode) return;
+  windowMode = mode;
+  const area = screen.getDisplayMatching(win.getBounds()).workArea;
+  if (mode === 'login') {
+    workspaceBounds = win.getNormalBounds(); restoreMaximized = win.isMaximized();
+    if (restoreMaximized) win.unmaximize();
+    win.setMinimumSize(440, 540); win.setSize(Math.min(520, area.width), Math.min(620, area.height));
+    win.setResizable(false); win.setMaximizable(false); win.center();
+  } else {
+    win.setResizable(true); win.setMaximizable(true);
+    win.setMinimumSize(Math.min(1040, area.width), Math.min(720, area.height));
+    const width = Math.min(workspaceBounds?.width || 1440, area.width);
+    const height = Math.min(workspaceBounds?.height || 960, area.height);
+    win.setBounds({ x: Math.round(area.x + (area.width - width)/2), y: Math.round(area.y + (area.height - height)/2), width, height });
+    if (restoreMaximized) win.maximize();
+  }
+});
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer(); s.on('error', reject);
@@ -55,7 +109,7 @@ async function start() {
     if (quitting) app.exit(process.exitCode || 0);
     else fail(new Error(`Локальный сервер завершился (код ${code}). Журнал: ${path.join(dataDir, 'desktop.log')}`));
   });
-  const origin = `http://127.0.0.1:${port}`;
+  const origin = `http://127.0.0.1:${port}`; desktopOrigin = origin;
   const deadline = Date.now() + 180000;
   while (!await health(`${origin}/api/health`)) {
     if (backendEnded || quitting) return;
@@ -63,12 +117,15 @@ async function start() {
     await new Promise(resolve => setTimeout(resolve, 350));
   }
   if (quitting) return;
-  win = new BrowserWindow({ width: 1440, height: 960, minWidth: 900, minHeight: 640, show: false, autoHideMenuBar: true,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
-  win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  win = new BrowserWindow({ width: 520, height: 620, minWidth: 440, minHeight: 540, show: false, frame: false, roundedCorners: true,
+    backgroundColor: '#f8f7fc', hasShadow: true, resizable: false, maximizable: false, autoHideMenuBar: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') } });
+  roundWindow(win);
+  win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => callback(wc === win.webContents && new URL(wc.getURL()).origin === origin && ['notifications', 'clipboard-sanitized-write'].includes(permission)));
   win.webContents.setWindowOpenHandler(({ url }) => {
     const u = new URL(url);
-    if (u.origin === origin) {
+    if (u.origin === origin && u.pathname === '/') { void shell.openExternal(url); }
+    else if (u.origin === origin) {
       // Downloads and asset previews remain in the same authenticated session.
       win.webContents.downloadURL(url);
     } else if (['https:', 'http:'].includes(u.protocol)) void shell.openExternal(url);
@@ -76,6 +133,7 @@ async function start() {
   });
   win.webContents.on('will-navigate', (event, url) => {
     const u = new URL(url);
+    if (u.origin === origin && !u.pathname.startsWith('/api/') && u.pathname !== '/studio') { event.preventDefault(); return; }
     if (u.origin !== origin) { event.preventDefault(); if (['https:', 'http:'].includes(u.protocol)) void shell.openExternal(url); }
   });
   win.webContents.on('will-attach-webview', event => event.preventDefault());
@@ -88,7 +146,7 @@ async function start() {
       return {title:document.title, node:typeof require, body:document.body.innerText.length, origin:location.origin};
     })()`);
     fs.appendFileSync(path.join(dataDir, 'desktop.log'), '[desktop smoke] ' + JSON.stringify(result) + '\n');
-    if (result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
+    if (!win.webContents.getLastWebPreferences().preload || result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
     const project = await win.webContents.executeJavaScript(`(async () => {
       const login = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin',password:'admin'})});
       if (!login.ok) throw new Error('Local login failed: ' + login.status + ' ' + await login.text());
@@ -99,6 +157,19 @@ async function start() {
       if (!project) throw new Error('Default project missing');
       return {id:project.id, name:project.name};
     })()`);
+    await win.webContents.executeJavaScript(`window.dgDesktop.mode('login')`);
+    if (win.getSize()[0] > 600 || win.isResizable()) throw new Error('Login window is not compact');
+    if (await win.webContents.executeJavaScript(`!!document.querySelector('.desktop-login')`))
+      fs.writeFileSync(path.join(dataDir, 'login.png'), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript(`window.dgDesktop.mode('workspace')`);
+    if (!win.isResizable()) throw new Error('Workspace is not resizable');
+    await win.webContents.executeJavaScript(`window.dgDesktop.maximize()`);
+    if (!win.isMaximized()) throw new Error('Maximize button failed');
+    await win.webContents.executeJavaScript(`window.dgDesktop.maximize()`);
+    if (win.isMaximized()) throw new Error('Restore button failed');
+    await new Promise(resolve => { win.webContents.once('did-finish-load', resolve); win.reload(); });
+    await win.webContents.executeJavaScript(`(async()=>{ for(let i=0;i<200 && !document.querySelector('.topbar');i++)await new Promise(r=>setTimeout(r,100)); if(!document.querySelector('.desktop-titlebar') || !document.querySelector('.topbar')) throw new Error('Desktop workspace did not render'); })()`);
+    fs.writeFileSync(path.join(dataDir, 'workspace.png'), (await win.webContents.capturePage()).toPNG());
     const marker = path.join(dataDir, 'smoke-project.json');
     if (fs.existsSync(marker) && JSON.parse(fs.readFileSync(marker, 'utf8')).id !== project.id) throw new Error('Project did not survive restart');
     fs.writeFileSync(marker, JSON.stringify(project));
