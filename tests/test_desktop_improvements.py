@@ -62,6 +62,9 @@ def test_import_remove_selected_files_and_busy_guard(database, monkeypatch, tmp_
     view=importer.remove_files(sid,['one.png'])
     assert view['count']==1 and view['photos'][0]['name']=='two.png'
     assert view['groups'][0]['photos']==['two.png']
+    with db.session() as s:
+        remaining=s.scalar(select(ImportFile).where(ImportFile.session_id==sid))
+        assert storage.get(remaining.asset), 'Shared image bytes must survive deletion of another entry'
     with pytest.raises(LookupError): importer.remove_files(sid,['other.png'])
 
 

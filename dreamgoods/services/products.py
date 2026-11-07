@@ -97,6 +97,7 @@ def delete_products(project_id, product_ids):
     if not ids:
         raise ValueError("выберите товары для удаления")
     with db.session() as s:
+        s.get(Project, project_id, with_for_update=True)
         rows = s.scalars(select(Product).where(Product.project_id == project_id, Product.id.in_(ids))
                          .order_by(Product.id).with_for_update()).all()
         if len(rows) != len(ids):
