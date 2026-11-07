@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   windows:
     runs-on: windows-2025
@@ -51,16 +52,34 @@ jobs:
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Install and smoke-test actual desktop twice (data survives restart)
+      - name: Download previous successful installer for upgrade test
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const runs = await github.rest.actions.listWorkflowRuns({ ...context.repo, workflow_id:'desktop-windows.yml', branch:'desktop-windows', status:'success', per_page:10 });
+            for (const run of runs.data.workflow_runs) {
+              if (run.id === context.runId) continue;
+              const artifacts = await github.rest.actions.listWorkflowRunArtifacts({ ...context.repo, run_id:run.id });
+              const artifact = artifacts.data.artifacts.find(a => a.name === 'DreamGoods-Windows-x64' && !a.expired);
+              if (!artifact) continue;
+              const link = await github.rest.actions.downloadArtifact({ ...context.repo, artifact_id:artifact.id, archive_format:'zip' });
+              fs.writeFileSync(process.env.RUNNER_TEMP + '/previous-desktop.zip', Buffer.from(link.data));
+              core.info('Upgrade baseline: ' + run.html_url);
+              break;
+            }
+      - name: Install, upgrade, uninstall and reinstall actual desktop (data survives)
         shell: pwsh
         run: |
           $installer = (Get-ChildItem desktop/release/DreamGoods-Setup-*.exe | Select-Object -First 1).FullName
           $install = Join-Path $env:RUNNER_TEMP 'DreamGoods-installed'
-          $p = Start-Process $installer -ArgumentList @('/S',"/D=$install") -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Installer failed: $($p.ExitCode)" }
-          $env:DREAMGOODS_DESKTOP_DATA_DIR = Join-Path $env:RUNNER_TEMP 'DreamGoods-тест data'
+          $env:DREAMGOODS_DESKTOP_DATA_DIR = Join-Path $env:APPDATA 'DreamGoodsDesktop'
           $env:DREAMGOODS_DESKTOP_SMOKE = '1'
-          foreach ($attempt in 1..2) {
+          function Install-DreamGoods($exe) {
+            $p = Start-Process $exe -ArgumentList @('/S',"/D=$install") -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "Installer failed: $($p.ExitCode)" }
+          }
+          function Test-DreamGoods {
             $p = Start-Process "$install\DreamGoods.exe" -PassThru
             if (!$p.WaitForExit(240000)) { Stop-Process -Id $p.Id; throw 'Desktop timed out' }
             if ($p.ExitCode -ne 0) { throw "Desktop failed: $($p.ExitCode)" }
@@ -68,19 +87,54 @@ jobs:
             if ($smoke.node -ne 'undefined') { throw 'Renderer has Node access' }
             if (!(Test-Path "$env:DREAMGOODS_DESKTOP_DATA_DIR\postgres\PG_VERSION")) { throw 'No database created' }
             if (Test-Path "$env:DREAMGOODS_DESKTOP_DATA_DIR\postgres\postmaster.pid") { throw 'Database did not stop' }
-            if ($attempt -eq 1) { Set-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\keep-me.txt" 'preserved' }
-            if ($attempt -eq 2 -and !(Test-Path "$env:DREAMGOODS_DESKTOP_DATA_DIR\keep-me.txt")) { throw 'Data was lost' }
           }
+          $baseline = Join-Path $env:RUNNER_TEMP 'previous-desktop.zip'
+          if (Test-Path $baseline) {
+            Expand-Archive $baseline (Join-Path $env:RUNNER_TEMP 'previous-desktop')
+            $previous = (Get-ChildItem (Join-Path $env:RUNNER_TEMP 'previous-desktop') -Filter '*.exe' -Recurse | Select-Object -First 1).FullName
+            Install-DreamGoods $previous
+            Test-DreamGoods
+            $credentials = (Get-FileHash "$env:DREAMGOODS_DESKTOP_DATA_DIR\database.json").Hash
+          }
+          Install-DreamGoods $installer
+          Test-DreamGoods
+          if ($credentials -and (Get-FileHash "$env:DREAMGOODS_DESKTOP_DATA_DIR\database.json").Hash -ne $credentials) { throw 'Upgrade changed database credentials' }
+          $credentials = (Get-FileHash "$env:DREAMGOODS_DESKTOP_DATA_DIR\database.json").Hash
+          $retention = Get-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\smoke-retention.json" -Raw
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          if (Test-Path $baseline) {
+            $copies = Get-ChildItem "$env:DREAMGOODS_DESKTOP_DATA_DIR\backups" -Filter database.dump -Recurse
+            if (!$copies) { throw 'Upgrade did not create database checkpoint' }
+          }
+          # Installation over the same version must preserve records too.
+          Install-DreamGoods $installer
+          Test-DreamGoods
+          $uninstaller = (Get-ChildItem $install -Filter '*Uninstall*.exe' | Select-Object -First 1).FullName
+          if (!$uninstaller) { throw 'Uninstaller not found' }
+          $p = Start-Process $uninstaller -ArgumentList @('/S',"_?=$install") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
+          # NSIS may finish removal from a temporary process; wait for it to leave.
+          for ($i=0; $i -lt 60 -and (Test-Path "$install\DreamGoods.exe"); $i++) { Start-Sleep -Milliseconds 500 }
+          if (Test-Path "$install\DreamGoods.exe") { throw 'Application was not removed' }
+          if ((Get-FileHash "$env:DREAMGOODS_DESKTOP_DATA_DIR\database.json").Hash -ne $credentials) { throw 'Uninstall changed credentials' }
+          if ((Get-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\smoke-retention.json" -Raw) -ne $retention) { throw 'Uninstall removed data' }
+          Install-DreamGoods $installer
+          Test-DreamGoods
+          if ((Get-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\smoke-retention.json" -Raw) -ne $retention) { throw 'Reinstall lost user project' }
+          if ((Get-Content "$env:DREAMGOODS_DESKTOP_DATA_DIR\application.json" | ConvertFrom-Json).version -ne $version) { throw 'Wrong data version' }
+          Write-Output 'PASS: previous installer upgrade, database checkpoint, same-version install, uninstall and reinstall preserve user project and credentials'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: desktop-smoke-logs
           path: |
-            ${{ runner.temp }}/DreamGoods-тест data/desktop.log
-            ${{ runner.temp }}/DreamGoods-тест data/postgres.log
-            ${{ runner.temp }}/DreamGoods-тест data/smoke.json
-            ${{ runner.temp }}/DreamGoods-тест data/login.png
-            ${{ runner.temp }}/DreamGoods-тест data/workspace.png
+            ~/AppData/Roaming/DreamGoodsDesktop/desktop.log
+            ~/AppData/Roaming/DreamGoodsDesktop/postgres.log
+            ~/AppData/Roaming/DreamGoodsDesktop/smoke.json
+            ~/AppData/Roaming/DreamGoodsDesktop/login.png
+            ~/AppData/Roaming/DreamGoodsDesktop/workspace.png
+            ~/AppData/Roaming/DreamGoodsDesktop/assistant.png
+            ~/AppData/Roaming/DreamGoodsDesktop/backups/**/manifest.json
       - uses: actions/upload-artifact@v4
         with:
           name: DreamGoods-Windows-x64

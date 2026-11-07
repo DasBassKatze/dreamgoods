@@ -5,6 +5,8 @@
 from . import config
 
 DEFAULTS = {
+    "assistant_enabled": True,
+    "assistant_model": "openai/gpt-4.1-mini",
     # генерация
     "model": "google/gemini-nano-banana-2.1",
     "providers": "google-ai-studio",
@@ -46,7 +48,7 @@ SECRETS = ("api_key", "qc_api_key")
 INTS = {"max_refs": (1, 14), "ref_side": (512, 3072), "qc_retries": (0, 3), "qc_min_side": (0, 4096),
         "qc_image_side": (768, 4096), "plan_a": (0, 8), "plan_b": (0, 6), "plan_c": (0, 4),
         "persona_id": (0, 10**15), "persona_refs": (1, 4), "preset_id": (0, 10**15), "style_ref_id": (0, 10**15)}
-BOOLS = ("fallback", "qc_enabled", "qc_autoregen", "qc_count", "qc_cascade", "upload_refs", "series")
+BOOLS = ("assistant_enabled", "fallback", "qc_enabled", "qc_autoregen", "qc_count", "qc_cascade", "upload_refs", "series")
 REASONING = ("auto", "none", "minimal", "low", "medium", "high")
 
 

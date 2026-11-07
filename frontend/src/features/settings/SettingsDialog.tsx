@@ -61,6 +61,12 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
     <Modal title="Настройки" width={780} onClose={onClose}
       footer={<><span className="spacer" /><button onClick={onClose}>Отмена</button><button className="primary" onClick={save}>Сохранить</button></>}>
       <div className="form grid">
+        <h4>ИИ-помощник</h4>
+        <Row label="Помощник">{check("assistant_enabled", "помощь и навигация по приложению")}</Row>
+        <Row label="Модель помощника">
+          {text("assistant_model", "openai/gpt-4.1-mini")}
+          <div className="hint">ID текстовой модели Polza. Использует основной ключ проекта. Ответы оплачиваются по тарифу провайдера.</div>
+        </Row>
         <Row label="API-ключ Polza">
           <input type="password" value={apiKey} placeholder="оставьте пустым, чтобы не менять" onChange={(e) => setApiKey(e.target.value)} />
           <div className="hint">{v.has_key ? "Ключ сохранён (общий для всех проектов организации)" : "Ключ не найден — вставьте его сюда"}</div>

@@ -1,4 +1,5 @@
 import { isDesktop } from "../desktop/runtime";
+import type { AssistantConfig, AssistantReply } from "../features/assistant/AssistantPanel";
 import type { KeyStatus } from "../hooks/useKeyStatus";
 // Тонкая обёртка над fetch и все вызовы API в одном месте.
 import type {
@@ -126,6 +127,8 @@ export interface Trial {id:number;frame_id:number;product_id:number;status:strin
 export function projectApi(id: number) {
   const p = `/api/projects/${id}`;
   return {
+    assistantConfig: () => get<AssistantConfig>(`${p}/assistant`),
+    askAssistant: (body: { message: string; history: { role: "user" | "assistant"; content: string }[]; route: string; product_ids: number[] }) => post<AssistantReply>(`${p}/assistant`, body),
     deleteProducts: (ids: number[]) => post<{ deleted: number; ids: number[] }>(`${p}/products/delete`, { product_ids: ids }),
     removeImportFiles: (id: number, paths: string[]) => request<ImportView>("DELETE", `${p}/imports/${id}/files`, { paths }),
     state: () => get<ProjectState>(`${p}/state`),

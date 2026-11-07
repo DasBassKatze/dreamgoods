@@ -50,6 +50,14 @@ ipcMain.handle('dg:window', (event, action) => {
   else if (action === 'minimize') win.minimize();
   else if (action === 'maximize' && windowMode === 'workspace') { if (win.isMaximized()) win.unmaximize(); else win.maximize(); }
 });
+async function dataInfo() {
+  const result = await dialog.showMessageBox(win, { type: 'info', title: 'Обновление DreamGoods',
+    message: `DreamGoods ${app.getVersion()}`, detail: 'Закройте приложение и запустите установщик новой версии. Удалять текущую версию перед обновлением не нужно.\n\nПроекты, фото и настройки хранятся отдельно и сохраняются также при удалении программы. Перед обновлением базы создаётся копия в backups.\n\nДля полной резервной копии закройте DreamGoods и скопируйте всю папку:\n' + dataDir,
+    buttons: ['Понятно', 'Папка данных', 'Резервные копии'], defaultId: 0, cancelId: 0 });
+  if (result.response === 1) await shell.openPath(dataDir);
+  if (result.response === 2) { const folder = path.join(dataDir, 'backups'); fs.mkdirSync(folder, { recursive: true }); await shell.openPath(folder); }
+}
+ipcMain.handle('dg:data-info', async event => { if (!trusted(event)) throw new Error('Unknown window'); await dataInfo(); });
 ipcMain.handle('dg:state', event => {
   if (!trusted(event)) throw new Error('Unknown window');
   return { maximized: win.isMaximized() };
@@ -91,7 +99,10 @@ function health(url) {
 }
 async function start() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Файл', submenu: [{ label: 'Открыть папку данных', click: () => shell.openPath(dataDir) }, { role: 'quit', label: 'Выход' }] },
+    { label: 'Файл', submenu: [{ label: 'Открыть папку данных', click: () => shell.openPath(dataDir) },
+      { label: 'Открыть резервные копии', click: () => { const backups = path.join(dataDir, 'backups'); fs.mkdirSync(backups, { recursive: true }); void shell.openPath(backups); } },
+      { label: 'Как обновить приложение', click: () => void dataInfo() },
+      { role: 'quit', label: 'Выход' }] },
     { label: 'Правка', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     { label: 'Вид', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }] }
   ]));
@@ -147,14 +158,23 @@ async function start() {
     })()`);
     fs.appendFileSync(path.join(dataDir, 'desktop.log'), '[desktop smoke] ' + JSON.stringify(result) + '\n');
     if (!result.desktop || !result.ready || result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
+    const retention = path.join(dataDir, 'smoke-retention.json');
+    const expectedProject = fs.existsSync(retention) ? JSON.parse(fs.readFileSync(retention, 'utf8')) : null;
     const project = await win.webContents.executeJavaScript(`(async () => {
       const login = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin',password:'admin'})});
       if (!login.ok) throw new Error('Local login failed: ' + login.status + ' ' + await login.text());
       const r = await fetch('/api/projects');
       if (!r.ok) throw new Error('Projects API failed: ' + r.status + ' ' + await r.text());
       const body = await r.json();
-      const project = body.projects[0];
-      if (!project) throw new Error('Default project missing');
+      const expected = ${JSON.stringify(expectedProject)};
+      const name = 'Сохранение данных — smoke';
+      let project = body.projects.find(p => p.name === name);
+      if (expected && (!project || project.id !== expected.id)) throw new Error('User project lost after installer operation');
+      if (!project) {
+        const created = await fetch('/api/projects', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client:'',name})});
+        if (!created.ok) throw new Error('Retention project creation failed');
+        project = {...await created.json(),name};
+      }
       return {id:project.id, name:project.name};
     })()`);
     await win.webContents.executeJavaScript(`window.dgDesktop.mode('login')`);
@@ -169,8 +189,12 @@ async function start() {
     if (win.isMaximized()) throw new Error('Restore button failed');
     await new Promise(resolve => { win.webContents.once('did-finish-load', resolve); win.reload(); });
     await win.webContents.executeJavaScript(`(async()=>{ for(let i=0;i<200 && !document.querySelector('.topbar');i++)await new Promise(r=>setTimeout(r,100)); if(!document.querySelector('.desktop-titlebar') || !document.querySelector('.topbar')) throw new Error('Desktop workspace did not render'); })()`);
+    await new Promise(resolve => setTimeout(resolve, 600));
     fs.writeFileSync(path.join(dataDir, 'workspace.png'), (await win.webContents.capturePage()).toPNG());
-    const marker = path.join(dataDir, 'smoke-project.json');
+    await win.webContents.executeJavaScript(`document.querySelector('.assistant-launch')?.click()`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    fs.writeFileSync(path.join(dataDir, 'assistant.png'), (await win.webContents.capturePage()).toPNG());
+    const marker = retention;
     if (fs.existsSync(marker) && JSON.parse(fs.readFileSync(marker, 'utf8')).id !== project.id) throw new Error('Project did not survive restart');
     fs.writeFileSync(marker, JSON.stringify(project));
     fs.writeFileSync(path.join(dataDir, 'smoke.json'), JSON.stringify({ ...result, project }));

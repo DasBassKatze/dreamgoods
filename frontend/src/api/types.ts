@@ -64,6 +64,8 @@ export interface Product {
 }
 
 export interface Settings {
+  assistant_enabled?: boolean;
+  assistant_model?: string;
   model: string;
   providers: string;
   fallback: boolean;

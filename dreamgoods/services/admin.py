@@ -18,7 +18,7 @@ from .presets import model_stats
 
 KIND_RU = {"generation": "генерация кадров", "edit": "правки фото", "qc": "ИИ-проверка: сверка", "count": "ИИ-проверка: подсчёт",
            "spec": "ИИ-проверка: ожидания", "views": "ракурсы референсов", "profile": "профили товаров",
-           "sort": "сортировка импорта", "persona": "модели клиента", "persona_image": "образы моделей", "style": "оформление"}
+           "assistant": "ИИ-помощник", "sort": "сортировка импорта", "persona": "модели клиента", "persona_image": "образы моделей", "style": "оформление"}
 
 
 def overview(project_id):

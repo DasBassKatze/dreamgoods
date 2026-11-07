@@ -110,6 +110,7 @@ export function TopBar(p: Props) {
           <div className="menu right">
             <div className="menu-head"><b>{p.me.name}</b><small>{master ? "мастер-аккаунт" : p.me.email}</small></div>
             <button onClick={() => pick("account")}>Учётная запись</button>
+            {isDesktop && <button onClick={() => { setOpen(""); void window.dgDesktop!.dataInfo(); }}>Обновление и данные</button>}
             {!master && <button onClick={() => pick("balance")}>{p.balance?.billing ? "Баланс и история" : "Расходы"}</button>}
             {!isDesktop && !master && p.balance?.billing && <a className="menu-link" href="/pricing#packages">Пополнить баланс</a>}
             <a className="menu-link" href="/" target={isDesktop ? "_blank" : undefined} rel="noreferrer">Сайт DreamGoods</a>

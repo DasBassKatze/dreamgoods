@@ -105,6 +105,10 @@ def main():
                       '-d', 'postgres', '-tAc', "SELECT 1 FROM pg_database WHERE datname='dreamgoods'"], env=env)
         if exists.stdout.strip() != '1':
             run([pg / ('createdb' + ext), '-h', '127.0.0.1', '-p', str(dbport), '-U', 'dreamgoods', 'dreamgoods'], env=env)
+        from data_safety import prepare_upgrade, mark_version
+        from dreamgoods import __version__
+        prepare_upgrade(root, pg, dbport, env, __version__, exists.stdout.strip() == '1', run)
+        mark_version(root, __version__)
         # Configure BEFORE importing any DreamGoods module (config is evaluated at import).
         os.environ.update({
             'DATABASE_URL': f'postgresql+psycopg://dreamgoods:{password}@127.0.0.1:{dbport}/dreamgoods',

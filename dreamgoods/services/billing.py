@@ -15,7 +15,7 @@ from ..core.money import decimal, money
 from ..db.models import BalanceEntry, Client, Organization, Project
 
 KIND_RU = {"generation": "генерация кадра", "edit": "правка фото", "qc": "ИИ-проверка", "count": "ИИ-проверка",
-           "spec": "ИИ-проверка", "views": "разбор референсов", "profile": "профиль товара", "sort": "разбор импорта",
+           "spec": "ИИ-проверка", "views": "разбор референсов", "profile": "профиль товара", "assistant": "ИИ-помощник", "sort": "разбор импорта",
            "persona": "модель клиента", "persona_image": "образ модели", "style": "оформление"}
 
 

@@ -2,6 +2,7 @@ export interface DesktopBridge {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+  dataInfo: () => Promise<void>;
   mode: (mode: "login" | "workspace") => Promise<void>;
   state: () => Promise<{ maximized: boolean }>;
 }

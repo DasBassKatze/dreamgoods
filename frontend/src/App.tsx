@@ -1,5 +1,6 @@
 import { isDesktop } from "./desktop/runtime";
 import { DesktopLogin } from "./desktop/DesktopLogin";
+import { AssistantPanel } from "./features/assistant/AssistantPanel";
 import { useKeyStatus } from "./hooks/useKeyStatus";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, authApi, onAuthLost, projectApi } from "./api/client";
@@ -240,6 +241,9 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
           {page}
         </main>
       </div>
+      {isDesktop && scope && <AssistantPanel key={projectId} projectId={scope.state.project.id} projectName={scope.state.project.name}
+        route={route} master={master} selected={scope.state.products.filter(p => scope.selected.has(p.id)).map(p => ({ id: p.id, sku: p.sku }))}
+        go={go} openProduct={id => { if (scope.product(id)) setProfileOf(id); }} />}
     </div>
   );
 

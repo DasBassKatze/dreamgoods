@@ -45,3 +45,16 @@ html.desktop { background: transparent; --accent:#7554d8; --bg:#f5f5fa; --panel:
 @media (max-height:600px) { .desktop-login { padding-top:18px; } .desktop-login-mark { width:44px; height:44px; margin-bottom:9px; font-size:28px; } .desktop-login-caption { margin-bottom:14px; } }
 
 .desktop .app-body { min-height:calc(100vh - var(--top) - 42px); }
+
+@keyframes dg-panel-enter { from { opacity:0; transform:translateY(7px) scale(.995); } to { opacity:1; transform:none; } }
+@keyframes dg-fade-in { from { opacity:0; } to { opacity:1; } }
+.desktop button, .desktop .menu-link { transition:background-color .16s ease,color .16s ease,border-color .16s ease,box-shadow .16s ease; }
+.desktop .menu { transform-origin:top right; animation:dg-panel-enter .18s ease-out; }
+.desktop .modal { animation:dg-fade-in .16s ease-out; }
+.desktop .modal > *, .desktop-login { animation:dg-panel-enter .25s cubic-bezier(.2,.8,.2,1); }
+.desktop .content > * { animation:dg-fade-in .2s ease-out; }
+.desktop input, .desktop textarea, .desktop select { transition:border-color .18s ease,box-shadow .18s ease; }
+.desktop .primary:hover:not(:disabled) { box-shadow:0 5px 16px #7954d526; }
+@media (prefers-reduced-motion:reduce) {
+  .desktop *, .desktop *::before, .desktop *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+}
