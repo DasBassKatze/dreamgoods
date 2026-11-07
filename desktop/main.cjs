@@ -142,11 +142,11 @@ async function start() {
   // CI verifies an actual packaged window, HTTP API and isolated renderer; no paid calls.
   if (process.env.DREAMGOODS_DESKTOP_SMOKE === '1') {
     const result = await win.webContents.executeJavaScript(`(async () => {
-      for(let i=0; i<300 && document.body.innerText.length < 30; i++) await new Promise(r => setTimeout(r,100));
-      return {title:document.title, node:typeof require, body:document.body.innerText.length, origin:location.origin};
+      for(let i=0; i<300 && !document.querySelector('.desktop-login,.topbar'); i++) await new Promise(r => setTimeout(r,100));
+      return {title:document.title, node:typeof require, desktop:typeof window.dgDesktop === 'object', ready:!!document.querySelector('.desktop-login,.topbar'), body:document.body.innerText.length, origin:location.origin};
     })()`);
     fs.appendFileSync(path.join(dataDir, 'desktop.log'), '[desktop smoke] ' + JSON.stringify(result) + '\n');
-    if (!win.webContents.getLastWebPreferences().preload || result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
+    if (!result.desktop || !result.ready || result.node !== 'undefined' || result.body < 10 || result.origin !== origin) throw new Error('Проверка окна не прошла');
     const project = await win.webContents.executeJavaScript(`(async () => {
       const login = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin',password:'admin'})});
       if (!login.ok) throw new Error('Local login failed: ' + login.status + ' ' + await login.text());
