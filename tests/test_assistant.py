@@ -49,7 +49,9 @@ def test_assistant_input_limits_and_inflight_guard():
     with assistant.single_request(17): pass
 
 
-def test_assistant_paid_reply_context_and_no_mutations(database, monkeypatch):
+def test_assistant_paid_reply_context_and_no_mutations(database, monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.DEBUG, logger="dreamgoods")
     _, ids = database
     captured = []
     def post(url, **kwargs):
@@ -61,6 +63,7 @@ def test_assistant_paid_reply_context_and_no_mutations(database, monkeypatch):
     result = assistant.reply(ids['project'], user(ids), Question(message='Как загрузить фото?',product_ids=[ids['product']]))
     assert result['actions'][0]['route'] == 'import' and result['cost_rub'] == .12
     assert len(captured) == 1
+    assert 'Откройте загрузку' not in caplog.text
     payload = captured[0][1]
     assert payload['model'] == 'openai/gpt-4.1-mini'
     assert 'fake-test-key' not in json.dumps(payload)

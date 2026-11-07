@@ -628,7 +628,7 @@ def _chat_paid(st, model, system, content, trace, what, max_tokens=1500, reasoni
         if r.status_code >= 400:
             if r.status_code < 500:
                 payments.not_charged()
-            log.error("%s %s: HTTP %s: %s", tag, what, r.status_code, r.text[:500])
+            log.error("%s %s: HTTP %s: %s", tag, what, r.status_code, "ответ скрыт" if what == "assistant" else r.text[:500])
             raise RuntimeError(f"{what}: HTTP {r.status_code}: {r.text[:300]}")
         break
     j = r.json()
@@ -647,14 +647,16 @@ def _chat_paid(st, model, system, content, trace, what, max_tokens=1500, reasoni
     trace.add(KIND.get(what, what), model, cost, {"prompt": pt, "completion": ct, "reasoning": rt, "cached": cached})
     log.info("%s %s: %.1f с · %.2f ₽ · токены: вход %d%s, ответ %d%s", tag, what, secs, cost, pt,
              f" (из кэша {cached})" if cached else "", ct, f" (из них рассуждения {rt})" if rt else "")
-    log.debug("%s %s: ответ: %s", tag, what, (msg or "")[:3000])
+    if what != "assistant":
+        log.debug("%s %s: ответ: %s", tag, what, (msg or "")[:3000])
     if not (msg or "").strip() and choice.get("finish_reason") == "length":
         raise RuntimeError(f"{what}: модель израсходовала лимит токенов на рассуждения и не дала ответ — "
                            "поставьте в настройках «Рассуждения» ниже")
     try:
         res = _parse_json(msg)
     except Exception as e:
-        log.error("%s %s: модель ответила испорченным JSON (%s): %s", tag, what, e, (msg or "")[:3000])
+        log.error("%s %s: модель ответила испорченным JSON (%s): %s", tag, what,
+                  type(e).__name__ if what == "assistant" else e, "ответ скрыт" if what == "assistant" else (msg or "")[:3000])
         cut = choice.get("finish_reason") == "length"
         if _retry:      # один повтор: обрезанному ответу — вдвое больше лимит, иначе — та же просьба ещё раз
             log.warning("%s %s: повторяю запрос%s", tag, what, " с увеличенным лимитом ответа" if cut else "")
