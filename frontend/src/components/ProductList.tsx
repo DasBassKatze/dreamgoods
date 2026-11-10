@@ -1,6 +1,6 @@
 import type { Dialogs } from "../App";
 import type { Product } from "../api/types";
-import { qcStatus } from "../lib/format";
+import { needsReview } from "../lib/format";
 import { useProject } from "../ProjectContext";
 import { ProductCard } from "./ProductCard";
 import type { Filter } from "./Toolbar";
@@ -12,7 +12,7 @@ export function matchesFilter(p: Product, filter: Filter) {
     case "err":
       return p.frames.some((f) => f.state === "error");
     case "review":
-      return p.frames.some((f) => qcStatus(f) === "review");
+      return p.frames.some(needsReview);
     default:
       return true;
   }

@@ -1,11 +1,24 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePersistentState } from "../../hooks/usePersistentState";
 
 const ModeContext = createContext({ advanced: false, setAdvanced: (_value: boolean) => {} });
 
 export function InterfaceModeProvider({ userId, children }: { userId: number; children: ReactNode }) {
   const [mode, setMode] = usePersistentState(`interface-mode:${userId}`, "simple");
-  return <ModeContext.Provider value={{ advanced: mode === "advanced", setAdvanced: value => setMode(value ? "advanced" : "simple") }}><div className="studio-shell">{children}</div></ModeContext.Provider>;
+  const changed = useRef(false);
+  useEffect(() => {
+    let active = true;
+    const saved = window.dgDesktop?.interfaceMode?.(userId);
+    saved?.then(value => { if (active && !changed.current && value) setMode(value); }).catch(() => {});
+    return () => { active = false; };
+  }, [userId, setMode]);
+  const setAdvanced = (advanced: boolean) => {
+    changed.current = true;
+    const value = advanced ? "advanced" : "simple";
+    setMode(value);
+    void window.dgDesktop?.interfaceMode?.(userId, value).catch(() => {});
+  };
+  return <ModeContext.Provider value={{ advanced: mode === "advanced", setAdvanced }}><div className="studio-shell">{children}</div></ModeContext.Provider>;
 }
 export const useInterfaceMode = () => useContext(ModeContext);
 

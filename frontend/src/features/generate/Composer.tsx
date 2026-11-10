@@ -5,6 +5,8 @@ import { Icon } from "../../layout/Icon";
 import { useActions } from "../../hooks/useActions";
 import { useProject } from "../../ProjectContext";
 import { AdvancedFields } from "../interface/InterfaceMode";
+import { needsReview } from "../../lib/format";
+import { useInterfaceMode } from "../interface/InterfaceMode";
 import { BATCH } from "./runOptions";
 import { useGenerationSelection } from "./GenerationSelection";
 
@@ -13,6 +15,10 @@ export function Composer({ dialogs }: { dialogs: Dialogs }) {
   const { generate } = useActions();
   const { target, setTarget, ids, selectedIds, visibleIds, hidden, label } = useGenerationSelection();
   const s = state.settings;
+  const { advanced } = useInterfaceMode();
+  const targets = state.products.filter(p => ids.includes(p.id));
+  const ready = targets.length > 0 && targets.every(p => p.total > 0 && p.done >= p.total);
+  const review = targets.some(p => p.frames.some(needsReview));
   return <section className="runbar" id="generation-start" aria-label="Запуск съёмки">
     <div className="run-controls">
       <label className="run-what"><small>Какие товары обработать</small>
@@ -23,9 +29,11 @@ export function Composer({ dialogs }: { dialogs: Dialogs }) {
         </select>
       </label>
       <span className="run-target" aria-live="polite">{label}{target === "selected" && hidden > 0 && <strong>Из них скрыто фильтром: {hidden}</strong>}</span>
-      <button className="primary big" disabled={!ids.length} onClick={() => void generate([...ids], limit, {})}>
-        <Icon name="spark" size={18} /> Сгенерировать{ids.length ? ` (${ids.length} тов.)` : ""}
-      </button>
+      {!advanced && ready && !state.runner.busy ? <button className="primary big" onClick={() => { window.location.hash = review ? "/review" : "/gallery"; }}>
+        <Icon name={review ? "search" : "image"} size={18} />{review ? "Проверить результат" : "Открыть галерею"}
+      </button> : <button className="primary big" disabled={!ids.length || (!advanced && state.runner.busy)} onClick={() => void generate([...ids], limit, {})}>
+        <Icon name="spark" size={18} />{!advanced && state.runner.busy ? "Генерация идёт…" : `Сгенерировать${ids.length ? ` (${ids.length} тов.)` : ""}`}
+      </button>}
     </div>
     <div className="run-quality"><span className={s.qc_enabled ? "" : "quality-warning"}>{s.qc_enabled ? "В проекте: ИИ-проверка включена" : "В проекте: ИИ-проверка выключена"}</span>
       <span>{s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 ? `Автопеределка до ${s.qc_retries} раз · платно` : "Без автоматических переделок"}</span>

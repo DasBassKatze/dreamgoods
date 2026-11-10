@@ -1,4 +1,5 @@
 import { InterfaceModeProvider, ModeSwitch } from "./features/interface/InterfaceMode";
+import { needsReview } from "./lib/format";
 import { isDesktop } from "./desktop/runtime";
 import { DesktopLogin } from "./desktop/DesktopLogin";
 import { AssistantPanel } from "./features/assistant/AssistantPanel";
@@ -229,7 +230,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
     <div className="app studio-ui">
       <TopBar me={me} route={route} go={go} balance={account}
         polza={keyStatus || (master && state ? { value: state.balance, error: state.balance_error } : null)}
-        reviewCount={state?.totals.review ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
+        reviewCount={state?.products.reduce((n, p) => n + p.frames.filter(needsReview).length, 0) ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
         onMenu={() => setMenuOpen((x) => !x)} />
       <div className="app-body">
         <ProjectsSidebar master={master} projects={projects} projectId={projectId}

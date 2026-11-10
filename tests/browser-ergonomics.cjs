@@ -9,10 +9,10 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  await page.addInitScript(()=>{window.dgDesktop={minimize:async()=>{},maximize:async()=>{},close:async()=>{},mode:async()=>{},state:async()=>({maximized:false}),dataInfo:async()=>{}};});
  const frame=(id,status)=>({id,i:1,block:'Студийный кадр',shot:'Белый фон',state:'done',note:'',error:'',generation:id,asset:'image-'+id,qc:{status,defects:[],counts:null,attempts:1,cost:.1,model:'test'}});
  const preset={id:7,name:'WB · студийная съёмка',aspect:'3:4',quality:'standard',market:'wb',market_name:'Wildberries',total:4};
- const make=(id,sku,status)=>({id,sku,name:'Обувь',persona_id:null,persona:null,preset_id:id===11?7:null,style_ref_id:null,photos:[{asset:'source-'+id,selected:true,role:'product',view:'side'}],frames:[frame(id*10,status)],done:1,total:1,profile:{category:'Обувь',subcategory:'Кроссовки',summary:'Повседневная обувь',version:1},profile_job:null});
+ const make=(id,sku,status)=>({id,sku,name:'Обувь',persona_id:null,persona:null,preset_id:id===11?7:null,style_ref_id:null,photos:[{asset:'source-'+id,selected:true,role:'product',view:'side'}],frames:[frame(id*10,status),{...frame(id*10+1,'unchecked'),i:2,state:'missing',generation:null,asset:null,qc:null}],done:1,total:2,profile:{category:'Обувь',subcategory:'Кроссовки',summary:'Повседневная обувь',version:1},profile_job:null});
  const products=[make(11,'SHOE-A','pass'),make(22,'SHOE-B','accepted'),make(33,'SHOE-C','unchecked')];
  const project={id:1,name:'Весенняя коллекция',client:'Магазин',products:3};
- const state={admin:true,account:{balance:200,billing:false},project,persona:null,style_ref:null,preset,presets:[preset],options:{personas:[],styles:[]},settings:{qc_enabled:true,qc_autoregen:true,qc_retries:2,aspect:'3:4',model:'test',plan:{},preset_id:7},warnings:[],products,runner:{queued:0,running:0,busy:false,ok:0,fail:0,errors:0,spent:0,stopping:false},log:[],totals:{done:3,total:3,review:0,spent_all:0,avg_cost:.5},metrics:null,balance:100,balance_error:''};
+ const state={admin:true,account:{balance:200,billing:false},project,persona:null,style_ref:null,preset,presets:[preset],options:{personas:[],styles:[]},settings:{qc_enabled:true,qc_autoregen:true,qc_retries:2,aspect:'3:4',model:'test',plan:{},preset_id:7},warnings:[],products,runner:{queued:0,running:0,busy:false,ok:0,fail:0,errors:0,spent:0,stopping:false},log:[],totals:{done:3,total:6,review:1,spent_all:0,avg_cost:.5},metrics:null,balance:100,balance_error:''};
  let mutations=[],preview=null,exports=[];
  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640" viewBox="0 0 480 640"><rect width="480" height="640" fill="#f6f6f5"/><ellipse cx="245" cy="425" rx="158" ry="20" fill="#e1dfdc"/><path d="M92 356c60-15 70-91 118-103 17 51 55 64 106 71 56 8 80 35 78 62-2 30-292 35-302-5z" fill="#a89b8b"/><path d="M94 382c67 26 231 22 300-1l-4 32c-80 27-213 27-295-1z" fill="#fff"/><path d="M174 300l55 25m-69-9l57 24m-71-7l56 23" stroke="#e3dbd1" stroke-width="9" stroke-linecap="round"/></svg>';
  await page.route('**/api/**',async route=>{
@@ -80,7 +80,11 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  assert.equal(mutations.filter(x=>x.p.endsWith('/review/batch')).length,reviewBefore+1);
  await page.getByRole('button',{name:'Генерация',exact:true}).click();await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).waitFor();
  for(const width of [1024,390]){await page.setViewportSize({width,height:844});await page.screenshot({path:`/tmp/dg-ui-${width}.png`,animations:'disabled'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow at '+width);}
- await page.setViewportSize({width:1440,height:960});await page.getByRole('button',{name:/Пустой проект/}).click();await page.getByRole('heading',{name:'Начните с фотографий товара',exact:true}).waitFor();
+ await page.setViewportSize({width:1440,height:960});
+ products.forEach(p=>{p.frames[1]={...frame(p.id*10+1,'pass'),i:2};p.done=2;});products[2].frames[0].qc.status='unchecked';state.totals.done=6;
+ await page.reload();await page.getByRole('button',{name:'Проверить результат',exact:true}).waitFor();
+ products[2].frames[0].qc.status='pass';await page.reload();await page.getByRole('button',{name:'Открыть галерею',exact:true}).waitFor();
+ await page.getByRole('button',{name:/Пустой проект/}).click();await page.getByRole('heading',{name:'Начните с фотографий товара',exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:/^Сгенерировать/}).count(),0);await page.screenshot({path:'/tmp/dg-ui-empty.png',animations:'disabled'});
  assert(!mutations.some(x=>x.p.endsWith('/settings')),'UI mode must not write settings');assert(!mutations.some(x=>x.p.endsWith('/generate')),'Cancelled preview must not start paid generation');
  assert.deepEqual(errors,[]);console.log('PASS: simple/advanced without setting writes, hidden selection, explicit target IDs, empty selection guard, truthful export statuses, keyboard, persistence, 1440/1024/390 layouts, empty project');

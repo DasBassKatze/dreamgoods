@@ -57,6 +57,19 @@ async function dataInfo() {
   if (result.response === 1) await shell.openPath(dataDir);
   if (result.response === 2) { const folder = path.join(dataDir, 'backups'); fs.mkdirSync(folder, { recursive: true }); await shell.openPath(folder); }
 }
+ipcMain.handle('dg:interface-mode', (event, userId, mode) => {
+  if (!trusted(event) || !Number.isSafeInteger(userId) || userId < 1 || (mode !== undefined && !['simple', 'advanced'].includes(mode))) throw new Error('Invalid interface preference');
+  const file = path.join(dataDir, 'interface-preferences.json');
+  let values = {};
+  try { const data = JSON.parse(fs.readFileSync(file, 'utf8')); if (data && typeof data === 'object' && !Array.isArray(data)) values = data; } catch { /* first launch or damaged view preferences */ }
+  const key = String(userId);
+  if (mode !== undefined) {
+    values[key] = mode;
+    fs.writeFileSync(file + '.tmp', JSON.stringify(values), { mode: 0o600 });
+    fs.renameSync(file + '.tmp', file);
+  }
+  return ['simple', 'advanced'].includes(values[key]) ? values[key] : undefined;
+});
 ipcMain.handle('dg:data-info', async event => { if (!trusted(event)) throw new Error('Unknown window'); await dataInfo(); });
 ipcMain.handle('dg:state', event => {
   if (!trusted(event)) throw new Error('Unknown window');
@@ -194,6 +207,12 @@ async function start() {
     await win.webContents.executeJavaScript(`document.querySelector('.assistant-launch')?.click()`);
     await new Promise(resolve => setTimeout(resolve, 500));
     fs.writeFileSync(path.join(dataDir, 'assistant.png'), (await win.webContents.capturePage()).toPNG());
+    const uiMarker = path.join(dataDir, 'smoke-interface-mode.json');
+    const savedMode = await win.webContents.executeJavaScript(`window.dgDesktop.interfaceMode(987654321)`);
+    if (fs.existsSync(uiMarker) && savedMode !== 'advanced') throw new Error('Interface preference lost after restart or reinstall');
+    const writtenMode = await win.webContents.executeJavaScript(`window.dgDesktop.interfaceMode(987654321, 'advanced')`);
+    if (writtenMode !== 'advanced') throw new Error('Interface preference was not saved');
+    fs.writeFileSync(uiMarker, JSON.stringify({mode:writtenMode}));
     const marker = retention;
     if (fs.existsSync(marker) && JSON.parse(fs.readFileSync(marker, 'utf8')).id !== project.id) throw new Error('Project did not survive restart');
     fs.writeFileSync(marker, JSON.stringify(project));

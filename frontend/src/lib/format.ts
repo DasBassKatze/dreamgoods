@@ -57,3 +57,5 @@ export const ASPECTS: [string, string][] = [
   ["5:4", "5:4 — горизонтальный"], ["3:2", "3:2 — горизонтальный"], ["16:9", "16:9 — широкий, баннер"],
   ["21:9", "21:9 — сверхширокий баннер"],
 ];
+
+export const needsReview = (f: Frame): boolean => !!f.asset && f.state === "done" && ["", "review", "unchecked"].includes(qcStatus(f));
