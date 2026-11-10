@@ -68,10 +68,10 @@ export function TopBar(p: Props) {
           const r: Route = tab === "balance" && master ? "m-finance" : tab;
           const on = r === "products" ? UNDER_GEN.includes(p.route) : p.route === r;
           return (
-          <button key={tab} className={on ? "on" : ""} aria-current={on ? "page" : undefined} onClick={() => pick(r)}>
+          <button key={tab} className={on ? "on" : ""} aria-label={isDesktop && tab === "balance" ? "Расходы" : label} aria-describedby={r === "review" && p.reviewCount > 0 ? "review-pending-description" : undefined} aria-current={on ? "page" : undefined} onClick={() => pick(r)}>
             {isDesktop && tab === "balance" ? "Расходы" : label}
             {r === "products" && p.busy && <i className="dot-run" title="Идёт генерация" />}
-            {r === "products" && p.reviewCount > 0 && <em className="tab-badge" title="Кадры ждут вашего решения">{p.reviewCount}</em>}
+            {r === "review" && p.reviewCount > 0 && <em className="tab-badge" title="Кадры ждут вашего решения"><span aria-hidden="true">{p.reviewCount}</span><span className="nav-counter-label" id="review-pending-description">{p.reviewCount} кадров ждут решения</span></em>}
           </button>
           );
         })}

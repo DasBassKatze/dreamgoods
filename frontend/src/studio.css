@@ -18,3 +18,5 @@
 @media(prefers-reduced-motion:reduce){.studio-shell *, .studio-shell *::before,.studio-shell *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .studio-shell .project-look-tools{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}.studio-shell .project-look-tools+p{margin-top:14px}
+
+.nav-counter-label{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}

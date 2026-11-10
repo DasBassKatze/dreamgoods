@@ -17,7 +17,7 @@ export function Composer({ dialogs }: { dialogs: Dialogs }) {
   const s = state.settings;
   const { advanced } = useInterfaceMode();
   const targets = state.products.filter(p => ids.includes(p.id));
-  const ready = targets.length > 0 && targets.every(p => p.total > 0 && p.done >= p.total);
+  const ready = targets.length > 0 && targets.every(p => p.frames.length > 0 && p.frames.every(f => !!f.asset && f.state === "done"));
   const review = targets.some(p => p.frames.some(needsReview));
   return <section className="runbar" id="generation-start" aria-label="Запуск съёмки">
     <div className="run-controls">
