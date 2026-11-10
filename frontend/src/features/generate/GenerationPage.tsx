@@ -4,7 +4,6 @@ import { Icon } from "../../layout/Icon";
 import { Header } from "../../components/Header";
 import { LogPanel } from "../../components/LogPanel";
 import { ProductList, matchesFilter, matchesQuery } from "../../components/ProductList";
-import { ProjectBar } from "../../components/ProjectBar";
 import { ListBar, Toolbar, type Filter } from "../../components/Toolbar";
 import type { RunOptions } from "../../hooks/useActions";
 import { useProject } from "../../ProjectContext";
@@ -46,8 +45,7 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
       <WorkflowGuide dialogs={dialogs} />
       <div className="gen-top">
         <div className="gen-setup">
-          <ProjectBar dialogs={dialogs} />
-          <Composer />
+          <Composer dialogs={dialogs} />
         </div>
       </div>
       <StagePanel />

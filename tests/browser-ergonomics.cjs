@@ -35,7 +35,7 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'Простой',exact:true}).getAttribute('aria-pressed'),'true');
  assert.equal(await page.locator('.frame-sidebar').count(),0);
- const firstCard=await page.locator('[data-product-id="11"]').boundingBox();assert(firstCard.y<650,'Product content is too far below the fold');
+ const firstCard=await page.locator('[data-product-id="11"]').boundingBox();await page.screenshot({path:'/tmp/dg-ui-density.png',animations:'disabled'});assert(firstCard.y<650,`Product content starts at ${firstCard.y}px`);
  assert.equal(await page.locator('[data-product-id="11"] > details').first().getAttribute('open'),null);
  await page.screenshot({path:'/tmp/dg-ui-simple.png',animations:'disabled'});
  const before=mutations.length;

@@ -1,3 +1,5 @@
+import type { Dialogs } from "../../App";
+import { ProjectBar } from "../../components/ProjectBar";
 import { QualityTools } from "../../components/Toolbar";
 import { Icon } from "../../layout/Icon";
 import { useActions } from "../../hooks/useActions";
@@ -6,7 +8,7 @@ import { AdvancedFields } from "../interface/InterfaceMode";
 import { BATCH } from "./runOptions";
 import { useGenerationSelection } from "./GenerationSelection";
 
-export function Composer() {
+export function Composer({ dialogs }: { dialogs: Dialogs }) {
   const { state, limit, setLimit } = useProject();
   const { generate } = useActions();
   const { target, setTarget, ids, selectedIds, visibleIds, hidden, label } = useGenerationSelection();
@@ -25,16 +27,17 @@ export function Composer() {
         <Icon name="spark" size={18} /> Сгенерировать{ids.length ? ` (${ids.length} тов.)` : ""}
       </button>
     </div>
-    <div className="run-quality"><span className={s.qc_enabled ? "" : "quality-warning"}>{s.qc_enabled ? "ИИ-проверка включена" : "ИИ-проверка выключена"}</span>
+    <div className="run-quality"><span className={s.qc_enabled ? "" : "quality-warning"}>{s.qc_enabled ? "В проекте: ИИ-проверка включена" : "В проекте: ИИ-проверка выключена"}</span>
       <span>{s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 ? `Автопеределка до ${s.qc_retries} раз · платно` : "Без автоматических переделок"}</span>
       <span>Стоимость и бюджет — перед запуском</span></div>
-    <AdvancedFields title="Качество и ограничения" summary={limit ? `До ${limit} кадров` : "Все недостающие кадры"}>
+    <AdvancedFields title="Настройки съёмки" summary={`${limit ? `До ${limit} кадров` : "Все недостающие кадры"} · ${state.persona?.name || "Человек: автоматически"} · ${state.style_ref?.name || "Без референса съёмки"}`}>
       <label className="run-what">Количество кадров за запуск
         <select aria-label="Ограничение кадров" value={limit} onChange={e => setLimit(+e.target.value)}>
           {!BATCH.some(([k]) => k === limit) && <option value={limit}>До {limit} кадров</option>}
           {BATCH.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
         </select>
       </label>
+      <ProjectBar dialogs={dialogs} />
       <QualityTools />
     </AdvancedFields>
   </section>;
