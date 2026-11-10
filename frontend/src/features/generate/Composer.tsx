@@ -1,29 +1,41 @@
-import { plural } from "../../lib/format";
+import { QualityTools } from "../../components/Toolbar";
 import { Icon } from "../../layout/Icon";
 import { useActions } from "../../hooks/useActions";
 import { useProject } from "../../ProjectContext";
+import { AdvancedFields } from "../interface/InterfaceMode";
 import { BATCH } from "./runOptions";
+import { useGenerationSelection } from "./GenerationSelection";
 
-/** Запуск генерации: сколько кадров и «Сгенерировать». Пожелания, площадка и формат — в пресете. */
 export function Composer() {
-  const { state, selected, limit, setLimit } = useProject();
+  const { state, limit, setLimit } = useProject();
   const { generate } = useActions();
-  const preset = state.preset;
-  const n = selected.size;
-
-  return (
-    <section className="runbar">
-      <label className="run-what">
-        <small>Что снимать · {n ? <>{n} {plural(n, "выбранный товар", "выбранных товара", "выбранных товаров")}</> : <>все товары</>}
-          {preset ? <> · формат {preset.aspect || "3:4"}</> : null}</small>
-        <select value={limit} onChange={(e) => setLimit(+e.target.value)}>
-          {BATCH.some(([k]) => k === limit) ? null : <option value={limit}>До {limit} кадров</option>}
+  const { target, setTarget, ids, selectedIds, visibleIds, hidden, label } = useGenerationSelection();
+  const s = state.settings;
+  return <section className="runbar" id="generation-start" aria-label="Запуск съёмки">
+    <div className="run-controls">
+      <label className="run-what"><small>Какие товары обработать</small>
+        <select aria-label="Область обработки" value={target} onChange={e => setTarget(e.target.value as typeof target)}>
+          <option value="selected">Выбранные ({selectedIds.length})</option>
+          <option value="visible">В списке ({visibleIds.length})</option>
+          <option value="project">Весь проект ({state.products.length})</option>
+        </select>
+      </label>
+      <span className="run-target" aria-live="polite">{label}{target === "selected" && hidden > 0 && <strong>Из них скрыто фильтром: {hidden}</strong>}</span>
+      <button className="primary big" disabled={!ids.length} onClick={() => void generate([...ids], limit, {})}>
+        <Icon name="spark" size={18} /> Сгенерировать{ids.length ? ` (${ids.length} тов.)` : ""}
+      </button>
+    </div>
+    <div className="run-quality"><span className={s.qc_enabled ? "" : "quality-warning"}>{s.qc_enabled ? "ИИ-проверка включена" : "ИИ-проверка выключена"}</span>
+      <span>{s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 ? `Автопеределка до ${s.qc_retries} раз · платно` : "Без автоматических переделок"}</span>
+      <span>Стоимость и бюджет — перед запуском</span></div>
+    <AdvancedFields title="Качество и ограничения" summary={limit ? `До ${limit} кадров` : "Все недостающие кадры"}>
+      <label className="run-what">Количество кадров за запуск
+        <select aria-label="Ограничение кадров" value={limit} onChange={e => setLimit(+e.target.value)}>
+          {!BATCH.some(([k]) => k === limit) && <option value={limit}>До {limit} кадров</option>}
           {BATCH.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
         </select>
       </label>
-      <button className="primary big" onClick={() => generate(n ? [...selected] : null, limit, {})}>
-        <Icon name="spark" size={18} /> Сгенерировать
-      </button>
-    </section>
-  );
+      <QualityTools />
+    </AdvancedFields>
+  </section>;
 }

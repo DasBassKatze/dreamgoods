@@ -5,8 +5,8 @@ import { Icon } from "../../layout/Icon";
 import { QC_LABEL, isBusy, pad, plural, qcStatus } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
 
-type Kind = "all" | "ok" | "review" | "rejected";
-const KINDS: [Kind, string][] = [["all", "Все"], ["ok", "Принятые"], ["review", "На проверке"], ["rejected", "Отклонённые"]];
+type Kind = "all" | "ok" | "manual" | "unchecked" | "review" | "rejected";
+const KINDS: [Kind, string][] = [["all", "Все"], ["ok", "Прошли проверку"], ["manual", "Приняты вручную"], ["unchecked", "Без проверки"], ["review", "На проверке"], ["rejected", "Отклонённые"]];
 
 /** Вкладка «Галерея»: все готовые кадры проекта одной сеткой. */
 export function GalleryPage({ dialogs }: { dialogs: Dialogs }) {
@@ -44,10 +44,10 @@ export function GalleryPage({ dialogs }: { dialogs: Dialogs }) {
             </button>
           ))}
         </span>
-        <input className="search" type="search" placeholder="Артикул или блок…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input className="search" type="search" aria-label="Поиск кадров в галерее" placeholder="Артикул или блок…" value={query} onChange={(e) => setQuery(e.target.value)} />
         <span className="spacer" />
         {shown.length > 0 && (
-          <button className="link" onClick={() => setPicked(picked.length === shown.length ? [] : shown.map(({ f }) => f.id))}>
+          <button className="link" onClick={() => { const next = new Set(pickedFrames); shown.forEach(({ f }) => picked.length === shown.length ? next.delete(f.id) : next.add(f.id)); setPicked([...next]); }}>
             {picked.length === shown.length ? "снять все" : "выделить все"}
           </button>
         )}
@@ -80,7 +80,9 @@ export function GalleryPage({ dialogs }: { dialogs: Dialogs }) {
 
 function match(k: Kind, st: string) {
   switch (k) {
-    case "ok": return st === "" || st === "pass" || st === "accepted" || st === "unchecked";
+    case "ok": return st === "pass" || st === "accepted";
+    case "manual": return st === "accepted";
+    case "unchecked": return st === "" || st === "unchecked";
     case "review": return st === "review";
     case "rejected": return st === "rejected";
     default: return true;

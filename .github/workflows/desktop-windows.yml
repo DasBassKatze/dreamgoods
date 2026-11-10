@@ -1,7 +1,7 @@
 name: Windows desktop installer
 on:
   push:
-    branches: [desktop-windows]
+    branches: [desktop-windows, Dev-UI]
   workflow_dispatch:
 permissions:
   contents: read

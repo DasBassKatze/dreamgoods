@@ -71,7 +71,7 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
         <div className="ch">
           <label className="check"><input type="checkbox" checked={o.read_labels} onChange={(e) => onOptions({ ...o, read_labels: e.target.checked })} />
             {" "}прочитать бирки: артикул, состав, цвет <span className="tag">рекомендуем</span></label>
-          <div className="hint">текст бирок — в профиль товара; отдельные фото бирок в генерацию не идут</div>
+          <div className="hint">Отдельные фото бирок в генерацию не идут. Фото с одинаковым артикулом всегда объединяются в один товар.</div>
         </div>
         {analysis && <Nomenclature rules={o.rules} aiSort={o.ai_sort} onChange={(rules) => onOptions({ ...o, rules })} />}
         <label className="form-label">После загрузки</label>
@@ -83,7 +83,7 @@ export function UploadStep({ total, uploading, options: o, onOptions, onFiles, o
         <span className="spacer" />
         <button className="primary" disabled={!total || uploading > 0} onClick={onAnalyze}>
           {!analysis ? (total ? `Загрузить ${total} фото` : "Загрузить")
-            : total ? `Анализировать ${total} фото` : "Анализировать"}
+            : total ? `Анализировать ${total} фото · платно` : "Анализировать · платно"}
         </button>
       </div>
     </>
@@ -96,7 +96,7 @@ function Nomenclature({ rules: r, aiSort, onChange }: { rules: ImportRules; aiSo
   const changed = JSON.stringify(r) !== JSON.stringify(DEFAULT_RULES);
   return (
     <>
-      <label className="form-label">Номенклатура</label>
+      <label className="form-label">Правила распознавания</label>
       <details className="nomen" open={changed || undefined}>
         <summary>Как вы снимаете и как устроены бирки <span className="hint">— необязательно, но раскладка точнее
           {changed ? " · заданы свои правила" : ""}</span></summary>
@@ -124,10 +124,10 @@ function Nomenclature({ rules: r, aiSort, onChange }: { rules: ImportRules; aiSo
             value={r.article_example} onChange={(e) => set("article_example", e.target.value)} />
             <span className="hint">с бирки возьмётся код такого вида, остальные номера — пропустятся</span></div>
           {aiSort && <>
-            <span>Разные товары</span>
+            <span>Объединение товаров</span>
             <div className="ch">
               <label className="check"><input type="checkbox" checked={r.colors_separate} onChange={(e) => set("colors_separate", e.target.checked)} />
-                {" "}разные цвета одной модели — разные товары</label>
+                {" "}разделять разные цвета, если артикулы отличаются</label>
               <label className="check"><input type="checkbox" checked={r.sizes_together} onChange={(e) => set("sizes_together", e.target.checked)} />
                 {" "}разные размеры одной модели — один товар</label>
             </div>

@@ -1,3 +1,4 @@
+import { useGenerationSelection } from "../features/generate/GenerationSelection";
 import { isDesktop } from "../desktop/runtime";
 import type { Dialogs } from "../App";
 import { api } from "../api/client";
@@ -10,8 +11,9 @@ import { useUI } from "./ui";
 export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
   dialogs?: Dialogs; onProjectsChanged: () => void; query: string; onQuery: (q: string) => void;
 }) {
-  const { state, api: papi, selected, reload, run, pickedFrames } = useProject();
+  const { state, api: papi, reload, run, pickedFrames } = useProject();
   const ui = useUI();
+  const { ids, label } = useGenerationSelection();
   const r = state.runner;
   const notify = useNotifySwitch();
 
@@ -30,24 +32,23 @@ export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
 
   const exportZip = async () => {
     const picked = pickedFrames.size;
-    const products = selected.size;
-    const include = await ui.choose<"accepted" | "all" | "picked">({
+    const products = ids.length;
+    if (!picked && !products) { ui.toast("В этой области нет товаров для скачивания"); return; }
+    const include = await ui.choose<"checked" | "manual" | "all" | "picked">({
       title: "Скачать кадры",
-      text: "«Принятые» — принятые вручную, прошедшие ИИ-проверку и кадры без проверки; кадры на ручной проверке (брак) — " +
-        "только в «Все готовые». В архиве — папки по артикулам и report.csv, где перечислены и кадры, не попавшие в архив, с причиной." +
-        (products && !picked ? ` Выгружаются только выбранные товары (${products}).` : "") +
-        (!picked ? " Чтобы скачать отдельные кадры — отметьте их галочкой на плитке кадра (или Ctrl+клик)." : ""),
+      text: `Область: ${picked ? `выделенные кадры (${picked})` : label}. «Прошли проверку» — только одобренные ИИ или вручную. Кадры без проверки доступны в «Все готовые». В архив входит отчёт CSV со статусами.`,
       choices: [
         ...(picked ? [{ value: "picked" as const, label: `Выделенные кадры (${picked})`, primary: true }] : []),
-        { value: "all", label: products && !picked ? `Все готовые в выбранных` : "Все готовые" },
-        { value: "accepted", label: products && !picked ? `Принятые в выбранных` : "Принятые", primary: !picked },
+        { value: "all", label: "Все готовые, включая без проверки" },
+        { value: "checked", label: "Прошли проверку (ИИ или вручную)", primary: !picked },
+        { value: "manual", label: "Приняты вручную" },
       ],
     });
     if (!include) return;
     ui.toast("Готовлю архив…");
     window.location.href = include === "picked"
       ? papi.exportUrl("picked", { frames: [...pickedFrames] })
-      : papi.exportUrl(include, { products: picked ? [] : [...selected] });
+      : papi.exportUrl(include, { products: [...ids] });
   };
 
   const stop = () =>
@@ -77,10 +78,10 @@ export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
         <h1><button className="title-btn" title="Переименовать" onClick={rename}>{state.project.name}</button></h1>
         {state.admin && <span className="hint">кабинет «{state.project.client}»</span>}
       </div>
-      <label className="search-big">
+      {state.products.length > 0 && <label className="search-big">
         <Icon name="search" size={18} />
-        <input type="search" placeholder="Поиск по артикулу или названию" value={query} onChange={(e) => onQuery(e.target.value)} />
-      </label>
+        <input type="search" aria-label="Поиск товаров" placeholder="Поиск по артикулу или названию" value={query} onChange={(e) => onQuery(e.target.value)} />
+      </label>}
       {state.open_import && (
         <button className="resume-import" onClick={dialogs?.openImport}
           title="Фото уже загружены, но товары из них ещё не созданы — вернуться к загрузке и закончить раскладку">
@@ -96,7 +97,7 @@ export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
         title={notify ? "Уведомления о готовности кадров включены — нажмите, чтобы выключить"
           : "Включить уведомления о готовности кадров (придут, даже если вкладка свёрнута)"}
         aria-label="Уведомления о готовности"><Icon name="bell" size={18} /></button>
-      <button onClick={exportZip}><Icon name="download" size={16} /> Скачать ZIP</button>
+      <button disabled={!pickedFrames.size && !ids.length} onClick={exportZip}><Icon name="download" size={16} /> Скачать ZIP</button>
       {r.busy && <button className="danger" onClick={stop}>Стоп</button>}
     </div>
   );

@@ -39,11 +39,12 @@ def asset(asset_id: uuid.UUID, request: Request, w: int = 0, dl: str = ""):
 
 @router.get("/api/projects/{project_id}/export")
 def export_zip(include: str = "accepted", frames: str = "", products: str = "", pid: int = Depends(project_id)):
-    """ZIP по артикулам + report.csv. include=accepted — принятые, all — все готовые, picked — выделенные кадры (frames).
+    """ZIP по артикулам + report.csv. include=checked — прошедшие ИИ-проверку или принятые вручную, manual — только принятые вручную;
+    all — все готовые, picked — выделенные. accepted сохранён для старых клиентов (включает кадры без проверки).
     frames, products — номера через запятую: только эти кадры / только эти товары."""
     def ids(v):
         return {int(x) for x in v.split(",") if x.strip().isdigit()}
-    include = include if include in ("accepted", "all", "picked") else "accepted"
+    include = include if include in ("accepted", "checked", "manual", "all", "picked") else "accepted"
     path, _ = export.export_zip(pid, include, frame_ids=ids(frames), product_ids=ids(products))
     return FileResponse(path, media_type="application/zip", filename=path.name,
                         background=BackgroundTask(path.unlink, missing_ok=True))

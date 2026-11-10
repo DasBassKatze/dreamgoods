@@ -190,8 +190,8 @@ export function ImportWizard({ open, onClose }: { open: boolean; onClose: () => 
   if (!open) return null;
   const progress = view?.progress;
   return (
-    <Modal title={<>Загрузка фото{sid != null && <span className="hint"> · сессия {sid}</span>}</>} width={1280}
-      onClose={step === "done" ? finish : onClose}>
+    <Modal title="Загрузка товаров" width={1280} onClose={step === "done" ? finish : onClose}>
+      <nav className="import-progress" aria-label="Шаг загрузки">{[["upload", "1. Фото"], ["analyzing", "2. Распознавание"], ["groups", "3. Проверка товаров"], ["done", "4. Готово"]].map(([value, label]) => <span key={value} aria-current={step === value ? "step" : undefined}>{label}</span>)}</nav>
       {step === "upload" && (
         <><UploadStep total={total} uploading={uploading} options={opts} onOptions={setOpts} onFiles={upload} onAnalyze={analyze}
           onRestart={sid != null && total > 0 ? restart : undefined} />

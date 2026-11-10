@@ -28,6 +28,8 @@ function FrameTileImpl({ frame: f, fileName, aspect, label, focused, onFocus, on
   const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
   return (
     <div className={`tile st-${f.state} ${q ? `q-${q}` : ""} ${picked ? "picked" : ""} ${focused ? "focused" : ""}`} title={title}
+      tabIndex={0} role="group" aria-label={`Кадр ${f.i}: ${badge || f.block}`}
+      onKeyDown={e => { if (e.target === e.currentTarget && ["Enter", " "].includes(e.key)) { e.preventDefault(); if (e.shiftKey) onOpen(); else onFocus(); } }}
       style={{ aspectRatio: aspect.replace(":", "/") }}
       onClick={(e) => ((e.ctrlKey || e.metaKey) && f.asset ? onPick(!picked) : onFocus())} onDoubleClick={onOpen}>
       {f.asset ? <img loading="lazy" src={assetUrl(f.asset, 480)} alt="" /> : <div className="ph">{pad(f.i)}</div>}
@@ -44,7 +46,7 @@ function FrameTileImpl({ frame: f, fileName, aspect, label, focused, onFocus, on
       {f.asset && (
         <label className="pick" title="Выделить кадр — для выгрузки только выделенных (или Ctrl+клик по кадру)"
           onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={picked} onChange={(e) => onPick(e.target.checked)} />
+          <input type="checkbox" aria-label={`Выделить кадр ${f.i} для скачивания`} checked={picked} onChange={(e) => onPick(e.target.checked)} />
         </label>
       )}
     </div>

@@ -56,7 +56,7 @@ export function PresetManager({ onClose, initialApply }: { onClose: () => void; 
     });
 
   return (
-    <Modal title="Пресеты генерации" width={1180} onClose={onClose}>
+    <Modal title="Шаблоны съёмки" width={1180} onClose={onClose}>
       {!data ? <div className="empty">Загрузка…</div> : (
         <div className="presets">
           <div className="preset-list">
@@ -68,7 +68,7 @@ export function PresetManager({ onClose, initialApply }: { onClose: () => void; 
                   {p.is_default ? " · проект" : ""}{p.products ? ` · товаров ${p.products}` : ""}</span>
               </button>
             ))}
-            <button className={`preset-item new ${current === "new" ? "on" : ""}`} onClick={() => { setCurrent("new"); setApplying(false); }}>＋ Новый пресет</button>
+            <button className={`preset-item new ${current === "new" ? "on" : ""}`} onClick={() => { setCurrent("new"); setApplying(false); }}>＋ Новый шаблон</button>
           </div>
           <div className="preset-body">
             {applying && preset ? (
@@ -85,7 +85,7 @@ export function PresetManager({ onClose, initialApply }: { onClose: () => void; 
                 isNew={current === "new"} onSave={save} onDelete={preset && !readonly ? remove : undefined}
                 onApply={preset ? () => setApplying(true) : undefined} />
               </>
-            ) : <div className="empty">Выберите пресет слева</div>}
+            ) : <div className="empty">Выберите шаблон слева</div>}
           </div>
         </div>
       )}

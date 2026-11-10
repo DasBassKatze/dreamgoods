@@ -1,7 +1,7 @@
 import type { Route } from "../hooks/useRoute";
 import { Icon } from "./Icon";
 
-const ITEMS: [Route, string][] = [["import", "Загрузка фото"], ["presets", "Пресеты"], ["personas", "Модели"], ["styles", "Оформление"]];
+const ITEMS: [Route, string][] = [["import", "Загрузка фото"], ["presets", "Шаблоны съёмки"], ["personas", "Человек в кадре"], ["styles", "Референсы съёмки"]];
 export const SECTION_ROUTES: Route[] = ITEMS.map(([r]) => r);
 
 /** Над разделами съёмки: путь назад к генерации и переключение между настройками проекта. */

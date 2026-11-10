@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { AdvancedFields } from "../interface/InterfaceMode";
+import { Children, cloneElement, isValidElement, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import type { Settings } from "../../api/types";
 import { Modal } from "../../components/Modal";
 import { useUI } from "../../components/ui";
@@ -61,12 +62,13 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
     <Modal title="Настройки" width={780} onClose={onClose}
       footer={<><span className="spacer" /><button onClick={onClose}>Отмена</button><button className="primary" onClick={save}>Сохранить</button></>}>
       <div className="form grid">
-        <h4>ИИ-помощник</h4>
+        <AdvancedFields title="ИИ-помощник" summary={v.assistant_model}><div className="form grid">
         <Row label="Помощник">{check("assistant_enabled", "помощь и навигация по приложению")}</Row>
         <Row label="Модель помощника">
           {text("assistant_model", "openai/gpt-4.1-mini")}
           <div className="hint">ID текстовой модели Polza. Использует основной ключ проекта. Ответы оплачиваются по тарифу провайдера.</div>
         </Row>
+        </div></AdvancedFields><AdvancedFields title="Подключение и генерация" summary={v.model}><div className="form grid">
         <Row label="API-ключ Polza">
           <input type="password" value={apiKey} placeholder="оставьте пустым, чтобы не менять" onChange={(e) => setApiKey(e.target.value)} />
           <div className="hint">{v.has_key ? "Ключ сохранён (общий для всех проектов организации)" : "Ключ не найден — вставьте его сюда"}</div>
@@ -104,7 +106,7 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
           <div className="hint">сколько фото модели отправлять вместе с фото товара (кадры с человеком). Саму модель выбирают в «Модель»</div>
         </Row>
 
-        <h4>ИИ-проверка</h4>
+        </div></AdvancedFields><AdvancedFields title="ИИ-проверка" summary={v.qc_enabled ? "Включена" : "Выключена"}><div className="form grid">
         <Row label="Проверять кадры">{check("qc_enabled", "сверять каждую генерацию с референсами")}</Row>
         <Row label="Модель проверки">
           <div className="row nowrap">
@@ -151,7 +153,7 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
         </Row>
         <Row label="Мин. сторона кадра, px">{num("qc_min_side", 0, 4096, 100)}</Row>
 
-        <h4>Профиль товара и промпты по фото</h4>
+        </div></AdvancedFields><AdvancedFields title="Описание товара и план кадров" summary={v.profile_model || "Модель проверки"}><div className="form grid">
         <Row label="Модель профиля">
           {text("profile_model", "пусто = модель проверки")}
           <div className="hint">vision-модель, которая смотрит на фото и составляет профиль; адрес и ключ — те же, что у проверки</div>
@@ -167,7 +169,7 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
           <textarea value={v.qc_checklist} onChange={(e) => set("qc_checklist", e.target.value)} />
           <div className="row"><button type="button" onClick={resetChecklist}>Вернуть чек-лист обуви</button></div>
         </Row>
-      </div>
+      </div></AdvancedFields></div>
     </Modal>
   );
 }
@@ -175,10 +177,21 @@ export function SettingsDialog({ onClose, onPickModel, picked }: Props) {
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <label className="form-label">{label}</label>
-      <div>{children}</div>
+      <div className="form-label">{label}</div>
+      <div role="group" aria-label={label}>{labelControls(children, label)}</div>
     </>
   );
+}
+
+function labelControls(children: ReactNode, label: string): ReactNode {
+  return Children.map(children, child => {
+    if (!isValidElement(child)) return child;
+    const element = child as ReactElement<{ children?: ReactNode; "aria-label"?: string; "aria-labelledby"?: string }>;
+    if (element.type === "label") return element;
+    if (typeof element.type === "string" && ["input", "select", "textarea"].includes(element.type))
+      return element.props["aria-label"] || element.props["aria-labelledby"] ? element : cloneElement(element, { "aria-label": label });
+    return element.props.children ? cloneElement(element, {}, labelControls(element.props.children, label)) : element;
+  });
 }
 
 function Reasoning({ value, onChange }: { value: string; onChange: (v: string) => void }) {

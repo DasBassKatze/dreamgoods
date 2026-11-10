@@ -10,7 +10,7 @@ const preset={id:3,name:'Ручной тест',shared:false,description:'',qual
 const listing={presets:[preset],default_id:3,quality:[{key:'standard',name:'Стандарт',hint:'',settings:{}}],blocks:[{key:'studio',name:'Товар',max:8}],categories:[],markets:[{key:'none',name:'Без правил',aspect:'3:4',min_side:0,hint:''}],aspects:['3:4'],aspect_names:{'3:4':'Вертикально'},strictness:[{key:'normal',name:'Обычная',hint:''}],model_stats:[]};
 await page.route('**/api/**',async route=>{const p=new URL(route.request().url()).pathname;let data={};
 if(p==='/api/auth/me')data={id:1,org_id:1,email:'test',name:'Тест',role:'user',client:{id:1,balance:200,billing:true},consents_required:[]};
-else if(p==='/api/auth/storage')data={used:1024,quota:1e9};
+else if(p==='/api/account/storage')data={used:1024,quota:1e9};
 else if(p==='/api/projects')data={projects:[state.project]};
 else if(p.endsWith('/state'))data=state;
 else if(p.endsWith('/trial'))data={trial:null};

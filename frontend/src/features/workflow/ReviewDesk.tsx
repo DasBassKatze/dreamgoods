@@ -6,6 +6,7 @@ import { useProject } from "../../ProjectContext";
 export function ReviewDesk() {
   const { state, api, reload } = useProject();
   const ui = useUI();
+  const [shortcuts,setShortcuts] = useState(false);
   const [filter,setFilter] = useState("review");
   const [focus,setFocus] = useState<number | null>(null);
   const [selected,setSelected] = useState<Set<number>>(new Set());
@@ -40,11 +41,11 @@ export function ReviewDesk() {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.target instanceof HTMLElement && (e.target.closest("input,textarea,select,[contenteditable=true]") || document.querySelector('[role="dialog"]')))return;
       const i=rows.findIndex((r) => r.frame.id === current?.frame.id);
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {e.preventDefault();setFocus(rows[Math.max(0,Math.min(rows.length-1,i+(e.key === "ArrowRight"?1:-1)))]?.frame.id ?? null);}
-      if (e.code === "KeyA") {e.preventDefault();void act("ok");}
-      if (e.code === "KeyR") {e.preventDefault();void act("bad");}
+      if (shortcuts && e.code === "KeyA") {e.preventDefault();void act("ok");}
+      if (shortcuts && e.code === "KeyR") {e.preventDefault();void act("bad");}
     };
     window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key);
-  },[rows,current,act]);
+  },[rows,current,act,shortcuts]);
   const pages=Math.max(1,Math.ceil(rows.length/60));
   const actualPage=Math.min(page,pages-1);
   const visible=rows.slice(actualPage*60,(actualPage+1)*60);
@@ -52,7 +53,7 @@ export function ReviewDesk() {
   return <section className="review-desk"><div className="row wrap"><h1>Приёмка</h1><span className="spacer" />
     <select aria-label="Статус приёмки" value={filter} onChange={(e)=>setFilter(e.target.value)}><option value="review">Требуют решения</option><option value="all">Все готовые</option><option value="pass">Прошли ИИ-проверку</option><option value="accepted">Приняты вручную</option></select>
     <button disabled={busy || !selected.size} onClick={()=>void act("ok",true)}>Принять выбранные ({selected.size})</button>
-  </div><p className="hint">← → — листать · A — принять · R — отклонить. За раз можно принять до 100 кадров. Автоматическая ИИ-проверка и ручное решение сохраняются отдельно.</p>
+  </div><label className="check"><input type="checkbox" checked={shortcuts} onChange={e=>setShortcuts(e.target.checked)} /> Включить горячие клавиши A / R</label><p className="hint">← → — листать. {shortcuts ? "A — принять · R — отклонить." : "Буквенные команды выключены."} За раз можно принять до 100 кадров. Автоматическая ИИ-проверка и ручное решение сохраняются отдельно.</p>
   {!current ? <div className="panel empty">Нет кадров для выбранного фильтра.</div> : <>
     <div className="review-compare"><figure><figcaption>Референс · {current.product.sku}</figcaption>{refs[0] ? <button onClick={()=>ui.zoom(refs.map((p)=>assetUrl(p.asset)))}><img src={assetUrl(refs[0].asset,1000)} alt="Референс товара" /></button> : <p>Референс не выбран</p>}</figure>
       <figure><figcaption>Результат · кадр {current.frame.i} · версия #{current.frame.generation}</figcaption><button onClick={()=>ui.zoom([assetUrl(current.frame.asset!)])}><img src={assetUrl(current.frame.asset!,1000)} alt="Результат генерации" /></button></figure>
@@ -61,7 +62,7 @@ export function ReviewDesk() {
       <div className="row wrap"><select aria-label="Причина брака" value={reason} onChange={(e)=>setReason(e.target.value)}>{["Изменён товар","Неверный цвет","Потеряны детали","Анатомия","Композиция","Другое"].map((r)=><option key={r}>{r}</option>)}</select>
       <input aria-label="Комментарий к решению" value={comment} maxLength={1200} onChange={(e)=>setComment(e.target.value)} placeholder="Что нужно исправить" />
       <label><input type="checkbox" checked={regen} onChange={(e)=>setRegen(e.target.checked)} /> После брака переделать · платно</label>
-      <button disabled={busy} className="primary" onClick={()=>void act("ok")}>Принять · A</button><button disabled={busy} onClick={()=>void act("bad")}>Отклонить · R</button></div>
+      <button disabled={busy} className="primary" onClick={()=>void act("ok")}>Принять{shortcuts ? " · A" : ""}</button><button disabled={busy} onClick={()=>void act("bad")}>Отклонить{shortcuts ? " · R" : ""}</button></div>
     </div>
     <div className="row wrap"><button onClick={()=>setSelected(new Set(visible.map((r)=>r.frame.id)))}>Выбрать страницу</button><button onClick={()=>setSelected(new Set())}>Снять выбор</button><span className="spacer" /><button disabled={actualPage===0} onClick={()=>setPage(actualPage-1)}>←</button><span>{actualPage+1} / {pages}</span><button disabled={actualPage+1>=pages} onClick={()=>setPage(actualPage+1)}>→</button></div>
     <div className="review-strip">{visible.map(({product,frame})=><div key={frame.id} className={current.frame.id===frame.id?"on":""}>

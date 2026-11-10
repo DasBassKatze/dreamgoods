@@ -18,6 +18,8 @@ export function useActions() {
 
   const generate = (productIds: number[] | null, limit = 0, opts: RunOptions = {}) =>
     run(async () => {
+      if (productIds && !productIds.length) { ui.toast("Выберите товары для обработки"); return; }
+      const targets = state.products.filter(p => !productIds || productIds.includes(p.id));
       const p = await api.previewGenerate({ product_ids: productIds, limit, ...opts });
       const ps = p.preset;
       if (!p.count && !ps?.need_profile) {
@@ -58,7 +60,7 @@ export function useActions() {
       ].filter(Boolean);
       const limits = await ui.ask({
         title: "Запуск генерации",
-        text: <>{p.count ? <>Сгенерировать {p.count} кадр(ов){est}?</> : "Запустить подготовку кадров?"}
+        text: <><p>Товары ({targets.length}): {targets.slice(0, 6).map(p => p.sku).join(", ")}{targets.length > 6 ? "…" : ""}</p>{p.count ? <>Сгенерировать {p.count} кадр(ов){est}?</> : "Запустить подготовку кадров?"}
           {notes.map((n) => <p key={n}>{n}</p>)}{qc && <p className="hint">{qc}</p>}<EstimateText estimate={p.estimate} /></>,
         fields: budgetFields(p.estimate?.reserve_upper),
         ok: "Сгенерировать",
@@ -85,9 +87,10 @@ export function useActions() {
       await reload();
     });
 
-  const checkReady = () =>
+  const checkReady = (explicitIds?: number[]) =>
     run(async () => {
-      const product_ids = selected.size ? [...selected] : null;
+      const product_ids = explicitIds ?? (selected.size ? [...selected] : null);
+      if (product_ids && !product_ids.length) return;
       const p = await api.previewCheck({ product_ids, only_unchecked: true });
       if (!p.count) {
         ui.toast("Непроверенных готовых кадров нет");
@@ -95,7 +98,7 @@ export function useActions() {
       }
       const ok = await ui.confirm({
         title: "ИИ-проверка готовых кадров",
-        text: `Проверить ИИ ${p.count} готовых кадр(ов)${selected.size ? " в выбранных товарах" : ""}? Генерации не будет, оплачивается только проверка.`,
+        text: `Проверить ИИ ${p.count} готовых кадр(ов)${product_ids ? ` в ${product_ids.length} товарах` : " во всём проекте"}? Генерации не будет, оплачивается только проверка.`,
         ok: "Проверить",
       });
       if (!ok) return;

@@ -3,15 +3,17 @@ import { assetUrl, type PreflightReport, type Trial } from "../../api/client";
 import { parseBudget, budgetFields, EstimateText } from "../budgets/BudgetForm";
 import { Modal } from "../../components/Modal";
 import { useUI } from "../../components/ui";
+import { useGenerationSelection } from "../generate/GenerationSelection";
+import { AdvancedFields } from "../interface/InterfaceMode";
 import { useProject } from "../../ProjectContext";
 
 export function StagePanel() {
-  const { api, selected, reload, run, state } = useProject();
+  const { api, reload, run, state } = useProject();
   const ui = useUI();
   const [report, setReport] = useState<PreflightReport | null>(null);
   const [trial, setTrial] = useState<Trial | null>(null);
   const [busy, setBusy] = useState(false);
-  const ids = selected.size ? [...selected] : null;
+  const { ids, label } = useGenerationSelection();
   const refresh = useCallback(async () => { const r = await api.trial(); setTrial(r.trial); }, [api]);
   useEffect(() => {
     let alive = true;
@@ -44,13 +46,14 @@ export function StagePanel() {
     await refresh(); await reload();
   });
   const product = trial && state.products.find((p) => p.id === trial.product_id);
-  return <section className="stage-panel panel">
+  return <section className="stage-panel"><AdvancedFields title="Проверка исходников и пробный кадр" summary={trial && !trial.approved ? "Есть пробная съёмка — результат ниже" : "Перед запуском большой партии"}>
     <div className="row wrap"><b>Перед большой партией</b><span className="spacer" />
-      <button disabled={busy} onClick={() => action(async () => setReport(await api.preflight(ids)))}>Проверить исходники · бесплатно</button>
-      <button disabled={busy} onClick={sample}>Пробный кадр</button>
+      <button disabled={busy || !ids.length} onClick={() => action(async () => setReport(await api.preflight(ids)))}>Проверить исходники · бесплатно</button>
+      <button disabled={busy || !ids.length} onClick={sample}>Пробный кадр · платно</button>
       <a href="#/review">Перейти к приёмке →</a>
     </div>
-    <p className="hint">Проверьте фото, снимите один кадр и утвердите результат перед запуском остальных. Проверка относится к выбранным товарам, без выбора — ко всему проекту.</p>
+    <p className="hint">Проверьте фото, снимите один кадр и утвердите результат перед запуском остальных. Область проверки и пробной съёмки: {label}.</p>
+    </AdvancedFields>
     {trial && !trial.approved && <div className="trial-card">
       {trial.asset && <button className="trial-preview" onClick={() => ui.zoom([assetUrl(trial.asset!)])}><img src={assetUrl(trial.asset, 600)} alt={`Пробный кадр ${product?.sku ?? ""}`} /></button>}
       <div><b>Пробная партия · {trial.products} товар(ов)</b><p>{trial.asset ? "Пробный кадр готов. Оцените товар, свет и композицию." : trial.status === "error" ? "Пробная съёмка завершилась с ошибкой." : "Пробный кадр готовится…"}</p>

@@ -13,7 +13,7 @@ await page.route('**/api/**',async route=>{const p=new URL(route.request().url()
 if(p==='/api/auth/me' && !loggedIn){await route.fulfill({status:401,contentType:'application/json',body:'{}'});return;}
 if(p==='/api/auth/login'){loggedIn=true;data={id:1,org_id:1,email:'admin',name:'Мастер',role:'master',client:{id:1,balance:200,billing:false},consents_required:[]};}
 else if(p==='/api/auth/me')data={id:1,org_id:1,email:'test',name:'Тест',role:'master',client:{id:1,balance:200,billing:false},consents_required:[]};
-else if(p==='/api/auth/storage')data={used:1024,quota:1e9};
+else if(p==='/api/account/storage')data={used:107374182,quota:10737418240};
 else if(p==='/api/projects')data={projects:[state.project]};
 else if(p.endsWith('/assistant')) {
   if(route.request().method()==='GET')data={enabled:true,configured:assistantConfigured,model:'openai/gpt-4.1-mini',routes:{import:'Загрузка товаров',products:'Генерация',budgets:'Бюджеты'}};
@@ -48,7 +48,7 @@ await page.screenshot({path:'/tmp/dgdesktop-login.png'});
 await page.getByLabel('Логин',{exact:true}).fill('admin');await page.getByLabel('Пароль',{exact:true}).fill('admin');
 await page.getByRole('button',{name:'Войти в студию'}).click();
 await page.setViewportSize({width:1440,height:960});
-await page.getByRole('button',{name:'Удалить товар ART123'}).waitFor();
+await page.getByLabel('Выбрать товар ART123',{exact:true}).waitFor();
 await page.waitForFunction(()=>window.desktopMode==='workspace');
 await page.waitForFunction(()=>document.querySelector('.pill-balance')?.textContent.includes('100'));
 const before=keyCalls;keyValue=73;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -100,6 +100,7 @@ await page.screenshot({path:'/tmp/dgdesktop-assistant-small.png'});
 await page.getByRole('button',{name:'Свернуть помощника',exact:true}).click();
 await page.setViewportSize({width:1440,height:960});
 await page.goto('http://127.0.0.1:43279/studio#/products');
+await page.getByLabel('Действия товара ART123',{exact:true}).click();
 await page.getByRole('button',{name:'Удалить товар ART123'}).click();
 await page.getByRole('dialog').getByRole('button',{name:'Удалить',exact:true}).click();
 await page.waitForTimeout(200);assert.deepEqual(deleted,[11]);

@@ -61,7 +61,8 @@ def export_zip(project_id, include="accepted", frame_ids=None, product_ids=None)
                 skipped.append((sku, pos, block, "нет готовой картинки" if g is None else
                                 ("ждём результат Polza" if g.status == "pending" else "генерация не удалась")))
                 continue
-            if include == "accepted" and status not in ACCEPTED:
+            allowed = {"accepted": ACCEPTED, "checked": ("pass", "accepted"), "manual": ("accepted",)}.get(include)
+            if allowed and status not in allowed:
                 skipped.append((sku, pos, block, STATUS_RU.get(status, status)))
                 continue
             q = s.scalars(select(QCCheck).where(QCCheck.generation_id == g.id).order_by(QCCheck.id.desc()).limit(1)).first()

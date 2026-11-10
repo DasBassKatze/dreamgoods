@@ -1,3 +1,4 @@
+import { AdvancedFields } from "../features/interface/InterfaceMode";
 import { useDeleteProducts } from "../hooks/useDeleteProducts";
 import type { Dialogs } from "../App";
 import { assetUrl } from "../api/client";
@@ -57,37 +58,39 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
   };
 
   return (
-    <section className="card">
+    <section className="card" data-product-id={p.id}>
       <div className="card-h">
-        <input type="checkbox" checked={selected.has(p.id)} onChange={(e) => toggleSelected(p.id, e.target.checked)} />
+        <input type="checkbox" aria-label={`Выбрать товар ${p.sku}`} checked={selected.has(p.id)} onChange={(e) => toggleSelected(p.id, e.target.checked)} />
         <b>{p.sku}</b>
         <span className={`cnt ${p.total && p.done === p.total ? "full" : ""}`}>{p.done}/{p.total}</span>
         {busy ? (
           <span className="pbusy">составляю профиль по фото…</span>
         ) : p.profile ? (
-          <span className="pchip2" title="Профиль товара — открыть и поправить" onClick={profileClick}>
+          <button className="pchip2" title="Профиль товара — открыть и поправить" onClick={profileClick}>
             <Icon name="spark" size={13} />{p.profile.category}{p.profile.subcategory ? ` · ${p.profile.subcategory}` : ""} · {p.profile.summary}
-          </span>
+          </button>
         ) : (
-          <button title="ИИ составит профиль товара по фото: описание, детали, чек-лист проверки, кадры" onClick={profileClick}><Icon name="spark" size={14} /> Профиль по фото</button>
+          <button title="ИИ составит профиль товара по фото: описание, детали, чек-лист проверки, кадры" onClick={profileClick}><Icon name="spark" size={14} /> Описание по фото · платно</button>
         )}
         <span className="mk-chip" title="Площадка и формат по пресету товара">{label}</span>
         <span className="spacer" />
-        <button className="danger" aria-label={`Удалить товар ${p.sku}`} onClick={() => void remove([p.id])}>Удалить товар</button>
+        <details className="product-menu"><summary aria-label={`Действия товара ${p.sku}`}>⋯</summary><div><button className="danger" aria-label={`Удалить товар ${p.sku}`} onClick={() => void remove([p.id])}>Удалить товар</button></div></details>
         <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие (с пожеланиями из строки запуска)"
           onClick={() => generate([p.id], 0, opts)}>Сгенерировать</button>
       </div>
 
-      <ProductSettings product={p} dialogs={dialogs} />
+      <AdvancedFields title="Настройки товара" summary={`${p.preset_id || p.persona_id || p.style_ref_id ? "Используются ваши настройки" : "Из проекта"} · ${eff?.name || "Автоматическая съёмка"}`}>
+        <ProductSettings product={p} dialogs={dialogs} />
+      </AdvancedFields>
 
       <div className="refs">
-        <span className="lbl">Референсы {chosen.length} из {p.photos.length}:</span>
+        <span className="lbl">Исходные фото · выбрано {chosen.length} из {p.photos.length}:</span>
         {p.photos.map((ph, i) => (
-          <button key={ph.asset} className={`ref ${ph.selected ? "on" : ""}`} onClick={() => toggleRef(ph.asset)}
+          <div key={ph.asset} className="ref-entry"><button className={`ref ${ph.selected ? "on" : ""}`} onClick={() => toggleRef(ph.asset)}
+            aria-pressed={ph.selected} aria-label={`Фото ${i + 1} товара ${p.sku}: ${ph.selected ? "используется" : "не используется"}`}
             title={(ph.selected ? "Идёт в генерацию" : "Не используется") + (ph.view ? ` · ракурс: ${VIEW_RU[ph.view] || ph.view}` : "")}>
             <img loading="lazy" src={assetUrl(ph.asset, 160)} alt="" />
-            <span className="zoom-btn" role="button" title="Открыть крупно" onClick={(e) => { e.stopPropagation(); zoomRefs(i); }}><Icon name="search" size={14} /></span>
-          </button>
+          </button><button className="ref-zoom" aria-label={`Открыть фото ${i + 1} товара ${p.sku}`} onClick={() => zoomRefs(i)}><Icon name="search" size={14} /></button></div>
         ))}
         {!chosen.length && <span className="err-text">не выбрано ни одного фото</span>}
       </div>
@@ -105,10 +108,10 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
         </div>
       ) : (
         <div className="noprompts">
-          Промптов для этого товара нет.
+          План кадров ещё не подготовлен.
           <div className="row center">
             <button className="primary" disabled={busy || !chosen.length} onClick={() => profiles([p.id], true)}>
-              Составить профиль и промпты по фото
+              Подготовить план по фото · платно
             </button>
           </div>
         </div>

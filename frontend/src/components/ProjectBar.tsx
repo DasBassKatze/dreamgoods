@@ -1,34 +1,20 @@
 import type { Dialogs } from "../App";
-import { assetUrl } from "../api/client";
 import { useProject } from "../ProjectContext";
+import { AdvancedFields } from "../features/interface/InterfaceMode";
 import { Icon } from "../layout/Icon";
 
-/** Настройки съёмки проекта: пресет, оформление, модель клиента. Нейросеть генерации выбирается в пресете. */
 export function ProjectBar({ dialogs }: { dialogs: Dialogs }) {
   const { state } = useProject();
-  const ownPresets = state.products.filter((x) => x.preset_id && x.preset_id !== state.preset?.id).length;
-  return (
-    <div className="projectbar">
-      <button className="pb-card upload" onClick={dialogs.openImport} title="Загрузить фото товаров — сервис сам разложит их по артикулам">
-        <span className="pb-ico"><Icon name="upload" size={20} /></span>
-        <span className="pb-text"><small>Фото товаров</small><b>Загрузить фото</b><em>{state.products.length} товар(ов) в проекте</em></span>
-      </button>
-      <button className="pb-card" onClick={dialogs.openPresets} title="Пресет генерации проекта: качество, площадка и план кадров">
-        <span className="pb-ico"><Icon name="presets" size={20} /></span>
-        <span className="pb-text"><small>Пресет</small>
-          <b>{state.preset ? state.preset.name : ownPresets ? "у товаров свои" : "не выбран"}</b>
-          <em>{state.preset ? `${state.preset.total} кадр. на товар${state.preset.plan_mode === "manual" ? " · свои методы" : ""}` : ""}
-            {ownPresets ? `${state.preset ? " · " : ""}свой пресет у ${ownPresets} тов.` : ""}</em>
-        </span>
-      </button>
-      <button className="pb-card" onClick={dialogs.openStyles} title="Референс оформления: пример стиля съёмки для кадров">
-        {state.style_ref?.asset ? <img src={assetUrl(state.style_ref.asset, 96)} alt="" /> : <span className="pb-ico"><Icon name="styles" size={20} /></span>}
-        <span className="pb-text"><small>Оформление</small><b>{state.style_ref ? state.style_ref.name : "не задано"}</b></span>
-      </button>
-      <button className="pb-card" onClick={dialogs.openPersonas} title="Модели клиента: человек на кадрах в использовании и общих планах">
-        {state.persona?.asset ? <img src={assetUrl(state.persona.asset, 96)} alt="" /> : <span className="pb-ico"><Icon name="personas" size={20} /></span>}
-        <span className="pb-text"><small>Модель</small><b>{state.persona ? state.persona.name : "подбирает ИИ"}</b></span>
-      </button>
-    </div>
-  );
+  const own = state.products.filter(p => p.preset_id && p.preset_id !== state.preset?.id).length;
+  return <div className="projectbar">
+    <button className="pb-card" onClick={dialogs.openPresets}>
+      <span className="pb-ico"><Icon name="presets" size={19} /></span><span className="pb-text"><small>Шаблон съёмки</small>
+        <b>{state.preset?.name || "Автоматическая съёмка"}</b><em>{state.preset ? `${state.preset.total} кадров на товар` : "План по фотографиям товара"}{own ? ` · свои настройки у ${own} товаров` : ""}</em></span>
+    </button>
+    <AdvancedFields title="Образ и стиль" summary={`${state.persona?.name || "Человека подберёт ИИ"} · ${state.style_ref?.name || "Без референса съёмки"}`}>
+      <div className="row wrap"><button onClick={dialogs.openPersonas}><Icon name="personas" /> Человек в кадре</button>
+        <button onClick={dialogs.openStyles}><Icon name="styles" /> Референс съёмки</button>
+        <button onClick={dialogs.openImport}><Icon name="upload" /> Добавить фото</button></div>
+    </AdvancedFields>
+  </div>;
 }

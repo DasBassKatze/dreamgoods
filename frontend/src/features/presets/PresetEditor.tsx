@@ -1,3 +1,5 @@
+import { AdvancedFields } from "../interface/InterfaceMode";
+import { isDesktop } from "../../desktop/runtime";
 import { useEffect, useState } from "react";
 import type { BlockKey, CatalogModel, ManualItem, PresetListing, PresetMarket, QualityKey, StrictnessKey } from "../../api/types";
 import { ManualPlan } from "./ManualPlan";
@@ -78,18 +80,18 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
   return (
     <div>
       <div className="form grid">
-        <label className="form-label">Название</label>
-        <input type="text" value={d.name} placeholder="например, Обувь — маркетплейс" onChange={(e) => setD({ ...d, name: e.target.value })} />
-        <label className="form-label">Описание</label>
-        <input type="text" value={d.description} placeholder="для кого и зачем этот пресет" onChange={(e) => setD({ ...d, description: e.target.value })} />
+        <label className="form-label" htmlFor="preset-name">Название</label>
+        <input id="preset-name" type="text" value={d.name} placeholder="например, Обувь — маркетплейс" onChange={(e) => setD({ ...d, name: e.target.value })} />
+        <label className="form-label" htmlFor="preset-description">Описание</label>
+        <input id="preset-description" type="text" value={d.description} placeholder="для кого и зачем этот пресет" onChange={(e) => setD({ ...d, description: e.target.value })} />
         {state.admin && (
           <>
             <label className="form-label">Где хранится</label>
             <div>
               <label className="check"><input type="checkbox" checked={!!d.shared} onChange={(e) => setD({ ...d, shared: e.target.checked })} />
-                {" "}пресет студии — виден всем кабинетам и на сайте в «Цены и оплата»</label>
+                {" "}{isDesktop ? "шаблон студии — доступен всем кабинетам" : "шаблон студии — виден всем кабинетам и на сайте в «Цены и оплата»"}</label>
               <div className="hint">{d.shared ? "Пользователи могут применять его и делать свои копии."
-                : `Хранится только в кабинете «${state.project.client}» — другие пользователи и сайт его не видят.`}</div>
+                : `Хранится только в кабинете «${state.project.client}».`}</div>
             </div>
           </>
         )}
@@ -132,7 +134,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
         )}
 
         {/* список моделей позже будет ограничиваться тарифом кабинета */}
-        <h4>Модель для генерации</h4>
+        <AdvancedFields title="Выбор нейросетей" summary={`${baseModel} · своих моделей по видам кадров: ${Object.values(d.block_models).filter(Boolean).length}`}><div className="form grid">
         <label className="form-label">Основная модель</label>
         <div className="fld">
           <ModelSelect value={String(d.custom.model ?? "")} onChange={(m) => setCustom("model", m)} models={models}
@@ -147,6 +149,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
             resolution={resolution} stats={stats(b.key)} onChange={(m) => setD({ ...d, block_models: { ...d.block_models, [b.key]: m } })} />
         ))}
 
+        </div></AdvancedFields>
         <h4>Площадка</h4>
         <label className="form-label">Для какой площадки</label>
         <div>
@@ -188,7 +191,7 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
           </>
         )}
 
-        <h4>Строгость ИИ-проверки</h4>
+        <AdvancedFields title="Контроль сходства с товаром" summary={listing.strictness.find(x => x.key === d.strictness)?.name}><div className="form grid">
         <label className="form-label">Что считать браком</label>
         <div className="quality-cards">
           {listing.strictness.map((x) => (
@@ -200,12 +203,13 @@ export function PresetEditor({ listing, initial, isNew, onSave, onDelete, onAppl
           ))}
         </div>
 
+        </div></AdvancedFields>
         <h4>План кадров на один товар</h4>
         <label className="form-label">Режим</label>
         <div>
           <div className="seg">
             <button className={!manual ? "on" : ""} onClick={() => setD({ ...d, plan_mode: "auto" })}>Авто — кадры придумывает ИИ</button>
-            <button className={manual ? "on" : ""} onClick={() => setD({ ...d, plan_mode: "manual" })}>Ручной — свои промпты</button>
+            <button className={manual ? "on" : ""} onClick={() => setD({ ...d, plan_mode: "manual" })}>Вручную — свои описания кадров</button>
           </div>
           <div className="hint mt6">{manual
             ? "Вы задаёте методы съёмки своими промптами и количество каждого; ИИ не придумывает ракурсы."

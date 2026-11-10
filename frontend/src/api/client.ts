@@ -184,7 +184,7 @@ export function projectApi(id: number) {
       auto_profile: boolean) =>
       post<ImportResult>(`${p}/imports/${sid}/apply`, { groups, label_mode, auto_profile }),
 
-    exportUrl: (include: "accepted" | "all" | "picked", ids: { frames?: number[]; products?: number[] } = {}) =>
+    exportUrl: (include: "accepted" | "checked" | "manual" | "all" | "picked", ids: { frames?: number[]; products?: number[] } = {}) =>
       `${p}/export?include=${include}` + (ids.frames?.length ? `&frames=${ids.frames.join(",")}` : "")
       + (ids.products?.length ? `&products=${ids.products.join(",")}` : ""),
 

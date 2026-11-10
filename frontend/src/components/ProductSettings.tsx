@@ -30,21 +30,21 @@ export function ProductSettings({ product: p, dialogs }: { product: Product; dia
   return (
     <div className="psettings">
       <label className={`ps-field ${own ? "own" : ""}`} title="Пресет товара: качество, площадка, формат и план кадров">
-        <span><Icon name="presets" size={14} /> Пресет</span>
+        <span><Icon name="presets" size={14} /> Шаблон съёмки</span>
         <select value={p.preset_id || 0} onChange={(e) => setPreset(+e.target.value)}>
           <option value={0}>{state.preset ? `как в проекте (${state.preset.name})` : "не выбран"}</option>
           {state.presets.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </label>
       <label className={`ps-field ${p.persona_id ? "own" : ""}`} title="Модель клиента на кадрах с человеком">
-        <span><Icon name="personas" size={14} /> Модель</span>
+        <span><Icon name="personas" size={14} /> Человек в кадре</span>
         <select value={p.persona_id || 0} onChange={(e) => setPersona(+e.target.value)}>
           <option value={0}>{viaPersona}</option>
           {personas.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </label>
       <label className={`ps-field ${p.style_ref_id ? "own" : ""}`} title="Референс оформления: свет, цвет, фон и настроение кадров">
-        <span><Icon name="styles" size={14} /> Оформление</span>
+        <span><Icon name="styles" size={14} /> Референс съёмки</span>
         <select value={p.style_ref_id || 0} onChange={(e) => setStyle(+e.target.value)}>
           <option value={0}>{projStyle}</option>
           {styles.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
@@ -52,9 +52,9 @@ export function ProductSettings({ product: p, dialogs }: { product: Product; dia
       </label>
       <span className="ps-sum" title="Что получится по этому пресету">
         {eff ? <>{eff.market_name || "без площадки"} · {eff.aspect || "3:4"} · {QUALITY_RU[eff.quality] || eff.quality} · {eff.total} кадр.</>
-          : "пресет не выбран — кадры по профилю товара"}
+          : "Автоматическая съёмка по описанию товара"}
       </span>
-      <button className="link" onClick={dialogs.openPresets}>настроить пресеты</button>
+      <button className="link" onClick={dialogs.openPresets}>Открыть шаблоны</button>
     </div>
   );
 }

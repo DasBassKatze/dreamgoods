@@ -8,7 +8,7 @@ import type { Filter } from "./Toolbar";
 export function matchesFilter(p: Product, filter: Filter) {
   switch (filter) {
     case "todo":
-      return p.done < p.total;
+      return !p.total || p.done < p.total;
     case "err":
       return p.frames.some((f) => f.state === "error");
     case "review":
