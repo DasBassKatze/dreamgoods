@@ -100,7 +100,6 @@ await page.screenshot({path:'/tmp/dgdesktop-assistant-small.png'});
 await page.getByRole('button',{name:'Свернуть помощника',exact:true}).click();
 await page.setViewportSize({width:1440,height:960});
 await page.goto('http://127.0.0.1:43279/studio#/products');
-await page.getByLabel('Действия товара ART123',{exact:true}).click();
 await page.getByRole('button',{name:'Удалить товар ART123'}).click();
 await page.getByRole('dialog').getByRole('button',{name:'Удалить',exact:true}).click();
 await page.waitForTimeout(200);assert.deepEqual(deleted,[11]);

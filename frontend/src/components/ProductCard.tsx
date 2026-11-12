@@ -74,7 +74,7 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
         )}
         <span className="mk-chip" title="Площадка и формат по пресету товара">{label}</span>
         <span className="spacer" />
-        <details className="product-menu"><summary aria-label={`Действия товара ${p.sku}`}>⋯</summary><div><button className="danger" aria-label={`Удалить товар ${p.sku}`} onClick={() => void remove([p.id])}>Удалить товар</button></div></details>
+        <button className="danger" aria-label={`Удалить товар ${p.sku}`} onClick={() => void remove([p.id])}>Удалить товар</button>
         <button disabled={!chosen.length || busy} title="Привести кадры к пресету и сгенерировать недостающие (с пожеланиями из строки запуска)"
           onClick={() => generate([p.id], 0, opts)}>Сгенерировать</button>
       </div>

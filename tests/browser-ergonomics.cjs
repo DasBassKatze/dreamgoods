@@ -26,6 +26,7 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
   else if(p.endsWith('/key-status'))data={value:100,error:'',checking:false,checked_at:1,configured:true};
   else if(p.endsWith('/history'))data={versions:[]};
   else if(p.endsWith('/review/batch')){products[2].frames[0].qc.status='accepted';data={results:[{frame_id:330,ok:true}]};}
+  else if(p.endsWith('/settings')){Object.assign(state.settings,req.postDataJSON());data={ok:true};}
   else if(p.endsWith('/trial'))data={trial:null};
   else if(p.endsWith('/generate/preview')){preview=req.postDataJSON();data={count:1,preset:null,estimate:{frames:1,profiles:0,base_estimate:1,retry_estimate:1,reserve_upper:5,historical_samples:1,unit:'себестоимость',note:''}};}
   else if(p.endsWith('/export')){exports.push(req.url());return route.fulfill({contentType:'application/zip',headers:{'Content-Disposition':'attachment; filename="frames.zip"'},body:Buffer.from('PK\x05\x06'+ '\x00'.repeat(18),'binary')});}
@@ -45,7 +46,20 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  await page.getByRole('button',{name:'Простой',exact:true}).click();
  assert.equal(mutations.length,before,'View mode must never write generation settings');
  assert((await page.locator('[data-product-id="11"]').innerText()).includes('Используются ваши настройки'));
+ assert(await page.getByRole('button',{name:'Удалить товар SHOE-A',exact:true}).isVisible());
+ const regen=page.getByLabel('Автоматически переделывать брак · платно',{exact:true});
+ const qc=page.getByLabel('ИИ-проверка',{exact:true});
+ assert(await regen.isVisible());assert.equal(await regen.count(),1);
+ await regen.uncheck();await page.waitForFunction(()=>!document.querySelector('.quick-quality-controls input:last-of-type')?.disabled && document.querySelector('.quick-quality-controls')?.getAttribute('aria-busy')==='false');
+ assert.equal(await regen.isChecked(),false);
+ await regen.check();await page.waitForFunction(()=>document.querySelector('.quick-quality-controls')?.getAttribute('aria-busy')==='false');
+ await qc.uncheck();await page.waitForFunction(()=>document.querySelector('.quick-quality-controls')?.getAttribute('aria-busy')==='false');assert(await regen.isDisabled());assert(await regen.isChecked());
+ await qc.check();await page.waitForFunction(()=>document.querySelector('.quick-quality-controls')?.getAttribute('aria-busy')==='false');assert(await regen.isEnabled());
+ assert.equal(state.settings.qc_retries,2);
+ assert.deepEqual(mutations.filter(x=>x.p.endsWith('/settings')).map(x=>x.body),[{qc_autoregen:false},{qc_autoregen:true},{qc_enabled:false},{qc_enabled:true}]);
+
  await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).check();
+ assert(await page.getByRole('button',{name:'Удалить выбранные',exact:true}).isVisible());
  await page.getByLabel('Поиск товаров',{exact:true}).fill('SHOE-B');
  await page.getByText('скрыто фильтром: 1',{exact:false}).first().waitFor();
  await page.getByLabel('Выбрать найденные (1)',{exact:true}).check();
@@ -86,7 +100,7 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  products[2].frames[0].qc.status='pass';await page.reload();await page.getByRole('button',{name:'Открыть галерею',exact:true}).waitFor();
  await page.getByRole('button',{name:/Пустой проект/}).click();await page.getByRole('heading',{name:'Начните с фотографий товара',exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:/^Сгенерировать/}).count(),0);await page.screenshot({path:'/tmp/dg-ui-empty.png',animations:'disabled'});
- assert(!mutations.some(x=>x.p.endsWith('/settings')),'UI mode must not write settings');assert(!mutations.some(x=>x.p.endsWith('/generate')),'Cancelled preview must not start paid generation');
+ assert.equal(mutations.filter(x=>x.p.endsWith('/settings')).length,4,'Only explicit quality checkbox changes may write settings');assert(!mutations.some(x=>x.p.endsWith('/generate')),'Cancelled preview must not start paid generation');
  assert.deepEqual(errors,[]);console.log('PASS: simple/advanced without setting writes, hidden selection, explicit target IDs, empty selection guard, truthful export statuses, keyboard, persistence, 1440/1024/390 layouts, empty project');
  await browser.close();server.close();
 })().catch(e=>{console.error(e);server.close();process.exit(1)});

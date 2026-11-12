@@ -20,3 +20,5 @@
 .studio-shell .project-look-tools{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}.studio-shell .project-look-tools+p{margin-top:14px}
 
 .nav-counter-label{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+
+.quick-quality-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;margin-top:10px}.quick-quality-controls .check{font-size:12px}.quick-quality-controls>span{font-size:11px;color:var(--muted)}

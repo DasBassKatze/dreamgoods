@@ -1,6 +1,6 @@
 import type { Dialogs } from "../../App";
 import { ProjectBar } from "../../components/ProjectBar";
-import { QualityTools } from "../../components/Toolbar";
+import { QualityTools, QualitySwitches } from "../../components/Toolbar";
 import { Icon } from "../../layout/Icon";
 import { useActions } from "../../hooks/useActions";
 import { useProject } from "../../ProjectContext";
@@ -35,7 +35,8 @@ export function Composer({ dialogs }: { dialogs: Dialogs }) {
         <Icon name="spark" size={18} />{!advanced && state.runner.busy ? "Генерация идёт…" : `Сгенерировать${ids.length ? ` (${ids.length} тов.)` : ""}`}
       </button>}
     </div>
-    <div className="run-quality"><span className={s.qc_enabled ? "" : "quality-warning"}>{s.qc_enabled ? "В проекте: ИИ-проверка включена" : "В проекте: ИИ-проверка выключена"}</span>
+    <QualitySwitches />
+    <div className="run-quality">
       <span>{s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 ? `Автопеределка до ${s.qc_retries} раз · платно` : "Без автоматических переделок"}</span>
       <span>Стоимость и бюджет — перед запуском</span></div>
     <AdvancedFields title="Настройки съёмки" summary={`${limit ? `До ${limit} кадров` : "Все недостающие кадры"} · ${state.persona?.name || "Человек: автоматически"} · ${state.style_ref?.name || "Без референса съёмки"}`}>
