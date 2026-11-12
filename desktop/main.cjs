@@ -2,7 +2,6 @@ const { app, BrowserWindow, dialog, shell, Menu, ipcMain, screen } = require('el
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const net = require('node:net');
 const http = require('node:http');
 let backend, win, splash, desktopOrigin, workspaceBounds, restoreMaximized = false, windowMode = "login", quitting = false, backendEnded = false;
@@ -14,31 +13,15 @@ else {
   app.on('second-instance', () => { if (win) { win.restore(); win.show(); win.focus(); } });
   app.whenReady().then(start).catch(fail);
 }
-function roundWindow(window) {
-  // Native DWM rounding on Windows 11; a shape fallback keeps Windows 10 rounded too.
-  if (process.platform !== 'win32' || Number(os.release().split('.')[2]) >= 22000) return;
-  const shape = () => {
-    if (window.isDestroyed()) return;
-    if (window.isMaximized() || window.isFullScreen()) { window.setShape([]); return; }
-    const [width, height] = window.getSize(), radius = 14;
-    const rects = [{ x: 0, y: radius, width, height: height - radius * 2 }];
-    for (let y = 0; y < radius; y++) {
-      const inset = Math.ceil(radius - Math.sqrt(radius ** 2 - (radius - y - .5) ** 2));
-      rects.push({ x: inset, y, width: width - 2 * inset, height: 1 },
-        { x: inset, y: height - 1 - y, width: width - 2 * inset, height: 1 });
-    }
-    window.setShape(rects);
-  };
-  window.on('resize', shape); window.on('maximize', shape); window.on('unmaximize', shape); shape();
-}
+// Let the compositor draw the outer edge. setShape scanlines alias at fractional DPI
+// and disable native rounded corners/shadows on Windows.
 function status(text) {
   if (!splash || splash.isDestroyed()) {
     splash = new BrowserWindow({ width: 520, height: 280, resizable: false, frame: false, roundedCorners: true,
-      backgroundColor: '#f8f7fc', hasShadow: true, autoHideMenuBar: true,
+      backgroundColor: '#f5f6f8', accentColor: false, hasShadow: true, autoHideMenuBar: true,
       webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
-    roundWindow(splash);
   }
-  splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>DG Desktop</title><style>body{margin:0;padding:38px;font:14px/1.5 'Segoe UI',sans-serif;color:#242237;background:radial-gradient(at 0 0,#eae4ff,transparent 65%),#f8f7fc;border-radius:14px;app-region:drag}i{font-style:normal;color:#7954dc;font-size:36px}h1{font-size:24px;margin:8px 0}p{color:#777285}progress{width:100%;height:5px;accent-color:#7954dc}</style><i>✦</i><h1>DG Desktop</h1><p>${text}</p><progress></progress>`)).catch(() => {});
+  splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>DG Desktop</title><style>body{margin:0;padding:38px;font:14px/1.5 'Segoe UI',sans-serif;color:#242237;background:radial-gradient(at 0 0,#ece8f9,transparent 65%),#f5f6f8;app-region:drag}i{font-style:normal;color:#7954dc;font-size:36px}h1{font-size:24px;margin:8px 0}p{color:#777285}progress{width:100%;height:5px;accent-color:#7954dc}</style><i>✦</i><h1>DG Desktop</h1><p>${text}</p><progress></progress>`)).catch(() => {});
 }
 function trusted(event) {
   return win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
@@ -142,9 +125,8 @@ async function start() {
   }
   if (quitting) return;
   win = new BrowserWindow({ width: 520, height: 620, minWidth: 440, minHeight: 540, show: false, frame: false, roundedCorners: true,
-    backgroundColor: '#f8f7fc', hasShadow: true, resizable: false, maximizable: false, autoHideMenuBar: true,
+    backgroundColor: '#f5f6f8', accentColor: false, hasShadow: true, resizable: false, maximizable: false, autoHideMenuBar: true,
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') } });
-  roundWindow(win);
   win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => callback(wc === win.webContents && new URL(wc.getURL()).origin === origin && ['notifications', 'clipboard-sanitized-write'].includes(permission)));
   win.webContents.setWindowOpenHandler(({ url }) => {
     const u = new URL(url);

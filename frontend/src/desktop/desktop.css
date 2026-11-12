@@ -1,15 +1,21 @@
 html.desktop { background: transparent; --accent:#7554d8; --bg:#f5f5fa; --panel:#fff; --line:#e5e3ee; --ink:#282537; --muted:#817c90; }
 .desktop body { background:transparent; }
-.desktop-shell { height:100vh; overflow:hidden; border-radius:14px; border:1px solid #e3dfed; background:var(--bg); display:flex; flex-direction:column; }
-.desktop-shell.maximized { border-radius:0; border:0; }
-.desktop-titlebar { height:42px; flex:none; display:flex; align-items:center; gap:9px; padding:0 0 0 18px; background:#faf9fd; color:#706982; border-bottom:1px solid #e8e5ef; user-select:none; -webkit-app-region:drag; }
-.desktop-titlebar b { font-size:12px; font-weight:650; color:#3f3654; letter-spacing:.2px; }
-.desktop-emblem { font-size:21px; color:#8057d8; }
-.desktop-title-hint { color:#b1a9bc; font-size:11px; }
-.desktop-window-controls { display:flex; height:100%; -webkit-app-region:no-drag; }
-.desktop-window-controls button { width:46px; border:0; border-radius:0; padding:0; background:transparent; color:#837b91; font:15px 'Segoe UI',sans-serif; }
-.desktop-window-controls button:hover { background:#ebe7f3; color:#332847; }
-.desktop-window-controls .desktop-window-close:hover { color:#fff; background:#d85365; }
+/* The native compositor owns the outer contour: no second CSS border or corner mask. */
+.desktop-shell { height:100vh; overflow:hidden; background:#f5f6f8; display:flex; flex-direction:column; }
+.desktop-titlebar { height:42px; flex:none; display:flex; align-items:center; gap:9px; padding:0 8px 0 16px; background:linear-gradient(180deg,#fdfdfe,#f5f6f8); color:#777582; box-shadow:inset 0 -1px #e9e9ef; user-select:none; -webkit-app-region:drag; transition:background-color .18s ease,color .18s ease; }
+.desktop-titlebar b { font-size:12px; font-weight:600; color:#44414d; letter-spacing:.1px; }
+.desktop-emblem { font-size:20px; color:#7954cf; }
+.desktop-title-hint { color:#96929f; font-size:11px; }
+.desktop-window-controls { display:flex; align-items:center; gap:4px; height:100%; margin-left:8px; -webkit-app-region:no-drag; }
+.desktop-window-controls button { width:38px; height:28px; display:grid; place-items:center; border:0; border-radius:7px; padding:0; background:transparent; color:#77727f; cursor:default; }
+.desktop-window-controls svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.2; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+.desktop-window-controls button:hover { background:#e9e7ee; color:#38323f; }
+.desktop-window-controls button:active { background:#dfdce6; }
+.desktop-window-controls button:focus-visible { outline:2px solid #8e6bd5; outline-offset:1px; }
+.desktop-window-controls .desktop-window-close:hover { color:#fff; background:#d44c60; }
+.desktop-window-controls .desktop-window-close:active { background:#bc3a4e; }
+.desktop-shell.inactive .desktop-titlebar { color:#aaa6b0; }
+.desktop-shell.inactive .desktop-titlebar b, .desktop-shell.inactive .desktop-emblem { color:#aaa6b0; }
 .desktop-content { min-height:0; overflow:auto; flex:1; }
 .desktop .app { min-height:100%; }
 .desktop .topbar { position:sticky; top:0; background:rgba(255,255,255,.97); padding:12px 22px; border-color:#e8e4ee; box-shadow:0 3px 14px #3e245705; }
@@ -18,8 +24,8 @@ html.desktop { background: transparent; --accent:#7554d8; --bg:#f5f5fa; --panel:
 .desktop .menu button, .desktop .menu-link { border-radius:8px; }
 .desktop .card, .desktop .panel, .desktop .gen-setup, .desktop .composer { border-radius:16px; border-color:#e5e1ed; box-shadow:0 3px 14px #3d235305; }
 .desktop .modal { position:fixed; inset:42px 0 0; background:#21172d66; backdrop-filter:blur(5px); }
-.desktop .modal .box { border-radius:18px; box-shadow:0 24px 90px #29153e33; border:1px solid #e7e0f0; overflow:hidden; max-height:calc(100vh - 80px); }
-.desktop .box-head { padding:16px 22px; background:#fbfafd; border-color:#ebe6f1; }
+.desktop .modal .box { border-radius:16px; box-shadow:0 20px 64px #211a3026,0 2px 8px #211a300d; border:1px solid #e6e5ec; overflow:hidden; max-height:calc(100vh - 80px); }
+.desktop .box-head { padding:16px 22px; background:#fafafd; border-color:#eeedf2; }
 .desktop .box-head button { border:0; background:#f0ecf6; border-radius:9px; }
 .desktop input:focus, .desktop textarea:focus, .desktop select:focus { outline:2px solid #8e6bd540; border-color:#8e6bd5; }
 .desktop button.primary { background:linear-gradient(125deg,#8055df,#6753cb); border-color:transparent; box-shadow:0 3px 8px #7854d524; }
