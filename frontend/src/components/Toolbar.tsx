@@ -70,17 +70,20 @@ export function QualityTools() {
 
 export function QualitySwitches() {
   const { state, api, reload, run } = useProject();
-  const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState<{ key: "qc_enabled" | "qc_autoregen"; value: boolean } | null>(null);
+  const saving = pending !== null;
+  const qcEnabled = pending?.key === "qc_enabled" ? pending.value : state.settings.qc_enabled;
+  const autoregen = pending?.key === "qc_autoregen" ? pending.value : state.settings.qc_autoregen;
   const toggle = (key: "qc_enabled" | "qc_autoregen", value: boolean) => {
     if (saving) return;
-    setSaving(true);
-    void run(async () => { await api.saveSettings({ [key]: value }); await reload(); }).finally(() => setSaving(false));
+    setPending({ key, value });
+    void run(async () => { await api.saveSettings({ [key]: value }); await reload(); }).finally(() => setPending(null));
   };
   return <div className="quick-quality-controls" role="group" aria-label="Проверка и перегенерация" aria-busy={saving}>
-    <label className="check"><input type="checkbox" checked={state.settings.qc_enabled} disabled={saving}
+    <label className="check"><input type="checkbox" checked={qcEnabled} disabled={saving}
       onChange={e => toggle("qc_enabled", e.target.checked)} /> ИИ-проверка</label>
-    <label className="check" title={state.settings.qc_enabled ? "Автоматически переделывать кадры, не прошедшие ИИ-проверку. Переделки оплачиваются." : "Для автоматической переделки включите ИИ-проверку"}>
-      <input type="checkbox" checked={state.settings.qc_autoregen} disabled={saving || !state.settings.qc_enabled}
+    <label className="check" title={qcEnabled ? "Автоматически переделывать кадры, не прошедшие ИИ-проверку. Переделки оплачиваются." : "Для автоматической переделки включите ИИ-проверку"}>
+      <input type="checkbox" checked={autoregen} disabled={saving || !qcEnabled}
         onChange={e => toggle("qc_autoregen", e.target.checked)} /> Автоматически переделывать брак · платно</label>
     {saving && <span role="status">Сохраняю…</span>}
   </div>;
