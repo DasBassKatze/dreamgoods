@@ -4,6 +4,7 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
 (async()=>{await new Promise(r=>server.listen(43279,'127.0.0.1',r));const browser=await chromium.launch({executablePath:process.env.CHROME_BIN || undefined,headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));let started=null,resumed=null;let assistantRequests=[],assistantFail=false,assistantConfigured=true;let loggedIn=false,keyCalls=0,keyValue=100,deleted=[],removed=[];
 await page.clock.install();
 await page.addInitScript(() => { window.dgDesktop={minimize:async()=>{},maximize:async()=>{},close:async()=>{},mode:async mode=>window.desktopMode=mode,state:async()=>({maximized:false})}; });
+let creativePlan, creativeAssignment;
 const imported={id:7,project_id:1,status:'upload',count:2,progress:null,error:'',photos:[{id:1,name:'one.png',asset:'one',role:'product'},{id:2,name:'two.png',asset:'two',role:'product'}],groups:[],result:{}};
 const product={id:11,sku:'ART123',name:'Тест',persona_id:null,persona:null,preset_id:null,style_ref_id:null,photos:[],frames:[],done:0,total:0,profile:null,profile_job:null};
 const estimate={frames:2,profiles:0,base_estimate:20,retry_estimate:10,reserve_upper:60,historical_samples:4,unit:'клиентская цена',note:'Оценка по истории модели'};
@@ -24,6 +25,13 @@ else if(p.endsWith('/assistant')) {
     data={answer:'Добавьте фото и проверьте группы. Одинаковый артикул объединяется в один товар.',actions:[{type:'navigate',route:'import',label:'Загрузка товаров'}],model:'openai/gpt-4.1-mini',cost_rub:.01};
   }
 }
+else if(p.endsWith('/presets') && route.request().method()==='POST'){
+  creativePlan=route.request().postDataJSON();data={id:54};state.presets=[{id:54,name:creativePlan.name,total:5}];
+}
+else if(p.endsWith('/presets/54/apply')){
+  creativeAssignment=route.request().postDataJSON();product.preset_id=54;data={products:1};
+}
+else if(p.endsWith('/styles'))data={refs:[]};
 else if(p.endsWith('/state'))data={...state,admin:true,products:deleted.length?[]:[product],open_import:{id:7,status:'upload',count:imported.count}};
 else if(p.endsWith('/key-status')){keyCalls++;data={value:keyValue,error:'',checking:false,checked_at:Date.now()/1000,configured:true};}
 else if(p.endsWith('/products/delete')){deleted=route.request().postDataJSON().product_ids;data={deleted:deleted.length,ids:deleted};}
@@ -110,6 +118,35 @@ await page.getByRole('dialog').getByRole('button',{name:'Удалить',exact:t
 await page.waitForTimeout(200);assert.deepEqual(removed,['one.png']);
 assert.equal(await page.getByRole('button',{name:'Удалить фото one.png',exact:true}).count(),0);
 assert.equal(await page.getByRole('button',{name:'Удалить фото two.png',exact:true}).count(),1);
+deleted=[];product.photos=[{asset:'orig',role:'product'}];
+await page.reload();
+await page.goto('http://127.0.0.1:43279/studio#/creative');
+await page.locator('.creative select').first().selectOption('11');
+await page.getByRole('button',{name:'Назначить план товару'}).click();
+await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Запустить серию')).disabled);
+assert.deepEqual(creativeAssignment,{product_ids:[11],rebuild:false});
+assert.equal(creativePlan.manual.length,5);assert.equal(new Set(creativePlan.manual.map(s=>s.prompt)).size,5);assert.equal(creativePlan.quality,'premium');
+await page.getByText('Запустить серию · платно').click();
+await page.getByRole('dialog').waitFor();assert.equal(started,null);
+await page.reload();
+await page.goto('http://127.0.0.1:43279/studio#/creative');
+await page.getByRole('button',{name:'Перенос ткани',exact:true}).click();
+const fixture=async(color,w,h)=>Buffer.from(await page.evaluate(([color,w,h])=>{const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,w,h);if(w===20){ctx.fillStyle='#050505';ctx.fillRect(10,0,10,h);}return c.toDataURL().split(',')[1];},[color,w,h]),'base64');
+await page.getByLabel('Исходная фотография одежды').setInputFiles({name:'photo.png',mimeType:'image/png',buffer:await fixture('#888888',100,100)});
+await page.getByLabel('Образец или карта тканей').setInputFiles({name:'tile.png',mimeType:'image/png',buffer:await fixture('#146632',20,20)});
+const clickAt=async(locator,x,y)=>{await locator.waitFor();const b=await locator.boundingBox();await locator.click({position:{x:x*b.width,y:y*b.height}});};
+const sw=page.locator('.creative-board.swatch');await clickAt(sw,.15,.15);await clickAt(sw,.85,.85);
+const board=page.locator('.creative-scroll .creative-board');
+for(const [x,y] of [[.1,.1],[.88,.1],[.88,.52],[.1,.52]])await clickAt(board,x,y);
+await page.getByRole('button',{name:'Замкнуть контур'}).click();
+await page.getByLabel('Вырез',{exact:true}).check();
+for(const [x,y] of [[.34,.25],[.65,.25],[.65,.42],[.34,.42]])await clickAt(board,x,y);
+await page.getByRole('button',{name:'Замкнуть контур'}).click();
+await page.getByRole('button',{name:'Применить ткань'}).click();
+const out=page.getByAltText('Перенос ткани',{exact:true});await out.waitFor();
+const check=await out.evaluate(async(img)=>{await img.decode();const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);const pixels=(x,y)=>[...ctx.getImageData(x,y,1,1).data];return [c.width,c.height,pixels(1,1),pixels(50,33),pixels(15,25),pixels(28,25)];});
+assert.deepEqual(check,[100,100,[136,136,136,255],[136,136,136,255],[20,102,50,255],[5,5,5,255]]);
+
 assert.equal(errors.length,0,errors.join('\n'));
 console.log('PASS: compact desktop login, account-only website link, focused key refresh, assistant context/navigation/error/history reset/mobile/reduced-motion, product and uploaded photo deletion, no JS errors');
 await browser.close();server.close();})().catch(e=>{console.error(e);server.close();process.exit(1)});
