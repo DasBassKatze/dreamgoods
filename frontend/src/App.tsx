@@ -1,3 +1,4 @@
+import { CreativeStudio } from "./features/creative/CreativeStudio";
 import { InterfaceModeProvider, ModeSwitch } from "./features/interface/InterfaceMode";
 import { needsReview } from "./lib/format";
 import { isDesktop } from "./desktop/runtime";
@@ -71,7 +72,7 @@ export function App() {
   return <InterfaceModeProvider key={me.id} userId={me.id}><Workspace me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} /></InterfaceModeProvider>;
 }
 
-const NEEDS_PROJECT: Route[] = ["products", "budgets", "review", "gallery", "history", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
+const NEEDS_PROJECT: Route[] = ["creative", "products", "budgets", "review", "gallery", "history", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
 
 function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const ui = useUI();
@@ -210,6 +211,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         : offline ? "Нет связи с сервером. Проверьте, что DreamGoods запущен." : "Загрузка…"}</div>;
     }
     switch (route) {
+      case "creative": return <CreativeStudio key={projectId} userId={me.id} openFrame={dialogs.openFrame} />;
       case "import": return <PageMode.Provider value><ImportWizard key={projectId} open onClose={toProducts} /></PageMode.Provider>;
       case "presets": return <PageMode.Provider value><PresetManager onClose={toProducts} /></PageMode.Provider>;
       case "personas": return <PageMode.Provider value><PersonaManager onClose={toProducts} /></PageMode.Provider>;

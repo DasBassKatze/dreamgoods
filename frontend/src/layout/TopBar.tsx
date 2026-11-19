@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 
 const TABS: [Route, string][] = [
   ["products", "Генерация"],
+  ["creative", "Творческая студия"],
   ["review", "Приёмка"],
   ["gallery", "Галерея"],
   ["history", "История"],

@@ -1,0 +1,19 @@
+.creative { max-width:960px; margin:0 auto; padding:clamp(14px,3vw,32px); background:var(--panel,#fff); border:1px solid var(--line,#dedde4); border-radius:16px }
+.creative h1 { margin-top:0 }
+.creative [aria-pressed=true] { color:var(--accent,#7148ce);border-color:currentColor }
+.creative fieldset { border:0; padding:0; margin:0; min-width:0 }
+.creative label { display:block; margin:12px 0; font-weight:550 }
+.creative label>textarea,.creative label>select,.creative label>input:not([type=checkbox]) { display:block;width:100%;margin-top:6px }
+.creative textarea { min-height:65px }
+.creative .creative-shot { border-bottom:1px solid var(--line,#ddd);padding:12px 0 }
+.creative summary { cursor:pointer;font-weight:600 }
+.creative-refs { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 }
+.creative-refs img { display:block; max-width:140px; height:100px;object-fit:contain }
+.creative-board { position:relative;cursor:crosshair;line-height:0 }
+.creative-board img,.creative-result { width:100%;height:auto;display:block }
+.creative-board.swatch { max-width:520px }
+.creative-board svg { position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:#a981ff44;stroke:#673ade }
+.creative-board svg * { vector-effect:non-scaling-stroke;stroke-width:2 }
+.creative-board circle { fill:white }
+.creative-board .cut {fill:#ff76654d;stroke:#b33127}
+.creative-scroll {overflow:auto;max-height:70vh;background:#f3f2f5}
