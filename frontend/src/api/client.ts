@@ -56,7 +56,7 @@ export const onAuthLost = (fn: () => void) => {
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   const init: RequestInit = { method, headers, credentials: "same-origin" };
-  if (body instanceof Blob) {
+  if (body instanceof Blob || body instanceof FormData) {
     init.body = body;
   } else if (body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -102,6 +102,13 @@ export interface PresetSync {
   count: number;
 }
 
+export interface TextileJob {
+  id: number;
+  status: string;
+  error: string;
+  has_image: boolean;
+}
+
 export interface Selection {
   product_ids?: number[] | null;
   frame_ids?: number[] | null;
@@ -137,6 +144,15 @@ export function projectApi(id: number) {
     startTrial: (productIds:number[]|null) => post<{trial:Trial}>(`${p}/trial`, {product_ids:productIds}),
     estimateTrial: (id:number) => get<CostEstimate>(`${p}/trial/${id}/estimate`),
     approveTrial: (id:number,generationId:number,budget?: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{added:number;already_approved:boolean}>(`${p}/trial/${id}/approve`, {generation_id:generationId,...budget}),
+    textileJob: () => get<{ job: TextileJob | null }>(`${p}/textile`),
+    transferTextile: (photo: File, fabric: File) => {
+      const body = new FormData();
+      body.append("photo", photo);
+      body.append("fabric", fabric);
+      return post<TextileJob>(`${p}/textile`, body);
+    },
+    textileImage: (jobId: number, download = false) =>
+      `${p}/textile/${jobId}/image${download ? "?download=true" : ""}`,
     budgets: () => get<BudgetState>(`${p}/budgets`),
     resumeBudget: (id:number,budget?: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{ok:true}>(`${p}/budgets/${id}/resume`,budget ?? {}),
     resumeUnbatched: () => post<{queued:number}>(`${p}/budgets/resume-unbatched`),

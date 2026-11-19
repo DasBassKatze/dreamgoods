@@ -9,11 +9,4 @@
 .creative summary { cursor:pointer;font-weight:600 }
 .creative-refs { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 }
 .creative-refs img { display:block; max-width:140px; height:100px;object-fit:contain }
-.creative-board { position:relative;cursor:crosshair;line-height:0 }
-.creative-board img,.creative-result { width:100%;height:auto;display:block }
-.creative-board.swatch { max-width:520px }
-.creative-board svg { position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:#a981ff44;stroke:#673ade }
-.creative-board svg * { vector-effect:non-scaling-stroke;stroke-width:2 }
-.creative-board circle { fill:white }
-.creative-board .cut {fill:#ff76654d;stroke:#b33127}
-.creative-scroll {overflow:auto;max-height:70vh;background:#f3f2f5}
+.creative-result { width:100%; height:auto; display:block }

@@ -73,8 +73,8 @@ def storage_usage(user):
     """Сколько места занимают файлы кабинета (фото товаров, кадры, модели, оформление, импорт). Мастер — всего сервиса.
     Квота: своя у кабинета (настройка мастера) или общая из настроек организации."""
     import time
-    from sqlalchemy import union
-    from ..db.models import (Asset, Frame, Generation, ImportFile, ImportSession, Persona, PersonaPhoto, Product,
+    from sqlalchemy import String, cast, union
+    from ..db.models import (Asset, Frame, Generation, ImportFile, ImportSession, Job, Persona, PersonaPhoto, Product,
                              ProductPhoto, StyleRef, StyleRefPhoto)
     key = ("all" if user.master else user.client_id)
     hit = _storage_cache.get(key)
@@ -88,6 +88,15 @@ def storage_usage(user):
             quota_gb = float((org.settings or {}).get("storage_total_gb") or 100)
         else:
             cid = user.client_id or 0
+            # UUID хранится в JSON задания как строка, а SQLite хранит сам UUID без дефисов.
+            asset_key = func.replace(cast(Asset.id, String), "-", "")
+            textile_refs = [
+                select(Asset.id.label("a"))
+                .join(Job, asset_key == func.replace(Job.payload[field].as_string(), "-", ""))
+                .join(Project, Project.id == Job.project_id)
+                .where(Job.kind == "textile", Project.client_id == cid, Asset.org_id == user.org_id)
+                for field in ("photo", "fabric", "output")
+            ]
             parts = union(
                 select(ProductPhoto.asset_id.label("a")).join(Product, Product.id == ProductPhoto.product_id)
                 .join(Project, Project.id == Product.project_id).where(Project.client_id == cid),
@@ -100,6 +109,7 @@ def storage_usage(user):
                 .where(StyleRef.client_id == cid),
                 select(ImportFile.asset_id.label("a")).join(ImportSession, ImportSession.id == ImportFile.session_id)
                 .join(Project, Project.id == ImportSession.project_id).where(Project.client_id == cid),
+                *textile_refs,
             ).subquery()
             used = s.scalar(select(func.coalesce(func.sum(Asset.bytes), 0)).where(Asset.id.in_(select(parts.c.a)))) or 0
             c = s.get(Client, cid)
