@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from .. import db
 from ..core import storage
+from ..core.events import utcnow
 from ..db.models import Job, Project
 from ..workers.queue import ACTIVE, enqueue
 
@@ -29,18 +30,24 @@ def _view(job):
         "id": job.id,
         "status": job.status,
         "error": job.error,
-        "has_image": bool((job.payload or {}).get("output")),
+        "has_image": job.status == "done" and bool((job.payload or {}).get("output")),
     }
 
 
 def latest(project_id):
+    jobs = select(Job).where(Job.project_id == project_id, Job.kind == "textile").order_by(Job.id.desc()).limit(1)
     with db.session() as s:
-        job = s.scalar(select(Job).where(Job.project_id == project_id, Job.kind == "textile")
-                       .order_by(Job.id.desc()).limit(1))
-        return _view(job) if job else None
+        job = s.scalar(jobs)
+        current = _view(job) if job else None
+        if current is None or current["has_image"]:
+            return {"job": current, "result_id": job.id if job else None}
+        previous_id = s.scalar(jobs.with_only_columns(Job.id).where(
+            Job.status == "done", Job.payload["output"].as_string().is_not(None),
+        ))
+        return {"job": current, "result_id": previous_id}
 
 
-def start(project_id, photo, fabric):
+def start(project_id, photo, fabric, prompt=""):
     validate_photo(photo)
     validate_photo(fabric)
     with db.session() as s:
@@ -54,5 +61,19 @@ def start(project_id, photo, fabric):
         garment = storage.put(s, org_id, photo, "textile", "garment")
         swatch = storage.put(s, org_id, fabric, "textile", "swatch")
         return _view(enqueue(s, "textile", project_id, payload={
-            "photo": str(garment.id), "fabric": str(swatch.id),
+            "photo": str(garment.id), "fabric": str(swatch.id), "prompt": prompt.strip(),
         }))
+
+
+def cancel(project_id, job_id):
+    with db.session() as s:
+        job = s.scalar(select(Job).where(Job.id == job_id, Job.project_id == project_id, Job.kind == "textile")
+                       .with_for_update())
+        if job is None:
+            raise LookupError("Задание переноса ткани не найдено")
+        if job.status in ("queued", "paused"):
+            job.status, job.finished_at = "cancelled", utcnow()
+            job.error = ""
+        elif job.status == "running":
+            job.status = "cancelling"
+        return _view(job)

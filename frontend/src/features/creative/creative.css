@@ -10,3 +10,10 @@
 .creative-refs { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 }
 .creative-refs img { display:block; max-width:140px; height:100px;object-fit:contain }
 .creative-result { width:100%; height:auto; display:block }
+.fabric-selection { position:relative; display:table; max-width:100%; overflow:hidden; cursor:crosshair; touch-action:none; user-select:none; line-height:0 }
+.fabric-selection img { display:block; max-width:100%; max-height:540px; width:auto; height:auto }
+.fabric-region { position:absolute; outline:2px solid #fff; box-shadow:0 0 0 1px #46289c,0 0 0 1200px #24194570; pointer-events:none }
+.fabric-selection-status { min-height:34px; margin:8px 0; flex-wrap:wrap }
+.textile-result { border-top:1px solid var(--line,#dedde4); margin-top:24px; padding-top:16px }
+.textile-result h2 { margin:0 0 12px }
+.textile-result .creative-result { max-height:75vh; width:auto; max-width:100%; margin-bottom:12px }

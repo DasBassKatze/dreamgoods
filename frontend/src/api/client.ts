@@ -144,13 +144,15 @@ export function projectApi(id: number) {
     startTrial: (productIds:number[]|null) => post<{trial:Trial}>(`${p}/trial`, {product_ids:productIds}),
     estimateTrial: (id:number) => get<CostEstimate>(`${p}/trial/${id}/estimate`),
     approveTrial: (id:number,generationId:number,budget?: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{added:number;already_approved:boolean}>(`${p}/trial/${id}/approve`, {generation_id:generationId,...budget}),
-    textileJob: () => get<{ job: TextileJob | null }>(`${p}/textile`),
-    transferTextile: (photo: File, fabric: File) => {
+    textileJob: () => get<{ job: TextileJob | null; result_id: number | null }>(`${p}/textile`),
+    transferTextile: (photo: File, fabric: File, prompt = "") => {
       const body = new FormData();
       body.append("photo", photo);
       body.append("fabric", fabric);
+      body.append("prompt", prompt);
       return post<TextileJob>(`${p}/textile`, body);
     },
+    cancelTextile: (jobId: number) => post<TextileJob>(`${p}/textile/${jobId}/cancel`),
     textileImage: (jobId: number, download = false) =>
       `${p}/textile/${jobId}/image${download ? "?download=true" : ""}`,
     budgets: () => get<BudgetState>(`${p}/budgets`),

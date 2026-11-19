@@ -135,6 +135,9 @@ def recover(quiet=False):
                     from ..db.models import BudgetBatch
                     batch = s.get(BudgetBatch, operation.batch_id)
                     batch.state, batch.pause_reason = "paused", "Сервер прервался после отправки запроса. Требуется сверка резерва."
+            if j.kind == "textile" and j.status == "cancelling":
+                j.status, j.finished_at, j.error = "cancelled", utcnow(), ""
+                continue
             j.status, j.finished_at = "error", utcnow()
             j.error = ("прервано: сервер, выполнявший задание, остановился; повтор не делался, чтобы не заплатить "
                        "дважды. Если Polza успела принять задачу — результат дозагрузится автоматически")
@@ -203,8 +206,10 @@ def _within_plan(s, cands):
 def _finish(job_id, status, error=""):
     with db.session() as s:
         j = s.get(Job, job_id)
-        if j.status == "cancelling" and status == "done":
-            status = "cancelled"
+        if j.kind == "textile":
+            s.refresh(j, with_for_update=True)
+        if j.status == "cancelling" and (status == "done" or j.kind == "textile"):
+            status, error = "cancelled", ""
         j.status, j.error, j.finished_at, j.note = status, error[:2000], utcnow(), ""
         if status == "done" and (j.payload or {}).get("deferred_budget_check") and j.frame_id:
             payload=dict(j.payload)
@@ -340,6 +345,8 @@ def _worker(name, idx=1):
             _finish(job_id, "paused" if isinstance(e, BudgetPause) else "error", str(e))
             with db.session() as s:
                 j = s.get(Job, job_id)
+                if j.status == "cancelled" and j.kind == "textile":
+                    continue
                 where = _where(s, j)
             say("err", f"❌ {where} · {str(e)[:300]}", j.project_id)
 

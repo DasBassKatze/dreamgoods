@@ -7,7 +7,7 @@ from ..ai.images import ref_for
 from ..core import presets, storage
 from ..core.settings import effective
 from ..db.models import Asset, Job, Organization, Project
-from .queue import set_note
+from .queue import cancelled, set_note
 
 PROMPT = (
     "Edit the first image. Use the second image only as the exact fabric reference. "
@@ -34,11 +34,23 @@ def handle(job_id):
         # Сохраняем композицию исходного снимка независимо от формата проекта.
         st["aspect"] = polza.nearest_aspect(f"{photo.width}:{photo.height}", presets.ASPECTS)
         side = int(st.get("ref_side") or 1536)
-    answer = polza.generate(st, st["api_key"], PROMPT, [ref_for(photo, side), ref_for(fabric, side)], "[перенос ткани]")
+        additional = job.payload.get("prompt") or ""
+    prompt = PROMPT
+    if additional:
+        prompt += "\n\nAdditional user instructions for the textile edit: " + additional
+    refs = [ref_for(photo, side), ref_for(fabric, side)]
+    if cancelled(job_id):
+        return
+    answer = polza.generate(st, st["api_key"], prompt, refs, "[перенос ткани]",
+                            should_stop=lambda: cancelled(job_id))
+    if answer is None or cancelled(job_id):
+        return
     img = polza.extract_image(answer)
     if not img:
         raise RuntimeError("Polza не вернула изображение")
     with db.session() as s:
-        job = s.get(Job, job_id)
+        job = s.get(Job, job_id, with_for_update=True)
+        if job.status == "cancelling":
+            return
         out = storage.put(s, org_id, img, "textile", "textile-transfer")
         job.payload = {**job.payload, "output": str(out.id)}

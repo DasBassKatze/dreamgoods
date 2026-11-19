@@ -45,7 +45,10 @@ else if(p.endsWith('/textile') && route.request().method()==='POST'){
   textileRequest=route.request().postData();
   data={id:71,status:'queued',error:'',has_image:false};
 }
-else if(p.endsWith('/textile'))data={job:textileRequest?{id:71,status:'done',error:'',has_image:true}:null};
+else if(p.endsWith('/textile'))data={job:textileRequest?{id:71,status:'done',error:'',has_image:true}:null,result_id:textileRequest?71:null};
+else if(p.endsWith('/textile/71/image')){
+  await route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aIVsAAAAASUVORK5CYII=','base64')});return;
+}
 else if(p.endsWith('/budgets'))data=budget;
 else if(p.endsWith('/budgets/operations/test-op/reconcile')){
   cancelledOperation=route.request().postDataJSON();

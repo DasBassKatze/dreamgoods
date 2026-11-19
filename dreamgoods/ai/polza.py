@@ -201,17 +201,21 @@ def upload_refs(key, refs, tag="", force=False):
 RETRY_CODES = ("INTERNAL_ERROR",)        # сбой у провайдера; ошибки модерации, лимитов и т. п. не повторяем
 
 
-def generate(st, key, prompt, refs, tag="", on_task=None):
+def generate(st, key, prompt, refs, tag="", on_task=None, should_stop=None):
     """Генерация с защитой от сбоев провайдера: референсы — ссылками из хранилища Polza; если задача упала
     из-за внутренней ошибки (например, провайдер не скачал фото) и не была оплачена — один повтор через 15 с."""
     use_storage = st.get("upload_refs", True)
     payload = upload_refs(key, refs, tag) if use_storage else refs
+    if should_stop and should_stop():
+        return None
     target = st["aspect"]
     st, prompt, crop = _with_aspect(st, prompt, target, tag)
     try:
         try:
             data = _generate_once(st, key, prompt, payload, tag, on_task)
         except AspectUnsupported as e:
+            if should_stop and should_stop():
+                return None
             _aspects[st["model"]] = e.allowed
             st, prompt, crop = _with_aspect(dict(st, aspect=target), prompt, target, tag)
             data = _generate_once(st, key, prompt, payload, tag, on_task)
@@ -226,10 +230,16 @@ def generate(st, key, prompt, refs, tag="", on_task=None):
         paid = _num(usage.get("cost_rub")) or _num(usage.get("cost")) or 0
         if paid or not (code in RETRY_CODES or "image fetch failed" in raw_err):
             raise
+        if should_stop and should_stop():
+            return None
         log.warning("%s сбой на стороне провайдера (%s) — задача не оплачена, повторяю через 15 с, фото загружаю заново",
                     tag, raw_err[:160] or code)
         time.sleep(15)
+        if should_stop and should_stop():
+            return None
         payload = upload_refs(key, refs, tag, force=True)
+        if should_stop and should_stop():
+            return None
         data = _generate_once(st, key, prompt, payload, tag, on_task)
         if crop:
             data["_crop_to"] = crop
