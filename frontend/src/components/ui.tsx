@@ -28,7 +28,7 @@ interface UI {
   toast: (text: string, ms?: number) => void;
   confirm: (o: ConfirmOptions) => Promise<boolean>;
   choose: <T extends string>(o: { title: string; text: ReactNode; choices: Choice<T>[] }) => Promise<T | null>;
-  ask: (o: { title: string; text?: ReactNode; fields: Field[]; ok?: string }) => Promise<Record<string, string> | null>;
+  ask: (o: { title: string; text?: ReactNode; fields: Field[]; fieldsSummary?: string; ok?: string }) => Promise<Record<string, string> | null>;
   /** Открыть фото крупно (с листанием по списку). */
   zoom: (images: ZoomImage[] | string[], start?: number) => void;
 }
@@ -43,7 +43,7 @@ export const useUI = () => {
 
 type Dialog =
   | { kind: "choose"; title: string; text: ReactNode; choices: Choice<string>[]; resolve: (v: string | null) => void }
-  | { kind: "ask"; title: string; text?: ReactNode; fields: Field[]; ok: string; resolve: (v: Record<string, string> | null) => void };
+  | { kind: "ask"; title: string; text?: ReactNode; fields: Field[]; fieldsSummary?: string; ok: string; resolve: (v: Record<string, string> | null) => void };
 
 export function UIProvider({ children }: { children: ReactNode }) {
   const [toastText, setToastText] = useState("");
@@ -81,9 +81,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
   );
 
   const ask = useCallback(
-    (o: { title: string; text?: ReactNode; fields: Field[]; ok?: string }) =>
+    (o: { title: string; text?: ReactNode; fields: Field[]; fieldsSummary?: string; ok?: string }) =>
       new Promise<Record<string, string> | null>((resolve) =>
-        setDialog({ kind: "ask", title: o.title, text: o.text, fields: o.fields, ok: o.ok || "OK", resolve }),
+        setDialog({ kind: "ask", title: o.title, text: o.text, fields: o.fields, fieldsSummary: o.fieldsSummary, ok: o.ok || "OK", resolve }),
       ),
     [],
   );
@@ -123,6 +123,13 @@ function AskDialog({ dialog, onDone }: { dialog: Extract<Dialog, { kind: "ask" }
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(dialog.fields.map((f) => [f.key, f.value || ""])),
   );
+  const fields = dialog.fields.map((f, n) => (
+          <label key={f.key} className="form-row">
+            <span>{f.label}</span>
+            <input type={f.type || "text"} autoFocus={!dialog.fieldsSummary && n === 0} value={values[f.key]}
+              onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
+          </label>
+        ));
   return (
     <Modal title={dialog.title} width={480} onClose={() => onDone(null)}
       footer={<>
@@ -132,13 +139,7 @@ function AskDialog({ dialog, onDone }: { dialog: Extract<Dialog, { kind: "ask" }
       </>}>
       <form id="ask-form" className="form" onSubmit={(e) => { e.preventDefault(); onDone(values); }}>
         {dialog.text && <div>{dialog.text}</div>}
-        {dialog.fields.map((f, n) => (
-          <label key={f.key} className="form-row">
-            <span>{f.label}</span>
-            <input type={f.type || "text"} autoFocus={n === 0} value={values[f.key]}
-              onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
-          </label>
-        ))}
+        {dialog.fieldsSummary ? <details><summary>{dialog.fieldsSummary}</summary>{fields}</details> : fields}
       </form>
     </Modal>
   );

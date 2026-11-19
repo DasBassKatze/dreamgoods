@@ -25,7 +25,7 @@ export function ReviewDesk() {
     if (busy || !targets.length) return;
     const note = verdict === "bad" ? `${reason}${comment.trim() ? ": " + comment.trim() : ""}` : comment.trim();
     if (batch && !await ui.confirm({title:"Массовая приёмка",text:`Принять ${targets.length} выбранных кадр(ов)?`,ok:"Принять"}))return;
-    if (verdict === "bad" && regen && !await ui.confirm({title:"Брак и переделка",text:"Отклонить кадр и запустить платную перегенерацию с замечанием?",ok:"Отклонить и переделать"}))return;
+    if (verdict === "bad" && regen && !await ui.confirm({title:"Брак и переделка",text:"Отклонить кадр и запустить перегенерацию с замечанием?",ok:"Отклонить и переделать"}))return;
     setBusy(true);
     try {
       const result = await api.reviewBatch(targets.map((r) => ({frame_id:r.frame.id,generation_id:r.frame.generation!})),verdict,note,verdict === "bad" && regen);
@@ -61,7 +61,7 @@ export function ReviewDesk() {
     <div className="panel review-decision"><p>{current.frame.qc?.defects.join("; ") || "Замечаний ИИ нет или проверка не проводилась."}</p>
       <div className="row wrap"><select aria-label="Причина брака" value={reason} onChange={(e)=>setReason(e.target.value)}>{["Изменён товар","Неверный цвет","Потеряны детали","Анатомия","Композиция","Другое"].map((r)=><option key={r}>{r}</option>)}</select>
       <input aria-label="Комментарий к решению" value={comment} maxLength={1200} onChange={(e)=>setComment(e.target.value)} placeholder="Что нужно исправить" />
-      <label><input type="checkbox" checked={regen} onChange={(e)=>setRegen(e.target.checked)} /> После брака переделать · платно</label>
+      <label><input type="checkbox" checked={regen} onChange={(e)=>setRegen(e.target.checked)} /> После брака переделать</label>
       <button disabled={busy} className="primary" onClick={()=>void act("ok")}>Принять{shortcuts ? " · A" : ""}</button><button disabled={busy} onClick={()=>void act("bad")}>Отклонить{shortcuts ? " · R" : ""}</button></div>
     </div>
     <div className="row wrap"><button onClick={()=>setSelected(new Set(visible.map((r)=>r.frame.id)))}>Выбрать страницу</button><button onClick={()=>setSelected(new Set())}>Снять выбор</button><span className="spacer" /><button disabled={actualPage===0} onClick={()=>setPage(actualPage-1)}>←</button><span>{actualPage+1} / {pages}</span><button disabled={actualPage+1>=pages} onClick={()=>setPage(actualPage+1)}>→</button></div>

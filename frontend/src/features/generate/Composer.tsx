@@ -37,8 +37,7 @@ export function Composer({ dialogs }: { dialogs: Dialogs }) {
     </div>
     <QualitySwitches />
     <div className="run-quality">
-      <span>{s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 ? `Автопеределка до ${s.qc_retries} раз · платно` : "Без автоматических переделок"}</span>
-      <span>Стоимость и бюджет — перед запуском</span></div>
+      <span>{s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 ? `Автопеределка до ${s.qc_retries} раз` : "Без автоматических переделок"}</span></div>
     <AdvancedFields title="Настройки съёмки" summary={`${limit ? `До ${limit} кадров` : "Все недостающие кадры"} · ${state.persona?.name || "Человек: автоматически"} · ${state.style_ref?.name || "Без референса съёмки"}`}>
       <label className="run-what">Количество кадров за запуск
         <select aria-label="Ограничение кадров" value={limit} onChange={e => setLimit(+e.target.value)}>

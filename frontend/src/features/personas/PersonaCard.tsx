@@ -4,7 +4,6 @@ import { assetUrl } from "../../api/client";
 import type { Persona, PersonaGroupTree, PersonaPhoto, PersonaStyle } from "../../api/types";
 import { PersonaGroups } from "./PersonaGroups";
 import { useUI } from "../../components/ui";
-import { rub } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
 import { Icon } from "../../layout/Icon";
 
@@ -42,8 +41,6 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
   const refInput = useRef<HTMLInputElement>(null);
   const hasMain = p.photos.some((x) => x.kind === "main");
   const hasSheet = p.photos.some((x) => x.kind === "sheet");
-  const avg = state.totals.avg_cost;
-  const price = (n: number) => (avg ? ` (≈ ${rub(n * avg)})` : "");
   const styleChanged = JSON.stringify(style) !== JSON.stringify(p.style || {}) || desc !== p.description;
 
   useEffect(() => setDesc(p.description), [p.description]);
@@ -85,7 +82,7 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
     act(async () => {
       const ok = await ui.confirm({
         title: "Дополнительные ракурсы",
-        text: `3 генерации${price(3)}: портрет, ¾ и профиль того же человека. С ними генератор точнее держит лицо и фигуру на кадрах товара.`,
+        text: `3 генерации: портрет, ¾ и профиль того же человека. С ними генератор точнее держит лицо и фигуру на кадрах товара.`,
         ok: "Сделать",
       });
       if (ok) await api.personaSheet(p.id);
@@ -188,9 +185,9 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
             </div>
             <input ref={refInput} type="file" accept="image/*" multiple hidden onChange={(e) => { addRefs(e.target.files); e.target.value = ""; }} />
           </div>
-          <div className="row">{countSelect}<span className="hint">каждый вариант — одна генерация{price(1)}</span>
+          <div className="row">{countSelect}<span className="hint">каждый вариант — одна генерация</span>
             <span className="spacer" /><button onClick={() => setPanel(null)}>Отмена</button>
-            <button className="primary" disabled={!brief.trim()} onClick={more}>Сгенерировать {count}{price(count)}</button></div>
+            <button className="primary" disabled={!brief.trim()} onClick={more}>Сгенерировать {count}</button></div>
         </div>
       )}
 
@@ -203,7 +200,7 @@ export function PersonaCard({ persona: p, onChange, groups, conflicts }: {
             <button key={x} className="pchip" onClick={() => setRequest(request ? `${request}, ${x}` : x)}>{x}</button>))}</div>
           <div className="row">{countSelect}<span className="hint">основной образ заменится только когда вы выберете вариант</span>
             <span className="spacer" /><button onClick={() => setPanel(null)}>Отмена</button>
-            <button className="primary" onClick={edit}>Изменить · {count}{price(count)}</button></div>
+            <button className="primary" onClick={edit}>Изменить · {count}</button></div>
         </div>
       )}
 

@@ -47,7 +47,7 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  assert.equal(mutations.length,before,'View mode must never write generation settings');
  assert((await page.locator('[data-product-id="11"]').innerText()).includes('Используются ваши настройки'));
  assert(await page.getByRole('button',{name:'Удалить товар SHOE-A',exact:true}).isVisible());
- const regen=page.getByLabel('Автоматически переделывать брак · платно',{exact:true});
+ const regen=page.getByLabel('Автоматически переделывать брак',{exact:true});
  const qc=page.getByLabel('ИИ-проверка',{exact:true});
  assert(await regen.isVisible());assert.equal(await regen.count(),1);
  await regen.uncheck();await page.waitForFunction(()=>!document.querySelector('.quick-quality-controls input:last-of-type')?.disabled && document.querySelector('.quick-quality-controls')?.getAttribute('aria-busy')==='false');

@@ -18,7 +18,7 @@ DEFAULTS = {
     "upload_refs": True,
     "series": True,             # серия товара как одна фотосессия: опорный кадр, единый свет и образ, разные эмоции        # загружать фото-референсы в хранилище Polza и передавать ссылками (надёжнее base64)
     # ИИ-проверка
-    "qc_enabled": True,
+    "qc_enabled": False,
     "qc_autoregen": True,
     "qc_retries": 2,
     "qc_model": "google/gemini-2.5-flash",

@@ -126,7 +126,7 @@ await page.getByRole('button',{name:'Назначить план товару'})
 await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Запустить серию')).disabled);
 assert.deepEqual(creativeAssignment,{product_ids:[11],rebuild:false});
 assert.equal(creativePlan.manual.length,5);assert.equal(new Set(creativePlan.manual.map(s=>s.prompt)).size,5);assert.equal(creativePlan.quality,'premium');
-await page.getByText('Запустить серию · платно').click();
+await page.getByText('Запустить серию').click();
 await page.getByRole('dialog').waitFor();assert.equal(started,null);
 await page.reload();
 await page.goto('http://127.0.0.1:43279/studio#/creative');

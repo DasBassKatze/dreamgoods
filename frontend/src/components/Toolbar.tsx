@@ -82,9 +82,9 @@ export function QualitySwitches() {
   return <div className="quick-quality-controls" role="group" aria-label="Проверка и перегенерация" aria-busy={saving}>
     <label className="check"><input type="checkbox" checked={qcEnabled} disabled={saving}
       onChange={e => toggle("qc_enabled", e.target.checked)} /> ИИ-проверка</label>
-    <label className="check" title={qcEnabled ? "Автоматически переделывать кадры, не прошедшие ИИ-проверку. Переделки оплачиваются." : "Для автоматической переделки включите ИИ-проверку"}>
+    <label className="check" title={qcEnabled ? "Автоматически переделывать кадры, не прошедшие ИИ-проверку." : "Для автоматической переделки включите ИИ-проверку"}>
       <input type="checkbox" checked={autoregen} disabled={saving || !qcEnabled}
-        onChange={e => toggle("qc_autoregen", e.target.checked)} /> Автоматически переделывать брак · платно</label>
+        onChange={e => toggle("qc_autoregen", e.target.checked)} /> Автоматически переделывать брак</label>
     {saving && <span role="status">Сохраняю…</span>}
   </div>;
 }

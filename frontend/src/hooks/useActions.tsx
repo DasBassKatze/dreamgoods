@@ -1,7 +1,7 @@
-import { parseBudget, budgetFields, EstimateText } from "../features/budgets/BudgetForm";
+import { parseBudget, budgetFields } from "../features/budgets/BudgetForm";
 import type { Frame, Product } from "../api/types";
 import { useUI } from "../components/ui";
-import { pad, rub } from "../lib/format";
+import { pad } from "../lib/format";
 import { useProject } from "../ProjectContext";
 
 /** Пожелания к одному запуску: текст, площадка и формат поверх пресета. */
@@ -11,7 +11,7 @@ export interface RunOptions {
   aspect?: string;
 }
 
-/** Действия запуска с подтверждением и оценкой цены — общие для шапки, карточек и просмотра кадра. */
+/** Действия запуска с подтверждением — общие для шапки, карточек и просмотра кадра. */
 export function useActions() {
   const { api, state, reload, selected, run } = useProject();
   const ui = useUI();
@@ -31,10 +31,9 @@ export function useActions() {
           ui.toast("Все кадры уже готовы и соответствуют пресету");
           return;
         }
-        const avg = state.totals.avg_cost;
         const ok = await ui.confirm({
           title: "Переснять готовые кадры?",
-          text: <>Все кадры уже готовы. Переснять {ids.length} кадр(ов) с новыми пожеланиями{avg ? ` (≈ ${rub(ids.length * avg)})` : ""}?
+          text: <>Все кадры уже готовы. Переснять {ids.length} кадр(ов) с новыми пожеланиями?
             <p className="hint">Прежние варианты останутся в истории кадра — к ним можно вернуться.</p></>,
           ok: "Переснять",
         });
@@ -44,14 +43,6 @@ export function useActions() {
         await reload();
         return;
       }
-      const s = state.settings;
-      const avg = state.totals.avg_cost;
-      const est = avg && p.count ? ` (≈ ${rub(p.count * avg)})` : "";
-      const qc = !s.qc_enabled
-        ? ""
-        : s.qc_autoregen && s.qc_retries > 0
-          ? `Брак переделывается автоматически до ${s.qc_retries} раз(а) — в худшем случае расход до ×${1 + s.qc_retries}.`
-          : "Брак не переделывается автоматически, а попадает в «На проверке».";
       const notes = [
         ps?.products ? `Кадры ${ps.products} товар(ов) приведены к пресету` + (ps.reshoot
           ? `: ${ps.reshoot} готовых кадр(ов) снимутся заново, прежние варианты останутся в истории.` : ".") : "",
@@ -60,9 +51,9 @@ export function useActions() {
       ].filter(Boolean);
       const limits = await ui.ask({
         title: "Запуск генерации",
-        text: <><p>Товары ({targets.length}): {targets.slice(0, 6).map(p => p.sku).join(", ")}{targets.length > 6 ? "…" : ""}</p>{p.count ? <>Сгенерировать {p.count} кадр(ов){est}?</> : "Запустить подготовку кадров?"}
-          {notes.map((n) => <p key={n}>{n}</p>)}{qc && <p className="hint">{qc}</p>}<EstimateText estimate={p.estimate} /></>,
-        fields: budgetFields(p.estimate?.reserve_upper),
+        text: <><p>Товары ({targets.length}): {targets.slice(0, 6).map(p => p.sku).join(", ")}{targets.length > 6 ? "…" : ""}</p>{p.count ? <>Сгенерировать {p.count} кадр(ов)?</> : "Запустить подготовку кадров?"}
+          {notes.map((n) => <p key={n}>{n}</p>)}</>,
+        fieldsSummary: "Лимиты партии", fields: budgetFields(p.estimate?.reserve_upper),
         ok: "Сгенерировать",
       });
       if (!limits) return;
@@ -98,7 +89,7 @@ export function useActions() {
       }
       const ok = await ui.confirm({
         title: "ИИ-проверка готовых кадров",
-        text: `Проверить ИИ ${p.count} готовых кадр(ов)${product_ids ? ` в ${product_ids.length} товарах` : " во всём проекте"}? Генерации не будет, оплачивается только проверка.`,
+        text: `Проверить ИИ ${p.count} готовых кадр(ов)${product_ids ? ` в ${product_ids.length} товарах` : " во всём проекте"}? Новые изображения создаваться не будут.`,
         ok: "Проверить",
       });
       if (!ok) return;
@@ -118,11 +109,10 @@ export function useActions() {
   const quick = (product: Product, frame: Frame, action: "upscale" | "remove_bg") =>
     run(async () => {
       if (!frame.asset) return;
-      const avg = state.totals.avg_cost;
       const what = action === "upscale" ? "Улучшить кадр до 4K" : "Удалить фон (чистый белый)";
       const ok = await ui.confirm({
         title: what,
-        text: <>{what} — кадр {pad(frame.i)} товара {product.sku}{avg ? ` (≈ ${rub(avg)})` : ""}?
+        text: <>{what} — кадр {pad(frame.i)} товара {product.sku}?
           <p className="hint">Получится новая версия кадра; текущая останется в «Вариациях».</p></>,
         ok: action === "upscale" ? "Улучшить" : "Удалить фон",
       });

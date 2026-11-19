@@ -67,9 +67,9 @@ function Series({ product, userId, openFrame }: { product: Product; userId: numb
       <ManualReference item={s} locked={busy || uploading} onBusy={setUploading} onChange={fields=>patch(i,fields)}/>
     </details>)}
     {duplicate && <p role="alert">Для разных сюжетов выберите разные референсы.</p>}
-    <p>План назначается только товару {product.sku}. При запуске его съёмка будет приведена к пяти кадрам. Уровень «Премиум» допускает платные переделки после проверки.</p>
+    <p>План назначается только товару {product.sku}. При запуске его съёмка будет приведена к пяти кадрам.</p>
     <div className="row"><button disabled={assigned || busy || uploading || duplicate || !product.photos.length || manual.some((_,i)=>!draft.shots[i].prompt.trim())} onClick={prepare}>Назначить план товару</button>
-    <button className="primary" disabled={!assigned || busy || uploading} onClick={async()=>{setBusy(true);try{await generate([product.id]);}finally{setBusy(false);}}}>Запустить серию · платно</button>
+    <button className="primary" disabled={!assigned || busy || uploading} onClick={async()=>{setBusy(true);try{await generate([product.id]);}finally{setBusy(false);}}}>Запустить серию</button>
     <button onClick={notes}>Скачать пояснения</button></div>
     {assigned && <div className="creative-refs">{seriesFrames.filter(f=>f.asset).map(f=><button key={f.id} onClick={()=>openFrame(product.id,f.id)}><img src={assetUrl(f.asset!,240)} alt={f.block}/>{f.block} · {f.qc?.status==="accepted"?"принят":"проверить"}</button>)}</div>}
     {assigned && <p>Принято вручную: {approved.length} из 5. Сверьте исходный цвет, крой, детали и естественность позы. {complete && <a download href={api.exportUrl("manual",{products:[product.id]})}>Скачать принятую серию ZIP</a>}</p>}

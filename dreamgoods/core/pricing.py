@@ -49,7 +49,7 @@ def quality_cost(org_settings, st):
     """Средняя себестоимость готового кадра по действующим настройкам генерации (уровень качества пресета)."""
     model = model_key(st.get("model"))
     res = st.get("resolution") if st.get("resolution") in MODELS[model]["prices"] else "2K"
-    qc = bool(st.get("qc_enabled", True))
+    qc = bool(st.get("qc_enabled", False))
     retries = int(st.get("qc_retries") or 0) if qc and st.get("qc_autoregen", True) else 0
     attempts = sum(REJECT_RATE ** k for k in range(retries + 1))
     checks = (1 + (1 if st.get("qc_count") else 0)) if qc else 0

@@ -1,7 +1,6 @@
 import { DocumentLink } from "../../desktop/DocumentLink";
 import { useRef, useState } from "react";
 import { useUI } from "../../components/ui";
-import { rub } from "../../lib/format";
 import { useProject } from "../../ProjectContext";
 
 type Mode = "generated" | "upload";
@@ -14,7 +13,7 @@ const EXAMPLES = [
 ];
 
 export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
-  const { api, state, run } = useProject();
+  const { api, run } = useProject();
   const ui = useUI();
   const [mode, setMode] = useState<Mode>("generated");
   const [name, setName] = useState("");
@@ -26,7 +25,6 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
   const refInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const avg = state.totals.avg_cost;
 
   const submit = () =>
     run(async () => {
@@ -37,7 +35,7 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
         }
         const ok = await ui.confirm({
           title: "Сгенерировать варианты образа",
-          text: `Будет ${count} генерации(й)${avg ? ` — примерно ${rub(count * avg)}` : ""}. Потом выберете один вариант.`,
+          text: `Будет ${count} генерации(й). Потом выберете один вариант.`,
           ok: "Сгенерировать",
         });
         if (!ok) return;
@@ -108,7 +106,7 @@ export function NewPersona({ onCancel, onCreated }: { onCancel: () => void; onCr
               <select value={count} onChange={(e) => setCount(+e.target.value)}>
                 {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
-              <span className="hint">каждый вариант — одна генерация{avg ? ` (≈ ${rub(avg)})` : ""}</span>
+              <span className="hint">каждый вариант — одна генерация</span>
             </div>
           </>
         ) : (
