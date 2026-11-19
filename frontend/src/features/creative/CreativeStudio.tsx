@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useProject } from "../../ProjectContext";
 import { assetUrl } from "../../api/client";
-import type { BlockKey, Product } from "../../api/types";
+import type { BlockKey, CatalogModel, Product } from "../../api/types";
 import { useActions } from "../../hooks/useActions";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { ManualReference } from "../presets/ManualReference";
 import { Textile } from "./Textile";
 import "./creative.css";
+
+const DEFAULT_MODEL = "google/gemini-nano-banana-2.1";
 
 const scenes: [string, BlockKey, string, string][] = [
   ["Силуэт", "full", "Спокойная фронтальная поза в светлом зале. Руки свободны, вещь видна целиком.", "Сдержанный образ и светлый зал подчёркивают силуэт. Проверить длину и пропорции."],
@@ -24,12 +26,25 @@ function Series({ product, userId, openFrame }: { product: Product; userId: numb
   const [draft, setDraft] = usePersistentState(key, {
     brief: "Светлая классика, естественная кожа и нейтральный свет. Без спортивных элементов, каминов и состаренных стен.",
     shots: scenes.map(([title, block, prompt, note]) => ({title, block, prompt, note, count:1, model:"", reference_id:0, reference_description:""})),
-    preset: 0, signature: "",
+    preset: 0, signature: "", model: "",
   });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [models, setModels] = useState<CatalogModel[] | null>(null);
+  useEffect(() => {
+    if (!showSettings) return;
+    let active = true;
+    api.catalog("image")
+      .then(result => { if (active) setModels(result.models); })
+      .catch(() => { if (active) setModels([]); });
+    return () => { active = false; };
+  }, [api, showSettings]);
+  const model = draft.model || "";
+  const alternatives = (models || []).filter(item => item.refs !== false && item.id !== DEFAULT_MODEL);
+
   const patch = (i: number, fields: Partial<typeof draft.shots[number]>) => setDraft(d => ({...d, shots:d.shots.map((s,n) => i === n ? {...s,...fields} : s)}));
-  const manual = draft.shots.map(({note: _note, ...s}) => ({...s,prompt:[s.prompt, draft.brief, fidelity].join("\n")}));
+  const manual = draft.shots.map(({note: _note, ...s}) => ({...s,model,prompt:[s.prompt, draft.brief, fidelity].join("\n")}));
   const signature = JSON.stringify(manual);
   const saved = draft.signature === signature && !!draft.preset && state.presets.some(p => p.id === draft.preset);
   const assigned = saved && product.preset_id === draft.preset;
@@ -45,7 +60,7 @@ function Series({ product, userId, openFrame }: { product: Product; userId: numb
       if (!saved) {
         const result = await api.savePreset(null, {name:(product.sku + " · творческая серия").slice(0,100), description:draft.brief,
           quality:"premium", strictness:"strict", market:{key:"none",cover:false,aspect:"3:4"}, plan_mode:"manual", manual,
-          plan:{studio:0,detail:1,worn:1,full:3,lifestyle:0},custom:{}, block_models:{}});
+          plan:{studio:0,detail:1,worn:1,full:3,lifestyle:0},custom:model ? {model} : {}, block_models:{}});
         if (!("id" in result)) throw new Error("Сервер не вернул номер шаблона");
         id = result.id;
         setDraft(d=>({...d,preset:id,signature}));
@@ -61,6 +76,21 @@ function Series({ product, userId, openFrame }: { product: Product; userId: numb
   };
   return <><div className="creative-refs">{product.photos.map(p=><img key={p.asset} src={assetUrl(p.asset,200)} alt="Исходное фото товара"/>)}</div>
     <fieldset disabled={busy || uploading}><label>Стиль бренда и требования<textarea maxLength={650} value={draft.brief} onChange={e=>setDraft({...draft,brief:e.target.value})}/></label></fieldset>
+    <details className="creative-shot" onToggle={e => setShowSettings(e.currentTarget.open)}>
+      <summary>Настройки съёмки · {alternatives.find(item => item.id === model)?.name || model || "Nano Banana 2.1"}</summary>
+      <fieldset disabled={busy || uploading}>
+        <label>Модель генерации
+          <select aria-label="Модель генерации" value={model} onChange={e => setDraft(d => ({...d, model: e.target.value}))}>
+            <option value="">Nano Banana 2.1 · по умолчанию</option>
+            {model && !alternatives.some(item => item.id === model) && <option value={model}>{model}</option>}
+            {alternatives.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <p className="hint">{models === null ? "Загружаю каталог моделей…" :
+          !alternatives.length ? "Каталог Polza не вернул других моделей с поддержкой референсов." :
+          "После смены модели нажмите «Назначить план товару», затем запустите серию."}</p>
+      </fieldset>
+    </details>
     {draft.shots.map((s,i)=><details key={i} className="creative-shot"><summary>{i+1}. {s.title}</summary>
       <fieldset disabled={busy || uploading}><label>Сюжет, модель, место и свет<textarea maxLength={1000} value={s.prompt} onChange={e=>patch(i,{prompt:e.target.value})}/></label>
       <label>Пояснение к кадру · уточните после просмотра<textarea value={s.note} onChange={e=>patch(i,{note:e.target.value})}/></label></fieldset>

@@ -14,8 +14,8 @@ BLOCKS = {
 }
 BLOCK_ORDER = tuple(BLOCKS)
 
-# Модель уровня «Премиум» — Nano Banana Pro (самая точная по деталям товара).
-PRO_MODEL = "google/gemini-3-pro-image-preview"
+# Модель по умолчанию для съёмки в 4K.
+PREMIUM_MODEL = "google/gemini-nano-banana-2.1"
 # ИИ-проверка (детектор брака) уровня «Премиум» — Gemini 2.5 Pro вместо быстрой Flash / Flash Lite:
 # точнее замечает мелкие отличия от товара и ошибки в руках, ногах и количестве.
 PRO_QC_MODEL = "google/gemini-2.5-pro"
@@ -27,9 +27,9 @@ QUALITY = {
               "settings": {"resolution": "1K", "qc_autoregen": False, "qc_retries": 0, "qc_count": False}},
     "standard": {"name": "Стандарт", "hint": "для карточек: 2K (1800 px по короткой стороне), при включённой ИИ-проверке — до 2 переделок",
                  "settings": {"resolution": "2K", "qc_autoregen": True, "qc_retries": 2, "qc_count": False}},
-    "premium": {"name": "Премиум", "hint": "максимум качества: Nano Banana Pro, 4K (3600 px по короткой стороне), при включённой проверке — до 3 переделок, "
+    "premium": {"name": "Премиум", "hint": "максимум качества: Nano Banana 2.1, 4K (3600 px по короткой стороне), при включённой проверке — до 3 переделок, "
                                           "проверка брака на Gemini 2.5 Pro и отдельный подсчёт ног/рук и товара",
-                "settings": {"model": PRO_MODEL, "resolution": "4K", "qc_autoregen": True, "qc_retries": 3,
+                "settings": {"model": PREMIUM_MODEL, "resolution": "4K", "qc_autoregen": True, "qc_retries": 3,
                              "qc_count": True, "qc_model": PRO_QC_MODEL, "qc_count_model": "", "qc_reasoning": "low",
                              "qc_count_reasoning": "low"}},
     "custom": {"name": "Свой", "hint": "свои значения: модель, разрешение (в том числе своё в px), число перегенераций",

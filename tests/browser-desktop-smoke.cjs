@@ -31,6 +31,7 @@ else if(p.endsWith('/presets') && route.request().method()==='POST'){
 else if(p.endsWith('/presets/54/apply')){
   creativeAssignment=route.request().postDataJSON();product.preset_id=54;data={products:1};
 }
+else if(p.endsWith('/catalog'))data={models:[{id:'openai/gpt-image-test',name:'GPT Image Test',refs:true}]};
 else if(p.endsWith('/styles'))data={refs:[]};
 else if(p.endsWith('/state'))data={...state,admin:true,products:deleted.length?[]:[product],open_import:{id:7,status:'upload',count:imported.count}};
 else if(p.endsWith('/key-status')){keyCalls++;data={value:keyValue,error:'',checking:false,checked_at:Date.now()/1000,configured:true};}
@@ -122,10 +123,16 @@ deleted=[];product.photos=[{asset:'orig',role:'product'}];
 await page.reload();
 await page.goto('http://127.0.0.1:43279/studio#/creative');
 await page.locator('.creative select').first().selectOption('11');
+await page.getByText('Настройки съёмки · Nano Banana 2.1',{exact:true}).click();
+const seriesModel=page.getByLabel('Модель генерации',{exact:true});
+assert.equal(await seriesModel.inputValue(),'');
+await seriesModel.selectOption('openai/gpt-image-test');
 await page.getByRole('button',{name:'Назначить план товару'}).click();
 await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Запустить серию')).disabled);
 assert.deepEqual(creativeAssignment,{product_ids:[11],rebuild:false});
 assert.equal(creativePlan.manual.length,5);assert.equal(new Set(creativePlan.manual.map(s=>s.prompt)).size,5);assert.equal(creativePlan.quality,'premium');
+assert.equal(creativePlan.custom.model,'openai/gpt-image-test');
+assert(creativePlan.manual.every(shot=>shot.model==='openai/gpt-image-test'));
 await page.getByText('Запустить серию').click();
 await page.getByRole('dialog').waitFor();assert.equal(started,null);
 await page.reload();
