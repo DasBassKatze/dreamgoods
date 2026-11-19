@@ -5,7 +5,6 @@ import { Site } from "./site/Site";
 import { UIProvider } from "./components/ui";
 import "./styles.css";
 import "./desktop/desktop.css";
-import "./studio.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

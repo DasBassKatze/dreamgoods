@@ -1,5 +1,4 @@
 import { CreativeStudio } from "./features/creative/CreativeStudio";
-import { InterfaceModeProvider, ModeSwitch } from "./features/interface/InterfaceMode";
 import { needsReview } from "./lib/format";
 import { isDesktop } from "./desktop/runtime";
 import { DesktopLogin } from "./desktop/DesktopLogin";
@@ -69,7 +68,7 @@ export function App() {
   if (!me) return isDesktop ? <DesktopLogin onLogin={setMe} /> : <LoginPage onLogin={setMe} />;
   if (me.consents_required?.length)
     return <ConsentGate me={me} onDone={setMe} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
-  return <InterfaceModeProvider key={me.id} userId={me.id}><Workspace me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} /></InterfaceModeProvider>;
+  return <Workspace key={me.id} me={me} onLogout={async () => { await authApi.logout().catch(() => {}); setMe(null); }} />;
 }
 
 const NEEDS_PROJECT: Route[] = ["creative", "products", "budgets", "review", "gallery", "history", "import", "presets", "personas", "styles", "m-analytics", "m-log", "m-settings"];
@@ -229,7 +228,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   })();
 
   const body = (
-    <div className="app studio-ui">
+    <div className="app">
       <TopBar me={me} route={route} go={go} balance={account}
         polza={keyStatus || (master && state ? { value: state.balance, error: state.balance_error } : null)}
         reviewCount={state?.products.reduce((n, p) => n + p.frames.filter(needsReview).length, 0) ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
@@ -239,7 +238,6 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
           onProject={(id) => { setProjectId(id); if (!NEEDS_PROJECT.includes(route)) go("products"); }}
           onNewProject={createProject} open={menuOpen} onClose={() => setMenuOpen(false)} />
         <main className={`content ${NEEDS_PROJECT.includes(route) ? "" : "plain"}`}>
-          <ModeSwitch />
           {offline && scope && <div className="offline">Нет связи с сервером — показаны последние данные.</div>}
           {scope && SECTION_ROUTES.includes(route) && <SectionNav route={route} go={go} />}
           {master && ANALYTICS_ROUTES.includes(route) && <AnalyticsNav route={route} go={go} />}

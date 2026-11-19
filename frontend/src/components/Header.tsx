@@ -1,6 +1,5 @@
 import { useGenerationSelection } from "../features/generate/GenerationSelection";
 import { isDesktop } from "../desktop/runtime";
-import type { Dialogs } from "../App";
 import { api } from "../api/client";
 import { Icon } from "../layout/Icon";
 import { useProject } from "../ProjectContext";
@@ -8,8 +7,8 @@ import { setNotify, useNotifySwitch } from "../lib/notify";
 import { useUI } from "./ui";
 
 /** Шапка страницы «Товары и кадры»: проект и главные действия. */
-export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
-  dialogs?: Dialogs; onProjectsChanged: () => void; query: string; onQuery: (q: string) => void;
+export function Header({ onProjectsChanged, query, onQuery }: {
+  onProjectsChanged: () => void; query: string; onQuery: (q: string) => void;
 }) {
   const { state, api: papi, reload, run, pickedFrames } = useProject();
   const ui = useUI();
@@ -82,12 +81,6 @@ export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
         <Icon name="search" size={18} />
         <input type="search" aria-label="Поиск товаров" placeholder="Поиск по артикулу или названию" value={query} onChange={(e) => onQuery(e.target.value)} />
       </label>}
-      {state.open_import && (
-        <button className="resume-import" onClick={dialogs?.openImport}
-          title="Фото уже загружены, но товары из них ещё не созданы — вернуться к загрузке и закончить раскладку">
-          <Icon name="upload" size={16} /> Незавершённая загрузка · {state.open_import.count} фото
-        </button>
-      )}
       {r.busy && (
         <span className="live" title="Задания в работе и в очереди">
           <i /> {r.stopping ? "останавливаю…" : `в работе ${r.running} · в очереди ${r.queued}`}

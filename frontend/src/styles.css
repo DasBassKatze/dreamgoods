@@ -1531,3 +1531,9 @@ html:has(.site) { scroll-behavior: smooth; }
 .budget-operation .hint { overflow-wrap:anywhere; }
 .budget-estimate { padding:10px 0; font-size:13px; }
 @media(max-width:600px) { .budget-balance { grid-template-columns:1fr; gap:8px; } .budget-balance>div { padding:12px; } }
+
+.form-section { grid-column: 1 / -1; min-width: 0; }
+.selection-row, .quick-quality-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.selection-menu summary { cursor: pointer; }
+.nav-counter-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.gen-setup .runbar { flex-wrap: wrap; }

@@ -46,13 +46,14 @@ export function ListBar() {
       </div></details>
     </div>
     {pickedFrames.size > 0 && <div className="hint">Выделено кадров для скачивания: {pickedFrames.size} <button className="link" onClick={() => setPicked([])}>Снять выделение кадров</button></div>}
+    <span className="spacer" /><QualityTools /><QualitySwitches />
 
   </div>;
 }
 
 export function QualityTools() {
   const { state } = useProject();
-  const { ids, label } = useGenerationSelection();
+  const { ids } = useGenerationSelection();
   const { checkReady, profiles } = useActions();
   const ui = useUI();
   const newProfiles = async () => {
@@ -61,7 +62,6 @@ export function QualityTools() {
     if (await ui.confirm({ title: "Подготовить планы кадров", text: `ИИ проанализирует фото ${targets.length} товаров и подготовит описания кадров. Анализ платный. Генерация изображений сейчас не запускается.`, ok: "Подготовить" })) await profiles(targets, true);
   };
   return <>
-      <p className="hint">Область действий: {label}. Смена режима интерфейса эти настройки не меняет.</p>
       <div className="row wrap"><button disabled={!ids.length} onClick={() => void checkReady([...ids])}><Icon name="search" size={15} /> Проверить готовые · платно</button>
         <button disabled={!ids.length} onClick={() => void newProfiles()}><Icon name="spark" size={15} /> Подготовить планы кадров · платно</button></div>
 
@@ -79,7 +79,7 @@ export function QualitySwitches() {
     setPending({ key, value });
     void run(async () => { await api.saveSettings({ [key]: value }); await reload(); }).finally(() => setPending(null));
   };
-  return <div className="quick-quality-controls" role="group" aria-label="Проверка и перегенерация" aria-busy={saving}>
+  return <div className="toggles quick-quality-controls" role="group" aria-label="Проверка и перегенерация" aria-busy={saving}>
     <label className="check"><input type="checkbox" checked={qcEnabled} disabled={saving}
       onChange={e => toggle("qc_enabled", e.target.checked)} /> ИИ-проверка</label>
     <label className="check" title={qcEnabled ? "Автоматически переделывать кадры, не прошедшие ИИ-проверку." : "Для автоматической переделки включите ИИ-проверку"}>

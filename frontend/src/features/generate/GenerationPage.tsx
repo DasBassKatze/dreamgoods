@@ -1,18 +1,16 @@
 import { useEffect, useState } from "react";
 import type { Dialogs } from "../../App";
-import { Icon } from "../../layout/Icon";
 import { Header } from "../../components/Header";
 import { LogPanel } from "../../components/LogPanel";
 import { ProductList, matchesFilter, matchesQuery } from "../../components/ProductList";
+import { ProjectBar } from "../../components/ProjectBar";
 import { ListBar, Toolbar, type Filter } from "../../components/Toolbar";
 import type { RunOptions } from "../../hooks/useActions";
 import { useProject } from "../../ProjectContext";
+import { GenerationSelection } from "./GenerationSelection";
 import { StagePanel } from "../workflow/StagePanel";
 import { Composer } from "./Composer";
 import { FrameDetails } from "./FrameDetails";
-import { GenerationSelection } from "./GenerationSelection";
-import { useInterfaceMode } from "../interface/InterfaceMode";
-import { ProjectBar } from "../../components/ProjectBar";
 import { RunOptionsCtx } from "./runOptions";
 
 interface Props {
@@ -25,7 +23,6 @@ interface Props {
 /** Вкладка «Генерация»: строка запуска, настройки съёмки, товары с кадрами и детали выбранного кадра справа. */
 export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }: Props) {
   const { state, product } = useProject();
-  const { advanced } = useInterfaceMode();
   // пожелания, площадка и формат задаются в пресете — у запуска своих настроек нет
   const opts: RunOptions = {};
   const [query, setQuery] = useState("");
@@ -39,18 +36,17 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
   useEffect(() => setFocus(null), [state.project.id]);
 
   return (
-    <RunOptionsCtx.Provider value={opts}><GenerationSelection visibleIds={visibleIds}>
-      <Header dialogs={dialogs} onProjectsChanged={onProjectsChanged} query={query} onQuery={setQuery} />
-      {!state.products.length ? <div className="studio-empty"><Icon name="upload" size={32} /><h2>Начните с фотографий товара</h2><p>Загрузите фото. DreamGoods поможет объединить их по артикулам и подготовить кадры.</p><button className="primary" onClick={dialogs.openImport}>Загрузить фото</button><ol><li>Добавьте исходные фото</li><li>Выберите шаблон съёмки</li><li>Получите и проверьте кадры</li></ol></div> : <>
+    <RunOptionsCtx.Provider value={opts}>
+      <GenerationSelection visibleIds={visibleIds}>
+      <Header onProjectsChanged={onProjectsChanged} query={query} onQuery={setQuery} />
       <div className="gen-top">
         <div className="gen-setup">
           <ProjectBar dialogs={dialogs} />
           <Composer />
         </div>
       </div>
-      <StagePanel />
       <Toolbar filter={filter} onFilter={onFilter} />
-      <div className={`layout ${!advanced && !focus ? "without-details" : ""}`}>
+      <div className="layout">
         <div className="main-col">
           <ListBar />
           <ProductList filter={filter} query={query} dialogs={dialogs} focus={focus?.frameId ?? null}
@@ -60,14 +56,21 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
               else setFocus(focus?.frameId === frameId ? null : { productId, frameId });
             }} />
         </div>
-        {(advanced || focus) && <aside className="frame-sidebar">
-          {focus && alive && <FrameDetails productId={focus.productId} frameId={focus.frameId}
-            onOpen={() => dialogs.openFrame(focus.productId, focus.frameId)} onClose={() => setFocus(null)} />}
-          {advanced && <LogPanel />}
-        </aside>}
+        <aside className="frame-sidebar">
+          {focus && alive ? (
+            <FrameDetails productId={focus.productId} frameId={focus.frameId}
+              onOpen={() => dialogs.openFrame(focus.productId, focus.frameId)} onClose={() => setFocus(null)} />
+          ) : (
+            <div className="panel det-empty">
+              <b>Детали изображения</b>
+              <span>Нажмите на кадр, чтобы увидеть параметры, скачать, улучшить или отредактировать его. Двойной клик — открыть целиком.</span>
+            </div>
+          )}
+          <LogPanel />
+        </aside>
       </div>
-      </>}
-    </GenerationSelection></RunOptionsCtx.Provider>
+      <StagePanel />
+      </GenerationSelection>
+    </RunOptionsCtx.Provider>
   );
 }
-

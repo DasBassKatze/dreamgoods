@@ -1,4 +1,3 @@
-import { AdvancedFields } from "../features/interface/InterfaceMode";
 import { useDeleteProducts } from "../hooks/useDeleteProducts";
 import type { Dialogs } from "../App";
 import { assetUrl } from "../api/client";
@@ -79,9 +78,7 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
           onClick={() => generate([p.id], 0, opts)}>Сгенерировать</button>
       </div>
 
-      <AdvancedFields title="Настройки товара" summary={`${p.preset_id || p.persona_id || p.style_ref_id ? "Используются ваши настройки" : "Из проекта"} · ${eff?.name || "Автоматическая съёмка"}`}>
-        <ProductSettings product={p} />
-      </AdvancedFields>
+      <ProductSettings product={p} />
 
       <div className="refs">
         <span className="lbl">Исходные фото · выбрано {chosen.length} из {p.photos.length}:</span>

@@ -35,13 +35,9 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  });
  await page.goto('http://127.0.0.1:43280/studio');
  await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).waitFor();
- assert.equal(await page.getByRole('button',{name:'Простой',exact:true}).getAttribute('aria-pressed'),'true');
- assert.equal(await page.locator('.frame-sidebar').count(),0);
- const projectTools=page.getByRole('group',{name:'Настройки проекта',exact:true});
- for(const name of ['Добавить фото','Шаблоны съёмки','Человек в кадре','Референсы съёмки']){
-   assert.equal(await projectTools.getByRole('button',{name,exact:true}).count(),1);
-   assert.equal(await page.getByRole('button',{name,exact:true}).count(),1);
- }
+ assert.equal(await page.getByRole('group',{name:'Режим интерфейса'}).count(),0);
+ assert.equal(await page.locator('.projectbar .pb-card').count(),4);
+ assert.equal(await page.locator('.frame-sidebar .det-empty').count(),1);
  assert.equal(await page.locator('.stage-panel a[href="#/review"]').count(),0);
  state.runner.errors=1;
  await page.reload();
@@ -49,16 +45,9 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  await hideErrors.click();
  await hideErrors.waitFor({state:'hidden'});
 
- const firstCard=await page.locator('[data-product-id="11"]').boundingBox();await page.screenshot({path:'/tmp/dg-ui-density.png',animations:'disabled'});assert(firstCard.y<650,`Product content starts at ${firstCard.y}px`);
- assert.equal(await page.locator('[data-product-id="11"] > details').first().getAttribute('open'),null);
- await page.screenshot({path:'/tmp/dg-ui-simple.png',animations:'disabled'});
- const before=mutations.length;
- await page.getByRole('button',{name:'Расширенный',exact:true}).click();
- const field=page.locator('[data-product-id="11"] .ps-field select').first();await field.waitFor();assert.equal(await field.inputValue(),'7');
- await page.screenshot({path:'/tmp/dg-ui-advanced.png',animations:'disabled'});
- await page.getByRole('button',{name:'Простой',exact:true}).click();
- assert.equal(mutations.length,before,'View mode must never write generation settings');
- assert((await page.locator('[data-product-id="11"]').innerText()).includes('Используются ваши настройки'));
+ await page.screenshot({path:'/tmp/dg-ui-classic.png',animations:'disabled'});
+ const field=page.locator('[data-product-id="11"] .ps-field select').first();
+ await field.waitFor();assert.equal(await field.inputValue(),'7');
  assert(await page.getByRole('button',{name:'Удалить товар SHOE-A',exact:true}).isVisible());
  const regen=page.getByLabel('Автоматически переделывать брак',{exact:true});
  const qc=page.getByLabel('ИИ-проверка',{exact:true});
@@ -98,9 +87,6 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  await page.getByRole('button',{name:/^Без проверки/}).click();assert.equal(await page.locator('.gal-item').count(),1);
  await page.getByRole('button',{name:'Генерация',exact:true}).click();await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).waitFor();
  await page.locator('.tile').first().focus();await page.keyboard.press('Enter');await page.locator('.frame-sidebar').waitFor();
- await page.getByRole('button',{name:'Расширенный',exact:true}).click();await page.reload();await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).waitFor();
- assert.equal(await page.getByRole('button',{name:'Расширенный',exact:true}).getAttribute('aria-pressed'),'true');
- await page.getByRole('button',{name:'Простой',exact:true}).click();
  await page.getByRole('button',{name:'Приёмка',exact:true}).click();await page.getByRole('button',{name:'Принять',exact:true}).waitFor();
  const reviewBefore=mutations.filter(x=>x.p.endsWith('/review/batch')).length;await page.keyboard.press('a');await page.waitForTimeout(100);assert.equal(mutations.filter(x=>x.p.endsWith('/review/batch')).length,reviewBefore);
  await page.getByLabel('Включить горячие клавиши A / R',{exact:true}).check();await page.locator('h1').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('.review-desk')?.textContent.includes('Нет кадров'));
@@ -108,12 +94,10 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  await page.getByRole('button',{name:'Генерация',exact:true}).click();await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).waitFor();
  for(const width of [1024,390]){await page.setViewportSize({width,height:844});await page.screenshot({path:`/tmp/dg-ui-${width}.png`,animations:'disabled'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow at '+width);}
  await page.setViewportSize({width:1440,height:960});
- products.forEach(p=>{p.frames[1]={...frame(p.id*10+1,'pass'),i:2};p.done=2;});products[2].frames[0].qc.status='unchecked';state.totals.done=6;
- await page.reload();await page.getByRole('button',{name:'Проверить результат',exact:true}).waitFor();
- products[2].frames[0].qc.status='pass';await page.reload();await page.getByRole('button',{name:'Открыть галерею',exact:true}).waitFor();
- await page.getByRole('button',{name:/Пустой проект/}).click();await page.getByRole('heading',{name:'Начните с фотографий товара',exact:true}).waitFor();
- assert.equal(await page.getByRole('button',{name:/^Сгенерировать/}).count(),0);await page.screenshot({path:'/tmp/dg-ui-empty.png',animations:'disabled'});
+ await page.getByRole('button',{name:/Пустой проект/}).click();
+ await page.getByText('Товаров пока нет.',{exact:false}).waitFor();
+ assert(await page.locator('#generation-start').getByRole('button',{name:'Сгенерировать',exact:true}).isDisabled());await page.screenshot({path:'/tmp/dg-ui-empty.png',animations:'disabled'});
  assert.equal(mutations.filter(x=>x.p.endsWith('/settings')).length,4,'Only explicit quality checkbox changes may write settings');assert(!mutations.some(x=>x.p.endsWith('/generate')),'Cancelled preview must not start paid generation');
- assert.deepEqual(errors,[]);console.log('PASS: simple/advanced without setting writes, hidden selection, explicit target IDs, empty selection guard, truthful export statuses, keyboard, persistence, 1440/1024/390 layouts, empty project');
+ assert.deepEqual(errors,[]);console.log('PASS: original project cards and details sidebar, visible error actions, explicit selection, QC controls, export statuses, keyboard and empty project');
  await browser.close();server.close();
 })().catch(e=>{console.error(e);server.close();process.exit(1)});
