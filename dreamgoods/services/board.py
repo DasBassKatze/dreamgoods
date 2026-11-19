@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 
 from .. import db
 from ..ai import polza, prompts
+from ..core import config
 from ..core import presets as presets_core
 from ..core.events import STARTED_AT, lines
 from ..core.settings import effective, public
@@ -25,10 +26,13 @@ def _job_state(job, paused_batches=None):
         return "", "", ""
     if job.status == "queued":
         if paused_batches and job.batch_id in paused_batches:
-            return "error", "", "Пауза партии: " + paused_batches[job.batch_id]
+            message = "Пауза партии: " + paused_batches[job.batch_id] if config.BUDGETS_ENABLED else "Партия приостановлена"
+            return "error", "", message
         return "queued", "", ""
     if job.status in ("running", "cancelling"):
         return ("checking" if "провер" in (job.note or "") else "running"), job.note or "", ""
+    if job.status == "paused" and not config.BUDGETS_ENABLED:
+        return "error", "", "Задание приостановлено. Продолжите его в разделе «Операции»."
     if job.status in ("error", "paused"):
         return "error", "", job.error
     return "", "", ""
@@ -154,7 +158,10 @@ def state(project_id, admin=False):
                 "profile_job": {"state": "running"} if pj and pj.status in LIVE else
                                {"state": "error", "error": pj.error} if pj and pj.status == "error" else None})
 
-        warnings = [f"Партия #{bid} на паузе: {reason}. Откройте раздел «Бюджеты»." for bid, reason in paused_batches.items()]
+        if config.BUDGETS_ENABLED:
+            warnings = [f"Партия #{bid} на паузе: {reason}. Откройте раздел «Бюджеты»." for bid, reason in paused_batches.items()]
+        else:
+            warnings = [f"Партия #{bid} на паузе. Откройте раздел «Операции»." for bid in paused_batches]
         new = [m["sku"] for m in out if not m["total"]]
         if new:
             warnings.append(f"Без промптов: {len(new)} товаров ({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — "

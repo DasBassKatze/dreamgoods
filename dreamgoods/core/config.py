@@ -23,6 +23,7 @@ def env(key, default=""):
     return os.environ.get(key, default)
 
 
+BUDGETS_ENABLED = env("DREAMGOODS_BUDGETS_ENABLED", "true").lower() != "false"
 DATABASE_URL = env("DATABASE_URL", "postgresql+psycopg://studio:studio@127.0.0.1:5432/studio")
 # Хранилище файлов: local — папка на диске (разработка), s3 — S3-совместимое облако (релиз: Yandex Object Storage,
 # Selectel, VK Cloud и т. п.). Структура ключей одинаковая, переносится командой run_dreamgoods.py --upload-to-s3

@@ -32,7 +32,7 @@ export function BalancePage() {
               <b>{rub(d.spent_month)}</b>
             </div>
           </div>
-          {d.billing && <p>Зарезервировано: {rub(d.reserved ?? 0)} · Доступно: {rub(d.available ?? d.balance ?? 0)}</p>}
+          {!isDesktop && d.billing && <p>Зарезервировано: {rub(d.reserved ?? 0)} · Доступно: {rub(d.available ?? d.balance ?? 0)}</p>}
           {plan && <PlanCard plan={plan} />}
           {d.prices && d.prices.length > 0 && (
             <>

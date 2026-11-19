@@ -36,6 +36,9 @@ def resume_unbatched(pid:int=Depends(project_id)):
                        .with_for_update()).all()
         n=0
         for j in jobs:
+            if not config.BUDGETS_ENABLED and s.scalar(select(PaidOperation.id).where(
+                    PaidOperation.job_id == j.id, PaidOperation.status.in_(('submitted', 'uncertain'))).limit(1)):
+                continue
             if j.frame_id and s.scalar(select(Generation.id).where(Generation.frame_id==j.frame_id,Generation.status=='pending').limit(1)):continue
             j.status,j.error,j.finished_at='queued','',None;n+=1
     return {'queued':n}

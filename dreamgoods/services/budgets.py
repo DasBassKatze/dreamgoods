@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 from sqlalchemy import func,select
 from .. import db
-from ..core import presets as P
+from ..core import config, presets as P
 from ..core.money import decimal,money
 from ..db.models import BudgetBatch,PaidOperation,Client,Project,Product,Frame,Job,Generation,UsageEntry
 from . import payments,billing
@@ -10,6 +10,8 @@ from .common import context
 
 
 def new_batch(s,pid,budget=None,retry_budget=None,title='Генерация'):
+    if not config.BUDGETS_ENABLED:
+        budget = retry_budget = None
     for value in (budget,retry_budget):
         if value is not None and (decimal(value)<0 or decimal(value)>decimal('1000000000')):raise ValueError('Недопустимый бюджет')
     b=BudgetBatch(project_id=pid,title=title,budget_rub=money(budget) if budget is not None else None,
@@ -118,14 +120,20 @@ def resume(pid,batch_id,budget,retry_budget):
     with db.session() as s:
         b=s.get(BudgetBatch,batch_id,with_for_update=True)
         if not b or b.project_id!=pid:raise LookupError('Партия не найдена')
-        spent,retries=payments._usage(s,b.id)
-        for value,used in ((budget,spent),(retry_budget,retries)):
-            if value is not None and decimal(value)<used:raise ValueError('Новый лимит меньше уже потраченного и зарезервированного')
+        if config.BUDGETS_ENABLED:
+            spent,retries=payments._usage(s,b.id)
+            for value,used in ((budget,spent),(retry_budget,retries)):
+                if value is not None and decimal(value)<used:raise ValueError('Новый лимит меньше уже потраченного и зарезервированного')
+        else:
+            budget = retry_budget = None
         b.budget_rub=money(budget) if budget is not None else None
         b.retry_budget_rub=money(retry_budget) if retry_budget is not None else None
         b.state,b.pause_reason='active',''
         jobs=s.scalars(select(Job).where(Job.batch_id==b.id,Job.status=='paused').order_by(Job.id).with_for_update()).all()
         for j in jobs:
+            if not config.BUDGETS_ENABLED and s.scalar(select(PaidOperation.id).where(
+                    PaidOperation.job_id == j.id, PaidOperation.status.in_(('submitted', 'uncertain'))).limit(1)):
+                continue
             pending=s.scalar(select(Generation.id).where(Generation.frame_id==j.frame_id,Generation.status=='pending').limit(1)) if j.frame_id else None
             if not pending:j.status,j.error,j.finished_at='queued','',None
     from ..workers.queue import _wake

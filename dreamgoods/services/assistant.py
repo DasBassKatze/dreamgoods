@@ -8,6 +8,7 @@ from sqlalchemy import select
 from .. import db
 from ..ai import polza
 from ..ai.assistant_guide import GUIDE, ROUTES, SYSTEM
+from ..core import config as app_config
 from ..core.events import utcnow
 from ..core.logs import Trace, log
 from ..db.models import Job, Product, Project
@@ -38,7 +39,10 @@ def single_request(user_id):
 
 
 def routes(master):
-    return {k: v for k, v in ROUTES.items() if master or not k.startswith("m-")}
+    routes = {k: v for k, v in ROUTES.items() if master or not k.startswith("m-")}
+    if not app_config.BUDGETS_ENABLED:
+        routes["budgets"] = "Операции"
+    return routes
 
 
 def config(pid, master):
@@ -51,13 +55,14 @@ def validate_reply(raw, master, selected):
     if not isinstance(raw, dict) or not isinstance(raw.get("answer"), str) or not raw["answer"].strip():
         raise ValueError("Помощник вернул пустой ответ. Попробуйте переформулировать вопрос.")
     out, seen = [], set()
+    allowed_routes = routes(master)
     actions = raw.get("actions") if isinstance(raw.get("actions"), list) else []
     for a in actions[:10]:
         if not isinstance(a, dict):
             continue
-        if a.get("type") == "navigate" and isinstance(a.get("route"), str) and a["route"] in routes(master):
+        if a.get("type") == "navigate" and isinstance(a.get("route"), str) and a["route"] in allowed_routes:
             key = ("navigate", a["route"])
-            item = {"type": "navigate", "route": a["route"], "label": ROUTES[a["route"]]}
+            item = {"type": "navigate", "route": a["route"], "label": allowed_routes[a["route"]]}
         elif a.get("type") == "product" and type(a.get("product_id")) is int and a["product_id"] in selected:
             key = ("product", a["product_id"])
             item = {"type": "product", "product_id": a["product_id"], "label": "Открыть профиль товара"}

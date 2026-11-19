@@ -134,7 +134,13 @@ assert.equal(creativePlan.manual.length,5);assert.equal(new Set(creativePlan.man
 assert.equal(creativePlan.custom.model,'openai/gpt-image-test');
 assert(creativePlan.manual.every(shot=>shot.model==='openai/gpt-image-test'));
 await page.getByText('Запустить серию').click();
-await page.getByRole('dialog').waitFor();assert.equal(started,null);
+const launchDialog=page.getByRole('dialog');
+await launchDialog.waitFor();assert.equal(started,null);
+assert(!/бюджет|лимиты|резерв/i.test(await launchDialog.innerText()));
+await launchDialog.getByRole('button',{name:'Сгенерировать',exact:true}).click();
+await page.waitForTimeout(200);
+assert.deepEqual(started.product_ids,[11]);
+assert(!('budget_rub' in started) && !('retry_budget_rub' in started));
 await page.reload();
 await page.goto('http://127.0.0.1:43279/studio#/creative');
 await page.getByRole('button',{name:'Перенос ткани',exact:true}).click();

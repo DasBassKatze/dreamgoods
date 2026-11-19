@@ -1,3 +1,4 @@
+import { isDesktop } from "../../desktop/runtime";
 import { useCallback, useEffect, useState } from "react";
 import { assetUrl, type PreflightReport, type Trial } from "../../api/client";
 import { parseBudget, budgetFields } from "../budgets/BudgetForm";
@@ -38,10 +39,17 @@ export function StagePanel() {
   });
   const approve = () => action(async () => {
     if (!trial?.generation) return;
-    const estimate = await api.estimateTrial(trial.id);
-    const limits = await ui.ask({title:"Утвердить и запустить партию",text:<><p>Запустить недостающие кадры {trial.products} товар(ов) сохранённой партии?</p></>, fieldsSummary:"Лимиты партии", fields:budgetFields(estimate.reserve_upper),ok:"Утвердить и запустить"});
+    const confirmation = {
+      title: "Утвердить и запустить партию",
+      text: `Запустить недостающие кадры ${trial.products} товар(ов) сохранённой партии?`,
+      ok: "Утвердить и запустить",
+    };
+    const limits = isDesktop ? await ui.confirm(confirmation) : await ui.ask({
+      ...confirmation, fieldsSummary: "Лимиты партии",
+      fields: budgetFields((await api.estimateTrial(trial.id)).reserve_upper),
+    });
     if (!limits) return;
-    const r = await api.approveTrial(trial.id, trial.generation,parseBudget(limits));
+    const r = await api.approveTrial(trial.id, trial.generation, typeof limits === "object" ? parseBudget(limits) : undefined);
     ui.toast(r.already_approved ? "Эта партия уже утверждена" : `В очередь добавлено кадров: ${r.added}`);
     await refresh(); await reload();
   });

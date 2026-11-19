@@ -1,7 +1,7 @@
 """Очередь: генерация, проверка, остановка, ошибки."""
 from fastapi import APIRouter, Depends, Request
 
-from ...core import admin, auth
+from ...core import admin, auth, config
 
 from ...core.events import say
 from ...services import frames, moderation, plans, presets, budgets
@@ -35,9 +35,9 @@ def _to_generate(pid, body: Selection):
 def preview_generate(body: Selection, pid: int = Depends(project_id)):
     """Сколько кадров встанет в очередь (для подтверждения и оценки цены) и что изменится по пресету."""
     if body.frame_ids is not None:
-        return {"count": len(_to_generate(pid, body)), "preset": None, "estimate": budgets.quote(pid, body.product_ids, body.frame_ids, body.limit)}
+        return {"count": len(_to_generate(pid, body)), "preset": None, "estimate": budgets.quote(pid, body.product_ids, body.frame_ids, body.limit) if config.BUDGETS_ENABLED else None}
     sync = presets.sync_for_generation(pid, body.product_ids, dry_run=True, limit=body.limit)
-    return {"count": sync["count"], "preset": sync, "estimate": budgets.quote(pid, body.product_ids, limit=body.limit, count=sync["count"])}
+    return {"count": sync["count"], "preset": sync, "estimate": budgets.quote(pid, body.product_ids, limit=body.limit, count=sync["count"]) if config.BUDGETS_ENABLED else None}
 
 
 @router.post("/generate")

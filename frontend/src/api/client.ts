@@ -136,9 +136,9 @@ export function projectApi(id: number) {
     trial: () => get<{trial:Trial|null}>(`${p}/trial`),
     startTrial: (productIds:number[]|null) => post<{trial:Trial}>(`${p}/trial`, {product_ids:productIds}),
     estimateTrial: (id:number) => get<CostEstimate>(`${p}/trial/${id}/estimate`),
-    approveTrial: (id:number,generationId:number,budget: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{added:number;already_approved:boolean}>(`${p}/trial/${id}/approve`, {generation_id:generationId,...budget}),
+    approveTrial: (id:number,generationId:number,budget?: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{added:number;already_approved:boolean}>(`${p}/trial/${id}/approve`, {generation_id:generationId,...budget}),
     budgets: () => get<BudgetState>(`${p}/budgets`),
-    resumeBudget: (id:number,budget: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{ok:true}>(`${p}/budgets/${id}/resume`,budget),
+    resumeBudget: (id:number,budget?: {budget_rub:number|null;retry_budget_rub:number|null}) => post<{ok:true}>(`${p}/budgets/${id}/resume`,budget ?? {}),
     resumeUnbatched: () => post<{queued:number}>(`${p}/budgets/resume-unbatched`),
     reconcile: (id:string,action:"refresh"|"settle"|"release",note="",cost=0) => post<{ok:true}>(`${p}/budgets/operations/${id}/reconcile`,{action,note,cost}),
     reviewBatch: (items:{frame_id:number;generation_id:number}[],verdict:"ok"|"bad",comment:string,regen:boolean) => post<{results:{frame_id:number;ok:boolean;error?:string}[]}>(`${p}/review/batch`, {items,verdict,comment,regen}),
@@ -147,7 +147,7 @@ export function projectApi(id: number) {
     catalog: (kind: "image" | "qc", refresh = false) =>
       get<{ models: CatalogModel[]; error: string }>(`${p}/catalog?kind=${kind}${refresh ? "&refresh=true" : ""}`),
 
-    previewGenerate: (sel: Selection) => post<{ count: number; preset: PresetSync | null; estimate?:CostEstimate }>(`${p}/generate/preview`, sel),
+    previewGenerate: (sel: Selection) => post<{ count: number; preset: PresetSync | null; estimate?:CostEstimate | null }>(`${p}/generate/preview`, sel),
     generate: (sel: Selection) => post<{ added: number; preset: PresetSync | null }>(`${p}/generate`, sel),
     previewCheck: (sel: Selection & { only_unchecked?: boolean }) => post<{ count: number }>(`${p}/check/preview`, sel),
     check: (sel: Selection & { only_unchecked?: boolean }) => post<{ added: number }>(`${p}/check`, sel),

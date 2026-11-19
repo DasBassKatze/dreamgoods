@@ -1,9 +1,10 @@
-"""Резерв и однократное списание для каждого платного вызова."""
+"""Учёт каждого платного вызова, включая резерв в серверном режиме."""
 from contextlib import contextmanager
 from contextvars import ContextVar
 from uuid import uuid4
 from sqlalchemy import func,select
 from .. import db
+from ..core import config
 from ..core.money import decimal,money
 from ..db.models import PaidOperation,BudgetBatch,Client,Project,Organization,Job,UsageEntry,BalanceEntry
 
@@ -18,6 +19,8 @@ class BudgetPause(ValueError):
 
 
 def held(s,client_id):
+    if not config.BUDGETS_ENABLED:
+        return money(0)
     return money(s.scalar(select(func.coalesce(func.sum(PaidOperation.reserved_rub),0)).where(
         PaidOperation.client_id==client_id,PaidOperation.billable.is_(True),PaidOperation.status.in_(HELD))))
 
@@ -53,16 +56,18 @@ def reserve(kind,model,trace=None):
         if not j or not j.project_id:return None
         p=s.get(Project,j.project_id)
         c=s.get(Client,p.client_id,with_for_update=True,populate_existing=True)
-        batch=s.get(BudgetBatch,j.batch_id,with_for_update=True) if j.batch_id else None
+        batch=s.get(BudgetBatch,j.batch_id,with_for_update=True) if config.BUDGETS_ENABLED and j.batch_id else None
         if kind=='generation':
             kind='persona_image' if j.kind=='persona' else 'edit' if (j.payload or {}).get('edit') else kind
         billable=c.billing and not bool((j.payload or {}).get('by_master'))
         markup=markup_of(c,s.get(Organization,c.org_id)) if billable else 1
-        _,upper,_=estimate_call(s,c.org_id,model,kind)
-        amount=money(decimal(upper)*decimal(markup))
+        amount = money(0)
+        if config.BUDGETS_ENABLED:
+            _,upper,_=estimate_call(s,c.org_id,model,kind)
+            amount=money(decimal(upper)*decimal(markup))
         retry=retry_context.get() or bool((j.payload or {}).get('budget_retry'))
         if batch and batch.state=='paused':denied=batch.pause_reason or 'Партия приостановлена'
-        elif billable and decimal(c.balance_rub)-decimal(held(s,c.id))<decimal(amount):denied=f'Недостаточно доступного баланса для резерва {amount:.2f} ₽'
+        elif config.BUDGETS_ENABLED and billable and decimal(c.balance_rub)-decimal(held(s,c.id))<decimal(amount):denied=f'Недостаточно доступного баланса для резерва {amount:.2f} ₽'
         if batch and not denied:
             total,retries=_usage(s,batch.id)
             if batch.budget_rub is not None and total+decimal(amount)>decimal(batch.budget_rub):denied='Достигнут общий бюджет партии'
@@ -104,7 +109,7 @@ def release(oid,known=False):
             o=s.get(PaidOperation,oid,with_for_update=True,populate_existing=True)
             if o and o.status not in ('settled','released'):
                 o.status='released' if known or o.status=='reserved' else 'uncertain'
-                if o.status=='uncertain' and batch:
+                if config.BUDGETS_ENABLED and o.status=='uncertain' and batch:
                     batch.state,batch.pause_reason='paused','Статус запроса неизвестен. Резерв сохранён до сверки с провайдером.'
 
 
@@ -129,12 +134,12 @@ def settle(oid,cost,tokens=None,provider=''):
             kind=o.kind,model=o.model,provider=provider,amount_rub=cost,tokens=tokens or {},ref=o.id))
         o.status,o.cost_rub,o.charged_rub='settled',cost,amount
         s.flush()
-        if batch:
+        if config.BUDGETS_ENABLED and batch:
             total,retries=_usage(s,batch.id)
             if (batch.budget_rub is not None and total>decimal(batch.budget_rub) or
                 batch.retry_budget_rub is not None and retries>decimal(batch.retry_budget_rub)):
                 batch.state,batch.pause_reason='paused','Фактическая стоимость превысила бюджет. Новые запросы остановлены.'
-        if amount>o.reserved_rub and batch:
+        if config.BUDGETS_ENABLED and amount>o.reserved_rub and batch:
             batch.state,batch.pause_reason='paused','Цена провайдера оказалась выше резерва. Проверьте расходы перед продолжением.'
 
 

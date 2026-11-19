@@ -363,3 +363,28 @@ def test_manual_reconciliation_cannot_change_active_request(database):
     with pytest.raises(ValueError,match='только для операций'):
         reconcile(oid,Reconcile(action='release',note='checked no charge'),request,pid=ids['project'])
     with db.session() as s:assert s.get(PaidOperation,oid).status=='reserved'
+
+
+def test_desktop_tracks_charges_without_reserving_or_pausing(database, monkeypatch):
+    from dreamgoods.core import config
+    monkeypatch.setattr(config, 'BUDGETS_ENABLED', False)
+    _, ids = database
+    jid, bid = make_job(ids, budget=0, retries=0)
+    with db.session() as s:
+        client = s.get(Client, ids['client'])
+        client.balance_rub = 1
+        batch = s.get(BudgetBatch, bid)
+        assert batch.budget_rub is None and batch.retry_budget_rub is None
+        # An old database can still have limits from before the update.
+        batch.budget_rub = batch.retry_budget_rub = 0
+    with scope(jid, retry=True):
+        oid = payments.reserve('generation', 'fake')
+    with db.session() as s:
+        assert s.get(PaidOperation, oid).reserved_rub == 0
+        assert payments.held(s, ids['client']) == 0
+    payments.settle(oid, 5)
+    payments.settle(oid, 5)
+    with db.session() as s:
+        assert s.get(BudgetBatch, bid).state == 'active'
+        assert s.scalar(select(func.count(BalanceEntry.id))) == 1
+        assert s.scalar(select(func.count(UsageEntry.id))) == 1

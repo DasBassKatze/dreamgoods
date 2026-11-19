@@ -131,7 +131,7 @@ def recover(quiet=False):
             for operation in s.scalars(select(PaidOperation).where(PaidOperation.job_id == j.id,
                     PaidOperation.status.in_(("reserved", "submitted")))).all():
                 operation.status = "released" if operation.status == "reserved" else "uncertain"
-                if operation.status == "uncertain" and operation.batch_id:
+                if config.BUDGETS_ENABLED and operation.status == "uncertain" and operation.batch_id:
                     from ..db.models import BudgetBatch
                     batch = s.get(BudgetBatch, operation.batch_id)
                     batch.state, batch.pause_reason = "paused", "Сервер прервался после отправки запроса. Требуется сверка резерва."

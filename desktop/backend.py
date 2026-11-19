@@ -114,6 +114,7 @@ def main():
             'DATABASE_URL': f'postgresql+psycopg://dreamgoods:{password}@127.0.0.1:{dbport}/dreamgoods',
             'DREAMGOODS_HOST': '127.0.0.1', 'DREAMGOODS_PORT': str(args.port),
             'DREAMGOODS_LOG_DIR': str(root / 'logs'), 'DREAMGOODS_EXPORT_DIR': str(root / 'exports'),
+            'DREAMGOODS_BUDGETS_ENABLED': 'false',
             'DREAMGOODS_DISABLE_LEGACY_IMPORT': 'true', 'STORAGE': 'local', 'STORAGE_DIR': str(root / 'files'),
         })
         stop = threading.Event()
