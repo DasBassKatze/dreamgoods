@@ -4,7 +4,7 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
 (async()=>{await new Promise(r=>server.listen(43279,'127.0.0.1',r));const browser=await chromium.launch({executablePath:process.env.CHROME_BIN || undefined,headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));let started=null,resumed=null;let assistantRequests=[],assistantFail=false,assistantConfigured=true;let loggedIn=false,keyCalls=0,keyValue=100,deleted=[],removed=[];
 await page.clock.install();
 await page.addInitScript(() => { window.dgDesktop={minimize:async()=>{},maximize:async()=>{},close:async()=>{},mode:async mode=>window.desktopMode=mode,state:async()=>({maximized:false})}; });
-let creativePlan, creativeAssignment;
+let creativePlan, creativeAssignment, cancelledOperation;
 const imported={id:7,project_id:1,status:'upload',count:2,progress:null,error:'',photos:[{id:1,name:'one.png',asset:'one',role:'product'},{id:2,name:'two.png',asset:'two',role:'product'}],groups:[],result:{}};
 const product={id:11,sku:'ART123',name:'Тест',persona_id:null,persona:null,preset_id:null,style_ref_id:null,photos:[],frames:[],done:0,total:0,profile:null,profile_job:null};
 const estimate={frames:2,profiles:0,base_estimate:20,retry_estimate:10,reserve_upper:60,historical_samples:4,unit:'клиентская цена',note:'Оценка по истории модели'};
@@ -42,6 +42,10 @@ else if(p.endsWith('/imports/7/files') && route.request().method()==='DELETE'){
 else if(p.endsWith('/imports/7'))data=imported;
 else if(p.endsWith('/trial'))data={trial:null};
 else if(p.endsWith('/budgets'))data=budget;
+else if(p.endsWith('/budgets/operations/test-op/reconcile')){
+  cancelledOperation=route.request().postDataJSON();
+  budget.operations=[];data={ok:true};
+}
 else if(p.endsWith('/budgets/5/resume')){resumed=route.request().postDataJSON();data={ok:true};}
 else if(p.endsWith('/generate/preview'))data={count:2,preset:null,estimate};
 else if(p.endsWith('/generate')){started=route.request().postDataJSON();data={added:2,preset:null,batch_id:6};}
@@ -69,6 +73,17 @@ assert.equal(await page.getByRole('link',{name:'Сайт DreamGoods',exact:true}
 assert.equal(await page.locator('a[href*="pricing"]').count(),0);
 await page.locator('.avatar-btn').click();
 await page.screenshot({path:'/tmp/dgdesktop-workspace.png'});
+budget.admin=true;
+budget.operations=[{id:'test-op',kind:'generation',model:'test',status:'uncertain',reserved:0,external_id:'',job_id:null,note:''}];
+await page.goto('http://127.0.0.1:43279/studio#/budgets');
+await page.getByRole('button',{name:'Отменить локально…',exact:true}).click();
+const cancelDialog=page.getByRole('dialog');
+assert.equal(await cancelDialog.locator('input,textarea').count(),0);
+await cancelDialog.getByRole('button',{name:'Отменить операцию',exact:true}).click();
+await page.getByRole('heading',{name:'Незавершённые запросы'}).waitFor({state:'hidden'});
+assert.equal(cancelledOperation.action,'release');
+assert.equal(cancelledOperation.note,'');
+await page.goto('http://127.0.0.1:43279/studio#/products');
 await page.locator('.card-h input[type="checkbox"]').first().check();
 await page.getByRole('button',{name:'Открыть ИИ-помощника',exact:true}).click();
 await page.getByLabel('Вопрос помощнику').waitFor();

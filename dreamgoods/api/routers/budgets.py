@@ -69,10 +69,15 @@ def reconcile(operation_id:str,body:Reconcile,request:Request,pid:int=Depends(pr
         if data.get('status')!='completed' and not cost:payments.release(operation_id,known=True)
         else:payments.settle(operation_id,cost,provider=data.get('provider',''))
     else:
-        if len(body.note.strip())<5:raise ValueError('Укажите результат ручной сверки с провайдером')
+        local_cancel = body.action == 'release' and not config.BUDGETS_ENABLED
+        if not local_cancel and len(body.note.strip()) < 5:
+            raise ValueError('Укажите результат ручной сверки с провайдером')
         if body.action=='settle':payments.settle(operation_id,body.cost)
         else:payments.release(operation_id,known=True)
+    note = body.note.strip()
+    if not note and body.action == 'release' and not config.BUDGETS_ENABLED:
+        note = 'Отменено локально. Статус у провайдера не проверялся.'
     with db.session() as s:
         o=s.get(PaidOperation,operation_id,with_for_update=True)
-        o.note=(o.note+'\n' if o.note else '')+f'{cu.email}: {body.action}: {body.note.strip()}'
+        o.note=(o.note+'\n' if o.note else '')+f'{cu.email}: {body.action}: {note}'
     return {'ok':True}

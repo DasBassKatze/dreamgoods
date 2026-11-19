@@ -388,3 +388,29 @@ def test_desktop_tracks_charges_without_reserving_or_pausing(database, monkeypat
         assert s.get(BudgetBatch, bid).state == 'active'
         assert s.scalar(select(func.count(BalanceEntry.id))) == 1
         assert s.scalar(select(func.count(UsageEntry.id))) == 1
+
+
+def test_desktop_can_cancel_uncertain_operation_without_reconciliation_note(database, monkeypatch):
+    from dreamgoods.api.routers.budgets import Reconcile, reconcile
+    from dreamgoods.core import config
+    from dreamgoods.core.auth import CurrentUser
+
+    _, ids = database
+    jid, _ = make_job(ids)
+    with scope(jid):
+        oid = payments.reserve('generation', 'fake')
+    with db.session() as s:
+        s.get(PaidOperation, oid).status = 'uncertain'
+    user = CurrentUser(1, ids['org'], 'master', 'Master', 'master', ids['client'])
+    request = SimpleNamespace(state=SimpleNamespace(user=user))
+    body = Reconcile(action='release')
+
+    with pytest.raises(ValueError, match='Укажите результат'):
+        reconcile(oid, body, request, pid=ids['project'])
+    monkeypatch.setattr(config, 'BUDGETS_ENABLED', False)
+    assert reconcile(oid, body, request, pid=ids['project']) == {'ok': True}
+    with db.session() as s:
+        operation = s.get(PaidOperation, oid)
+        assert operation.status == 'released'
+        assert 'Отменено локально' in operation.note
+        assert s.scalar(select(func.count(BalanceEntry.id))) == 0
