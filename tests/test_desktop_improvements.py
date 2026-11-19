@@ -16,7 +16,8 @@ def upload_setup(ids, monkeypatch, tmp_path):
     image=io.BytesIO();Image.new('RGB',(20,20),'blue').save(image,format='PNG')
     sid=importer.new_session(ids['project'])
     importer.save_upload(sid,'one.png',image.getvalue())
-    importer.save_upload(sid,'two.png',image.getvalue())
+    other=io.BytesIO();Image.new('RGB',(20,20),'red').save(other,format='PNG')
+    importer.save_upload(sid,'two.png',other.getvalue())
     return sid
 
 
@@ -48,6 +49,7 @@ def test_same_article_apply_and_repeated_upload_merge(database, monkeypatch, tmp
     with db.session() as s:
         assert len([p for p in s.scalars(select(Product)) if importer._art(p.sku)=='ART123'])==1
         assert not s.scalar(select(Product.id).where(Product.sku=='ART123_2'))
+        assert s.scalar(select(func.count(ProductPhoto.id)).where(ProductPhoto.product_id==pid))==2
 
 
 def test_import_remove_selected_files_and_busy_guard(database, monkeypatch, tmp_path):

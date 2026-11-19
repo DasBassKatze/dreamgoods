@@ -98,6 +98,11 @@ export function Header({ dialogs, onProjectsChanged, query, onQuery }: {
           : "Включить уведомления о готовности кадров (придут, даже если вкладка свёрнута)"}
         aria-label="Уведомления о готовности"><Icon name="bell" size={18} /></button>
       <button disabled={!pickedFrames.size && !ids.length} onClick={exportZip}><Icon name="download" size={16} /> Скачать ZIP</button>
+      {r.errors > 0 && <button onClick={() => run(async () => {
+        await papi.clearErrors();
+        await reload();
+        ui.toast("Отметки о завершившихся ошибках скрыты");
+      })}>Скрыть ошибки ({r.errors})</button>}
       {r.busy && <button className="danger" onClick={stop}>Стоп</button>}
     </div>
   );
