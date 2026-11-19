@@ -1,4 +1,3 @@
-import type { Dialogs } from "../App";
 import type { Product } from "../api/types";
 import { useProject } from "../ProjectContext";
 import { Icon } from "../layout/Icon";
@@ -6,7 +5,7 @@ import { Icon } from "../layout/Icon";
 const QUALITY_RU: Record<string, string> = { draft: "черновик", standard: "стандарт", premium: "премиум", custom: "своё качество" };
 
 /** Настройки генерации товара: пресет, модель и оформление — свои или как в проекте. */
-export function ProductSettings({ product: p, dialogs }: { product: Product; dialogs: Dialogs }) {
+export function ProductSettings({ product: p }: { product: Product }) {
   const { state, api, reload, run } = useProject();
   const own = p.preset_id ? state.presets.find((x) => x.id === p.preset_id) : null;
   const eff = own || state.preset;
@@ -54,7 +53,6 @@ export function ProductSettings({ product: p, dialogs }: { product: Product; dia
         {eff ? <>{eff.market_name || "без площадки"} · {eff.aspect || "3:4"} · {QUALITY_RU[eff.quality] || eff.quality} · {eff.total} кадр.</>
           : "Автоматическая съёмка по описанию товара"}
       </span>
-      <button className="link" onClick={dialogs.openPresets}>Открыть шаблоны</button>
     </div>
   );
 }

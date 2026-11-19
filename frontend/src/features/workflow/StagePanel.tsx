@@ -58,7 +58,6 @@ export function StagePanel() {
     <div className="row wrap"><b>Перед большой партией</b><span className="spacer" />
       <button disabled={busy || !ids.length} onClick={() => action(async () => setReport(await api.preflight(ids)))}>Проверить исходники · бесплатно</button>
       <button disabled={busy || !ids.length} onClick={sample}>Пробный кадр</button>
-      <a href="#/review">Перейти к приёмке →</a>
     </div>
     <p className="hint">Проверьте фото, снимите один кадр и утвердите результат перед запуском остальных. Область проверки и пробной съёмки: {label}.</p>
     </AdvancedFields>

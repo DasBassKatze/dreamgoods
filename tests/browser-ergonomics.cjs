@@ -27,6 +27,7 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
   else if(p.endsWith('/history'))data={versions:[]};
   else if(p.endsWith('/review/batch')){products[2].frames[0].qc.status='accepted';data={results:[{frame_id:330,ok:true}]};}
   else if(p.endsWith('/settings')){Object.assign(state.settings,req.postDataJSON());data={ok:true};}
+  else if(p.endsWith('/errors/clear')){state.runner.errors=0;data={ok:true};}
   else if(p.endsWith('/trial'))data={trial:null};
   else if(p.endsWith('/generate/preview')){preview=req.postDataJSON();data={count:1,preset:null,estimate:{frames:1,profiles:0,base_estimate:1,retry_estimate:1,reserve_upper:5,historical_samples:1,unit:'себестоимость',note:''}};}
   else if(p.endsWith('/export')){exports.push(req.url());return route.fulfill({contentType:'application/zip',headers:{'Content-Disposition':'attachment; filename="frames.zip"'},body:Buffer.from('PK\x05\x06'+ '\x00'.repeat(18),'binary')});}
@@ -36,6 +37,18 @@ const server=http.createServer((req,res)=>{let p=path.join(root,req.url.split('?
  await page.getByLabel('Выбрать товар SHOE-A',{exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'Простой',exact:true}).getAttribute('aria-pressed'),'true');
  assert.equal(await page.locator('.frame-sidebar').count(),0);
+ const projectTools=page.getByRole('group',{name:'Настройки проекта',exact:true});
+ for(const name of ['Добавить фото','Шаблоны съёмки','Человек в кадре','Референсы съёмки']){
+   assert.equal(await projectTools.getByRole('button',{name,exact:true}).count(),1);
+   assert.equal(await page.getByRole('button',{name,exact:true}).count(),1);
+ }
+ assert.equal(await page.locator('.stage-panel a[href="#/review"]').count(),0);
+ state.runner.errors=1;
+ await page.reload();
+ const hideErrors=page.getByRole('button',{name:'Скрыть ошибки (1)',exact:true});
+ await hideErrors.click();
+ await hideErrors.waitFor({state:'hidden'});
+
  const firstCard=await page.locator('[data-product-id="11"]').boundingBox();await page.screenshot({path:'/tmp/dg-ui-density.png',animations:'disabled'});assert(firstCard.y<650,`Product content starts at ${firstCard.y}px`);
  assert.equal(await page.locator('[data-product-id="11"] > details').first().getAttribute('open'),null);
  await page.screenshot({path:'/tmp/dg-ui-simple.png',animations:'disabled'});

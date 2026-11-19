@@ -12,7 +12,7 @@ import { Composer } from "./Composer";
 import { FrameDetails } from "./FrameDetails";
 import { GenerationSelection } from "./GenerationSelection";
 import { useInterfaceMode } from "../interface/InterfaceMode";
-import { WorkflowGuide } from "./WorkflowGuide";
+import { ProjectBar } from "../../components/ProjectBar";
 import { RunOptionsCtx } from "./runOptions";
 
 interface Props {
@@ -42,10 +42,10 @@ export function GenerationPage({ dialogs, filter, onFilter, onProjectsChanged }:
     <RunOptionsCtx.Provider value={opts}><GenerationSelection visibleIds={visibleIds}>
       <Header dialogs={dialogs} onProjectsChanged={onProjectsChanged} query={query} onQuery={setQuery} />
       {!state.products.length ? <div className="studio-empty"><Icon name="upload" size={32} /><h2>Начните с фотографий товара</h2><p>Загрузите фото. DreamGoods поможет объединить их по артикулам и подготовить кадры.</p><button className="primary" onClick={dialogs.openImport}>Загрузить фото</button><ol><li>Добавьте исходные фото</li><li>Выберите шаблон съёмки</li><li>Получите и проверьте кадры</li></ol></div> : <>
-      <WorkflowGuide dialogs={dialogs} />
       <div className="gen-top">
         <div className="gen-setup">
-          <Composer dialogs={dialogs} />
+          <ProjectBar dialogs={dialogs} />
+          <Composer />
         </div>
       </div>
       <StagePanel />

@@ -1,5 +1,3 @@
-import type { Dialogs } from "../../App";
-import { ProjectBar } from "../../components/ProjectBar";
 import { QualityTools, QualitySwitches } from "../../components/Toolbar";
 import { Icon } from "../../layout/Icon";
 import { useActions } from "../../hooks/useActions";
@@ -10,7 +8,7 @@ import { useInterfaceMode } from "../interface/InterfaceMode";
 import { BATCH } from "./runOptions";
 import { useGenerationSelection } from "./GenerationSelection";
 
-export function Composer({ dialogs }: { dialogs: Dialogs }) {
+export function Composer() {
   const { state, limit, setLimit } = useProject();
   const { generate } = useActions();
   const { target, setTarget, ids, selectedIds, visibleIds, hidden, label } = useGenerationSelection();
@@ -36,16 +34,14 @@ export function Composer({ dialogs }: { dialogs: Dialogs }) {
       </button>}
     </div>
     <QualitySwitches />
-    <div className="run-quality">
-      <span>{s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 ? `Автопеределка до ${s.qc_retries} раз` : "Без автоматических переделок"}</span></div>
-    <AdvancedFields title="Настройки съёмки" summary={`${limit ? `До ${limit} кадров` : "Все недостающие кадры"} · ${state.persona?.name || "Человек: автоматически"} · ${state.style_ref?.name || "Без референса съёмки"}`}>
+    {s.qc_enabled && s.qc_autoregen && s.qc_retries > 0 && <div className="run-quality">Автопеределка до {s.qc_retries} раз</div>}
+    <AdvancedFields title="Параметры запуска" summary={limit ? `До ${limit} кадров` : "Все недостающие кадры"}>
       <label className="run-what">Количество кадров за запуск
         <select aria-label="Ограничение кадров" value={limit} onChange={e => setLimit(+e.target.value)}>
           {!BATCH.some(([k]) => k === limit) && <option value={limit}>До {limit} кадров</option>}
           {BATCH.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
         </select>
       </label>
-      <ProjectBar dialogs={dialogs} />
       <QualityTools />
     </AdvancedFields>
   </section>;

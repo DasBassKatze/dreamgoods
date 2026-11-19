@@ -80,7 +80,7 @@ export function ProductCard({ product: p, dialogs, focus, onFocus }: Props) {
       </div>
 
       <AdvancedFields title="Настройки товара" summary={`${p.preset_id || p.persona_id || p.style_ref_id ? "Используются ваши настройки" : "Из проекта"} · ${eff?.name || "Автоматическая съёмка"}`}>
-        <ProductSettings product={p} dialogs={dialogs} />
+        <ProductSettings product={p} />
       </AdvancedFields>
 
       <div className="refs">

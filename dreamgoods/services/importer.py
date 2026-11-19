@@ -631,31 +631,26 @@ def apply(session_id, groups, label_mode, auto_profile):
                 by_sku[_art(sku)] = p
             sku = p.sku
             pos = (s.scalar(select(func.max(ProductPhoto.position)).where(ProductPhoto.product_id == p.id)) or 0)
-            have = set(s.execute(select(Asset.sha256, ProductPhoto.role)
-                                 .join(ProductPhoto, ProductPhoto.asset_id == Asset.id)
-                                 .where(ProductPhoto.product_id == p.id)).all())
-            roles = dict(items)
+            have = set(s.scalars(select(ProductPhoto.asset_id).where(ProductPhoto.product_id == p.id)).all())
             for n in prods:
-                photo_key = (files[n].asset.sha256, roles[n])
-                if photo_key in have:
+                if files[n].asset_id in have:
                     continue
                 pos += 1
-                s.add(ProductPhoto(product_id=p.id, asset_id=files[n].asset_id, role=roles[n], is_reference=True,
+                s.add(ProductPhoto(product_id=p.id, asset_id=files[n].asset_id, role=dict(items)[n], is_reference=True,
                                    position=pos))
                 added += 1
-                have.add(photo_key)
+                have.add(files[n].asset_id)
             tagged = [n for n in prods if (files[n].analysis or {}).get("article") or (files[n].analysis or {}).get("text")]
             if (labs or tagged) and label_mode != "skip":
                 arts = set((p.label_data or {}).get("articles") or [])
                 texts = list((p.label_data or {}).get("texts") or [])
                 for n in labs + tagged:          # бирки и фото товара с биркой на нём (подошва с наклейкой)
-                    label_key = (files[n].asset.sha256, "label")
-                    if n in labs and label_key not in have:
+                    if n in labs and files[n].asset_id not in have:
                         pos += 1
                         s.add(ProductPhoto(product_id=p.id, asset_id=files[n].asset_id, role="label", is_reference=False,
                                            position=pos))
                         labels += 1
-                        have.add(label_key)
+                        have.add(files[n].asset_id)
                     an = files[n].analysis or {}
                     if an.get("article"):
                         arts.add(an["article"])
