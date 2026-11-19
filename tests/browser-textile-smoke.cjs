@@ -1,10 +1,10 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const http = require("node:http");
 const path = require("node:path");
 
 const web = path.join(__dirname, "../dreamgoods/web");
-const base = "http://dreamgoods.test";
 const project = { id: 1, name: "Перенос ткани", client: "Тест" };
 const state = {
   admin: false, account: { balance: 200, billing: true }, project, presets: [], products: [],
@@ -28,16 +28,35 @@ async function png(page, width, height, color) {
 async function main() {
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined,
     headless: true, args: ["--no-sandbox"] });
+  let output;
+  const server = http.createServer((req, res) => {
+    const { pathname, searchParams } = new URL(req.url, "http://127.0.0.1");
+    if (pathname === "/api/projects/1/textile/1/image" && output) {
+      res.setHeader("Content-Type", "image/png");
+      if (searchParams.has("download")) {
+        res.setHeader("Content-Disposition", 'attachment; filename="textile-transfer-1.png"');
+      }
+      return res.end(output);
+    }
+    const file = path.join(web, pathname === "/studio" ? "index.html" : pathname);
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+      res.statusCode = 404;
+      return res.end();
+    }
+    const types = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css" };
+    const contentType = types[path.extname(file)];
+    if (contentType) res.setHeader("Content-Type", contentType);
+    fs.createReadStream(file).pipe(res);
+  });
   try {
+    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
-    let job = null, resultId = null, upload, output, submitCount = 0;
-    await page.route(`${base}/**`, async route => {
-      const { pathname, searchParams } = new URL(route.request().url());
-      if (pathname === "/studio" || pathname.startsWith("/assets/")) {
-        return route.fulfill({ path: path.join(web, pathname === "/studio" ? "index.html" : pathname) });
-      }
+    let job = null, resultId = null, upload, submitCount = 0;
+    await page.route(`${base}/api/**`, async route => {
+      const { pathname } = new URL(route.request().url());
       let json = {};
       if (pathname === "/api/auth/me") {
         json = { id: 1, org_id: 1, email: "test", name: "Тест", role: "user",
@@ -62,9 +81,7 @@ async function main() {
         job = { ...job, status: "cancelled" };
         json = job;
       } else if (pathname.endsWith("/textile/1/image")) {
-        const headers = searchParams.has("download") ?
-          { "Content-Disposition": 'attachment; filename="textile-transfer-1.png"' } : {};
-        return route.fulfill({ body: output, contentType: "image/png", headers });
+        return route.continue();
       }
       return route.fulfill({ json });
     });
@@ -127,6 +144,7 @@ async function main() {
     console.log("PASS: web textile crop, optional prompt, image download, reload and cancellation");
   } finally {
     await browser.close();
+    server.close();
   }
 }
 
