@@ -7,11 +7,38 @@ import requests
 from sqlalchemy import func,select
 from dreamgoods import db
 from dreamgoods.ai import polza
+from dreamgoods.core import config
 from dreamgoods.core.logs import Trace
 from dreamgoods.db.models import BudgetBatch,PaidOperation,Client,Job,Generation,BalanceEntry,UsageEntry,Organization
 from dreamgoods.services import budgets,payments,billing
 from dreamgoods.services.common import write_usage
 from dreamgoods.workers import queue
+
+
+@pytest.fixture(autouse=True)
+def enable_budget_policy(monkeypatch):
+    monkeypatch.setattr(config, 'BUDGETS_ENABLED', True)
+
+
+def test_web_resumes_old_price_pause_without_limits(database, monkeypatch):
+    _, ids = database
+    jid, bid = make_job(ids, budget=1000, retries=0)
+    with scope(jid):
+        first = payments.reserve('generation', 'fake')
+    payments.settle(first, 80)
+    with db.session() as s:
+        assert s.get(BudgetBatch, bid).state == 'paused'
+    monkeypatch.setattr(config, 'BUDGETS_ENABLED', False)
+    assert budgets.resume(ids['project'], bid, None, None) == {'ok': True}
+    assert queue._claim('test') == (jid, 'generate')
+    with scope(jid, retry=True):
+        second = payments.reserve('generation', 'fake')
+    payments.settle(second, 90)
+    with db.session() as s:
+        batch = s.get(BudgetBatch, bid)
+        assert (batch.state, batch.pause_reason, batch.budget_rub, batch.retry_budget_rub) == ('active', '', None, None)
+        assert s.get(PaidOperation, second).reserved_rub == 0
+        assert s.get(Client, ids['client']).balance_rub == 30
 
 
 def make_job(ids,budget=None,retries=None,master=False):

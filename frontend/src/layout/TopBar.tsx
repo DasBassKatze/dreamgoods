@@ -11,7 +11,7 @@ const TABS: [Route, string][] = [
   ["review", "Приёмка"],
   ["gallery", "Галерея"],
   ["history", "История"],
-  ["budgets", isDesktop ? "Операции" : "Бюджеты"],
+  ["budgets", "Бюджеты"],
   ["balance", "Тарифы"],
 ];
 /** Разделы, которые открываются кнопками со страницы генерации, — подсвечивают вкладку «Генерация». */
@@ -36,6 +36,7 @@ interface Props {
   busy: boolean;
   onLogout: () => void;
   onMenu: () => void;
+  budgetsEnabled?: boolean;
 }
 
 /** Верхняя строка: логотип, разделы вкладками, баланс и учётная запись. */
@@ -64,7 +65,8 @@ export function TopBar(p: Props) {
         <span>DreamGoods</span>
       </a>
       <nav className="tabs-top" aria-label="Разделы">
-        {TABS.map(([tab, label]) => {
+        {TABS.map(([tab, title]) => {
+          const label = tab === "budgets" && (isDesktop || p.budgetsEnabled === false) ? "Операции" : title;
           // у мастера своего баланса нет — «Тарифы» ведут в финансы кабинетов
           const r: Route = tab === "balance" && master ? "m-finance" : tab;
           const on = r === "products" ? UNDER_GEN.includes(p.route) : p.route === r;

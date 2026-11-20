@@ -229,7 +229,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   const body = (
     <div className="app">
-      <TopBar me={me} route={route} go={go} balance={account}
+      <TopBar me={me} route={route} go={go} balance={account} budgetsEnabled={state?.budgets_enabled}
         polza={keyStatus || (master && state ? { value: state.balance, error: state.balance_error } : null)}
         reviewCount={state?.products.reduce((n, p) => n + p.frames.filter(needsReview).length, 0) ?? 0} busy={!!state?.runner.busy} onLogout={onLogout}
         onMenu={() => setMenuOpen((x) => !x)} />

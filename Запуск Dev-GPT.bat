@@ -7,6 +7,7 @@ rem Separate test database and files. Existing Dev-GPT data is reused.
 set "DATABASE_URL=postgresql+psycopg://studio:studio@127.0.0.1:5433/dreamgoods_dev_gpt"
 set "DREAMGOODS_HOST=127.0.0.1"
 set "DREAMGOODS_PORT=8766"
+set "DREAMGOODS_BUDGETS_ENABLED=false"
 set "DREAMGOODS_DISABLE_LEGACY_IMPORT=true"
 set "STORAGE=local"
 set "STORAGE_DIR=%~dp0data-dev-gpt\files"

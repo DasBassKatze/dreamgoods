@@ -56,9 +56,9 @@ export function useActions() {
           {notes.map((n) => <p key={n}>{n}</p>)}</>,
         ok: "Сгенерировать",
       };
-      const limits = isDesktop ? await ui.confirm(confirmation) : await ui.ask({
-        ...confirmation, fieldsSummary: "Лимиты партии", fields: budgetFields(p.estimate?.reserve_upper),
-      });
+      const limits = !isDesktop && p.estimate ? await ui.ask({
+        ...confirmation, fieldsSummary: "Лимиты партии", fields: budgetFields(p.estimate.reserve_upper),
+      }) : await ui.confirm(confirmation);
       if (!limits) return;
       const r = await api.generate({ product_ids: productIds, limit, ...opts, ...(typeof limits === "object" ? parseBudget(limits) : {}) });
       ui.toast(r.added || r.preset?.queued_profiles

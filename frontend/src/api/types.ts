@@ -124,6 +124,7 @@ export interface Metrics {
 }
 
 export interface ProjectState {
+  budgets_enabled?: boolean;
   /** true — мастер-аккаунт (видны себестоимость, баланс Polza, метрики) */
   admin: boolean;
   account: { balance: number; billing: boolean; client?: string };
@@ -495,6 +496,7 @@ export interface LedgerEntry {
 }
 
 export interface AccountBalance {
+  budgets_enabled?: boolean;
   reserved?: number;
   available?: number;
   balance: number | null;

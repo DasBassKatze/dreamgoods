@@ -232,7 +232,8 @@ def state(project_id, admin=False):
     b = polza.balance(st.get("api_key")) if admin else {"value": None, "error": ""}
     log_lines = lines(project_id) if admin else [_plain(x) for x in lines(project_id, include_global=False)]
     spent_v = round(float(spent or 0), 2) if admin else None
-    return {"admin": admin, "project": proj, "persona": persona, "style_ref": style_ref, "preset": preset, "presets": list(preset_names.values()), "options": options, "settings": settings, "warnings": warnings, "products": out,
+    return {"admin": admin, "budgets_enabled": config.BUDGETS_ENABLED,
+            "project": proj, "persona": persona, "style_ref": style_ref, "preset": preset, "presets": list(preset_names.values()), "options": options, "settings": settings, "warnings": warnings, "products": out,
             "runner": {"queued": queued, "running": running, "busy": bool(queued or running), "ok": ok, "fail": fail,
                        "errors": errors, "spent": spent_v, "stopping": stopping},
             "log": log_lines,

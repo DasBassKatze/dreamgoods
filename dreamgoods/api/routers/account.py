@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from ...core import auth
+from ...core import auth, config
 from ...services import billing, consents, projects, topups
 
 router = APIRouter(prefix="/api/account", tags=["личный кабинет"])
@@ -15,6 +15,7 @@ def balance(request: Request):
         return {"balance": None, "billing": False, "entries": [], "spent_month": 0, "markup": 1, "prices": []}
     out = billing.account(u.client_id)
     out.pop("markup", None)
+    out["budgets_enabled"] = config.BUDGETS_ENABLED
     return out
 
 

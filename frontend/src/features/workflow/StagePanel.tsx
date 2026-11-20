@@ -44,10 +44,10 @@ export function StagePanel() {
       text: `Запустить недостающие кадры ${trial.products} товар(ов) сохранённой партии?`,
       ok: "Утвердить и запустить",
     };
-    const limits = isDesktop ? await ui.confirm(confirmation) : await ui.ask({
+    const limits = !isDesktop && state.budgets_enabled !== false ? await ui.ask({
       ...confirmation, fieldsSummary: "Лимиты партии",
       fields: budgetFields((await api.estimateTrial(trial.id)).reserve_upper),
-    });
+    }) : await ui.confirm(confirmation);
     if (!limits) return;
     const r = await api.approveTrial(trial.id, trial.generation, typeof limits === "object" ? parseBudget(limits) : undefined);
     ui.toast(r.already_approved ? "Эта партия уже утверждена" : `В очередь добавлено кадров: ${r.added}`);
