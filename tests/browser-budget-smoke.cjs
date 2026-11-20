@@ -32,6 +32,7 @@ if (!budgetsEnabled) {
   assert(!('budget_rub' in started) && !('retry_budget_rub' in started));
   await page.getByRole('button',{name:'Операции',exact:true}).click();
   await page.getByRole('heading',{name:'Операции',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'#5 · Генерация',exact:true}).waitFor();
   assert(!/бюджет|лимит|резерв/i.test(await page.locator('.budget-page').innerText()));
   await page.getByRole('button',{name:'Продолжить',exact:true}).click();
   await dialog.waitFor();

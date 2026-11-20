@@ -44,8 +44,8 @@ jobs:
       - name: Browser budget smoke test (mocked API)
         run: >-
           npm exec --yes --package=playwright@1.51.1 -- sh -c
-          'PLAYWRIGHT_MODULE="$(dirname "$(readlink -f "$(command -v playwright)")")"
-          CHROME_BIN="$(command -v google-chrome || command -v chromium)"
+          'export PLAYWRIGHT_MODULE="$(dirname "$(readlink -f "$(command -v playwright)")")"
+          CHROME_BIN="$(command -v google-chrome || command -v chromium)";
           node tests/browser-budget-smoke.cjs && DG_TEST_NO_BUDGETS=1 node tests/browser-budget-smoke.cjs'
       - name: Browser manual reference smoke test (mocked paid AI)
         run: >-
